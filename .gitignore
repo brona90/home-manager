@@ -1,0 +1,24 @@
+# Nix
+result
+result-*
+.direnv/
+.envrc
+
+# Nix build outputs
+*.drv
+*.nar
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
