@@ -182,11 +182,11 @@
         "nixpkgs": "nixpkgs_3"
       },
       "locked": {
-        "lastModified": 1768237735,
-        "narHash": "sha256-h/nPZodnor/PcEx5odMO4r02LQhvbXk78wNTtHATqMI=",
+        "lastModified": 1768238002,
+        "narHash": "sha256-JSQ7U6n3dJ39wwZ8valSc4kmLRm+AIvcWncL6fxdImA=",
         "owner": "brona90",
         "repo": "nix-tmux",
-        "rev": "76e319914a746cb0a57af2139d4804fbddd43f6c",
+        "rev": "e2ec92826ce3397238c26e7bcbf4726ff2e0ad64",
         "type": "github"
       },
       "original": {
