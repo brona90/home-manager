@@ -46,7 +46,7 @@ jobs:
       - name: Build Docker image with Nix
         run: |
           echo "Building Docker image..."
-          nix build .#dockerImage
+          nix build .#dockerImage 2>&1 | grep -v "could not update mtime" || true
           
       - name: Load and tag Docker image
         run: |
