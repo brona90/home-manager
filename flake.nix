@@ -264,10 +264,6 @@
                 mkdir -p tmp
                 chmod 1777 tmp
                 
-                # Set ownership for home directory
-                chown -R 1000:1000 home/${username}
-                chmod -R 755 home/${username}
-                
                 echo "${username}:x:1000:1000::${homeDirectory}:${homePath}/bin/zsh" > etc/passwd
                 echo "${username}:x:1000:" > etc/group
                 echo "root:x:0:0::/root:/bin/bash" >> etc/passwd

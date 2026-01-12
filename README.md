@@ -121,17 +121,34 @@ nix run .#docker-test
 You can also pull the pre-built Nix-enabled image from Docker Hub (automatically built on every commit):
 
 ```bash
-# Pull and run the latest version
+# Pull and run with writable home directory (recommended)
+docker run -it --rm \
+  --tmpfs /home/gfoster:exec,uid=1000,gid=1000,mode=0755 \
+  brona90/terminal:latest
+
+# Or run with read-only environment (limited functionality)
 docker run -it --rm brona90/terminal:latest
 
-# Or a specific date version
-docker run -it --rm brona90/terminal:20260112
+# With specific date version
+docker run -it --rm \
+  --tmpfs /home/gfoster:exec,uid=1000,gid=1000,mode=0755 \
+  brona90/terminal:20260112
 
 # With SSH keys mounted
 docker run -it --rm \
+  --tmpfs /home/gfoster:exec,uid=1000,gid=1000,mode=0755 \
   -v ~/.ssh:/home/gfoster/.ssh:ro \
   brona90/terminal:latest
+
+# With SSH agent forwarding
+docker run -it --rm \
+  --tmpfs /home/gfoster:exec,uid=1000,gid=1000,mode=0755 \
+  -v "$SSH_AUTH_SOCK:/ssh-agent" \
+  -e SSH_AUTH_SOCK=/ssh-agent \
+  brona90/terminal:latest
 ```
+
+**Note:** The `--tmpfs` mount provides a writable home directory. Without it, configuration files cannot be created and functionality is limited.
 
 **The container includes Nix**, so you can install additional packages:
 
