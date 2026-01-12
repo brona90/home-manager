@@ -8,6 +8,9 @@ result-*
 # Home Manager generation symlinks
 home-manager-generation
 
+# Backup directories
+home-manager-backups/
+
 # Secrets (if using sops)
 secrets/
 *.age
