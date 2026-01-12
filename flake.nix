@@ -206,13 +206,14 @@
                 export HOME=${homeDirectory}
                 export USER=${username}
                 
-                mkdir -p ~/.cache/oh-my-zsh/completions
-                mkdir -p ~/.cache/starship
-                mkdir -p ~/.local/share/nvim
-                mkdir -p ~/.local/state/nvim
-                mkdir -p ~/.config/tmux
-                mkdir -p ~/.config/nvim
-                mkdir -p ~/.zsh/plugins
+                # Create directories with proper permissions
+                mkdir -p ~/.cache/oh-my-zsh/completions 2>/dev/null || true
+                mkdir -p ~/.cache/starship 2>/dev/null || true
+                mkdir -p ~/.local/share/nvim 2>/dev/null || true
+                mkdir -p ~/.local/state/nvim 2>/dev/null || true
+                mkdir -p ~/.config/tmux 2>/dev/null || true
+                mkdir -p ~/.config/nvim 2>/dev/null || true
+                mkdir -p ~/.zsh/plugins 2>/dev/null || true
                 
                 echo "Setting up home-manager environment..."
                 if [ -d ${activationPackage}/home-files ]; then
@@ -262,6 +263,10 @@
                 mkdir -p etc
                 mkdir -p tmp
                 chmod 1777 tmp
+                
+                # Set ownership for home directory
+                chown -R 1000:1000 home/${username}
+                chmod -R 755 home/${username}
                 
                 echo "${username}:x:1000:1000::${homeDirectory}:${homePath}/bin/zsh" > etc/passwd
                 echo "${username}:x:1000:" > etc/group
