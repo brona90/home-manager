@@ -1,0 +1,72 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build Docker image with Nix
+        run: |
+          echo "Building Docker image..."
+          nix build .#dockerImage
+          
+      - name: Load and tag Docker image
+        run: |
+          echo "Loading Docker image..."
+          docker load < result
+          
+          # Tag with date version
+          docker tag brona90/terminal:latest brona90/terminal:$(date +%Y%m%d)
+          
+          echo "Images tagged:"
+          docker images | grep brona90/terminal
+      
+      - name: Push to Docker Hub
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Pushing to Docker Hub..."
+          docker push brona90/terminal:latest
+          docker push brona90/terminal:$(date +%Y%m%d)
+          
+          echo "✓ Images pushed successfully!"
+      
+      - name: Test Docker image
+        run: |
+          echo "Testing Docker image..."
+          docker run --rm brona90/terminal:latest zsh -c "
+            echo '=== Testing tools ==='
+            which tmux && echo '✓ tmux found'
+            which lvim && echo '✓ lvim found'
+            which emacs && echo '✓ emacs found'
+            which starship && echo '✓ starship found'
+            which mise && echo '✓ mise found'
+            echo '=== All tools available ==='
+          "
