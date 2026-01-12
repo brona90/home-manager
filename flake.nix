@@ -231,7 +231,7 @@
               '';
             in
             pkgs.dockerTools.buildLayeredImage {
-              name = "home-manager-test";
+              name = "brona90/terminal";
               tag = "latest";
               
               contents = [
@@ -334,7 +334,7 @@
               fi
               
               echo "Starting container..."
-              docker run $DOCKER_ARGS home-manager-test:latest
+              docker run $DOCKER_ARGS brona90/terminal:latest
             '');
           };
         } else {})
