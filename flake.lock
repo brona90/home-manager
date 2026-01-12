@@ -179,15 +179,14 @@
     },
     "nix-tmux": {
       "inputs": {
-        "nixpkgs": "nixpkgs_3",
-        "tmux-config": "tmux-config"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
-        "lastModified": 1768236153,
-        "narHash": "sha256-a6NVOLQaHhNCyn2YkAgTNzQ5Da+HaOimqoMXt6EUdec=",
+        "lastModified": 1768237735,
+        "narHash": "sha256-h/nPZodnor/PcEx5odMO4r02LQhvbXk78wNTtHATqMI=",
         "owner": "brona90",
         "repo": "nix-tmux",
-        "rev": "06f1cf398f6aadaaf817c0d22bf242117d090ad8",
+        "rev": "76e319914a746cb0a57af2139d4804fbddd43f6c",
         "type": "github"
       },
       "original": {
@@ -421,20 +420,6 @@
         "repo": "default",
         "type": "github"
       }
-    },
-    "tmux-config": {
-      "flake": false,
-      "locked": {
-        "path": "./tmux-config",
-        "type": "path"
-      },
-      "original": {
-        "path": "./tmux-config",
-        "type": "path"
-      },
-      "parent": [
-        "nix-tmux"
-      ]
     }
   },
   "root": "root",
