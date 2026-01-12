@@ -107,11 +107,39 @@ btop
 
 ## Docker Testing (Linux only)
 
+### Local Testing
+
 Test the complete environment in Docker before applying to your system:
 
 ```bash
 cd ~/.config/home-manager
 nix run .#docker-test
+```
+
+### Pre-built Docker Image
+
+You can also pull the pre-built Nix-enabled image from Docker Hub (automatically built on every commit):
+
+```bash
+# Pull and run the latest version
+docker run -it --rm brona90/terminal:latest
+
+# Or a specific date version
+docker run -it --rm brona90/terminal:20260112
+
+# With SSH keys mounted
+docker run -it --rm \
+  -v ~/.ssh:/home/gfoster/.ssh:ro \
+  brona90/terminal:latest
+```
+
+**The container includes Nix**, so you can install additional packages:
+
+```bash
+# Inside the container
+nix-shell -p nodejs python3 go    # Temporary shell with packages
+nix-env -iA nixpkgs.ripgrep       # Install to profile
+nix run nixpkgs#cowsay            # Run a package directly
 ```
 
 Inside the container:
