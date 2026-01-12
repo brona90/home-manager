@@ -198,11 +198,11 @@
         "tmux-config": "tmux-config"
       },
       "locked": {
-        "lastModified": 1768174105,
-        "narHash": "sha256-XBaAbcubktsGSuj+bBEJ2zfqH02yx6jIjonxXD5SARI=",
+        "lastModified": 1768236153,
+        "narHash": "sha256-a6NVOLQaHhNCyn2YkAgTNzQ5Da+HaOimqoMXt6EUdec=",
         "owner": "brona90",
         "repo": "nix-tmux",
-        "rev": "dcb7fd1510fb06fcd835080cadaa41fc32195422",
+        "rev": "06f1cf398f6aadaaf817c0d22bf242117d090ad8",
         "type": "github"
       },
       "original": {
