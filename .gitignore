@@ -1,24 +1,29 @@
-# Nix
+# Nix build results
 result
 result-*
-.direnv/
-.envrc
 
-# Nix build outputs
+# Nix garbage collection roots
 *.drv
-*.nar
 
-# Editor
+# Home Manager generation symlinks
+home-manager-generation
+
+# Secrets (if using sops)
+secrets/
+*.age
+*.key
+
+# Editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Temporary files
+# Logs
 *.log
-*.tmp
+
+# Test scripts
+check_*.sh
+debug_*.sh
