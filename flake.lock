@@ -1,19 +1,5 @@
 {
   "nodes": {
-    "doom-config": {
-      "flake": false,
-      "locked": {
-        "path": "./doom.d",
-        "type": "path"
-      },
-      "original": {
-        "path": "./doom.d",
-        "type": "path"
-      },
-      "parent": [
-        "nix-emacs"
-      ]
-    },
     "doom-emacs": {
       "inputs": {
         "doomemacs": "doomemacs",
@@ -155,16 +141,15 @@
     },
     "nix-emacs": {
       "inputs": {
-        "doom-config": "doom-config",
         "doom-emacs": "doom-emacs",
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1768159597,
-        "narHash": "sha256-JgHEUwG9cS4U7ns+fB0fJdFokPouK0TyYqMqqBDbQSo=",
+        "lastModified": 1768237567,
+        "narHash": "sha256-zLeLvQOel+mM5K83yDWPaP25aTfEmxCKgTyEai/rrIM=",
         "owner": "brona90",
         "repo": "nix-emacs",
-        "rev": "782203468820a1f1ea0231e3b3dab66b88a65218",
+        "rev": "1680d80f679264a649daf29f17dc1628101994a4",
         "type": "github"
       },
       "original": {
