@@ -159,6 +159,7 @@
               home.sessionVariables = {
                 EDITOR = "emacs -nw";
                 VISUAL = "emacs -nw";
+                GSETTINGS_SCHEMA_DIR = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas:${pkgs.glib}/share/gsettings-schemas/${pkgs.glib.name}/glib-2.0/schemas";
               };
 
               xdg.enable = true;
