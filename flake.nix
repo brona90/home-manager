@@ -65,8 +65,6 @@
 
               programs.home-manager.enable = true;
 
-              programs.dconf.enable = true;
-
               home.packages = [
                 nix-emacs.packages.${system}.default
                 nix-vim.packages.${system}.default
@@ -75,6 +73,7 @@
                 pkgs.tree
                 pkgs.gsettings-desktop-schemas
                 pkgs.glib
+                pkgs.dconf
               ];
 
               programs.git = {
