@@ -71,6 +71,8 @@
                 nix-tmux.packages.${system}.default
                 pkgs.btop
                 pkgs.tree
+                pkgs.gsettings-desktop-schemas
+                pkgs.glib
               ];
 
               programs.git = {
@@ -289,6 +291,31 @@
               };
             };
         } else {})
+      );
+      
+      # Development shells for all systems
+      devShells = forAllSystems (system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          default = pkgs.mkShell {
+            buildInputs = [
+              pkgs.bazel_7
+              pkgs.bazel-buildtools
+            ];
+            
+            shellHook = ''
+              echo "Bazel development environment"
+              echo "Bazel version: $(bazel version | head -n1)"
+              echo ""
+              echo "Available commands:"
+              echo "  bazel build //...     - Build all targets"
+              echo "  bazel test //...      - Run all tests"
+              echo "  buildifier -r .       - Format BUILD files"
+            '';
+          };
+        }
       );
       
       # Apps for all systems
