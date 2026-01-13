@@ -65,6 +65,8 @@
 
               programs.home-manager.enable = true;
 
+              programs.dconf.enable = true;
+
               home.packages = [
                 nix-emacs.packages.${system}.default
                 nix-vim.packages.${system}.default
@@ -159,7 +161,7 @@
               home.sessionVariables = {
                 EDITOR = "emacs -nw";
                 VISUAL = "emacs -nw";
-                GSETTINGS_SCHEMA_DIR = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas:${pkgs.glib}/share/gsettings-schemas/${pkgs.glib.name}/glib-2.0/schemas";
+                XDG_DATA_DIRS = "$HOME/.nix-profile/share:${pkgs.gsettings-desktop-schemas}/share:${pkgs.glib}/share:/usr/local/share:/usr/share";
               };
 
               xdg.enable = true;
