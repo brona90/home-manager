@@ -160,6 +160,7 @@
               home.sessionVariables = {
                 EDITOR = "emacs -nw";
                 VISUAL = "emacs -nw";
+                XDG_DATA_DIRS = "$HOME/.nix-profile/share:${pkgs.gsettings-desktop-schemas}/share:${pkgs.glib}/share:$XDG_DATA_DIRS";
               };
 
               xdg.enable = true;
