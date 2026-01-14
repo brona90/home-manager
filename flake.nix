@@ -111,9 +111,12 @@
                 });
                 oh-my-zsh = zshConfig.ohMyZsh;
                 plugins = zshConfig.plugins;
-                initContent = zshConfig.initExtra + ''
+                initExtra = zshConfig.initExtra + ''
                   # Ensure starship is initialized
                   eval "$(${pkgs.starship}/bin/starship init zsh)"
+                  
+                  # Add GSettings schema paths for Emacs
+                  export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share:${pkgs.glib}/share:$XDG_DATA_DIRS"
                 '';
                 sessionVariables = zshConfig.sessionVariables;
               };
@@ -161,11 +164,6 @@
                 EDITOR = "emacs -nw";
                 VISUAL = "emacs -nw";
               };
-
-              # Set up XDG_DATA_DIRS to include GSettings schemas
-              home.sessionVariablesExtra = ''
-                export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share:${pkgs.glib}/share:$XDG_DATA_DIRS"
-              '';
 
               xdg.enable = true;
             }
