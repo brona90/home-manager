@@ -111,7 +111,7 @@
                 });
                 oh-my-zsh = zshConfig.ohMyZsh;
                 plugins = zshConfig.plugins;
-                initExtra = zshConfig.initExtra + ''
+                initContent = zshConfig.initExtra + ''
                   # Ensure starship is initialized
                   eval "$(${pkgs.starship}/bin/starship init zsh)"
                   
