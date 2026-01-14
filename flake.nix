@@ -115,8 +115,8 @@
                   # Ensure starship is initialized
                   eval "$(${pkgs.starship}/bin/starship init zsh)"
                   
-                  # Add GSettings schema paths for Emacs
-                  export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share:${pkgs.glib}/share:$XDG_DATA_DIRS"
+                  # Set GSettings schema directory for Emacs
+                  export GSETTINGS_SCHEMA_DIR="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas"
                 '';
                 sessionVariables = zshConfig.sessionVariables;
               };
