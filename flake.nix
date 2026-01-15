@@ -173,7 +173,7 @@
               };
 
               # Auto-sync Doom Emacs when Emacs version changes
-              home.activation.doomSync = lib.hm.dag.entryAfter ["writeBoundary"] ''
+              home.activation.doomSync = home-manager.lib.hm.dag.entryAfter ["writeBoundary"] ''
                 if [ -x "${homeDirectory}/.config/emacs/bin/doom" ]; then
                   echo "Running doom sync..."
                   PATH="${pkgs.git}/bin:${pkgs.ripgrep}/bin:$PATH" ${homeDirectory}/.config/emacs/bin/doom sync 2>&1 || true
