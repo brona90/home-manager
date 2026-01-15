@@ -358,6 +358,9 @@
               echo "Activating home-manager configuration for ${system}..."
               home-manager switch --flake .#${username}@${system}
             '');
+            meta = {
+              description = "Activate home-manager configuration";
+            };
           };
         } // (if isLinux then {
           # Docker test only available on Linux
@@ -388,6 +391,9 @@
               echo "Starting container..."
               docker run $DOCKER_ARGS brona90/terminal:latest
             '');
+            meta = {
+              description = "Build and test Docker image";
+            };
           };
         } else {})
       );
