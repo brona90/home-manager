@@ -72,6 +72,7 @@
                 nix-vim.packages.${system}.default
                 nix-tmux.packages.${system}.default
                 nix-emacs.packages.${system}.default
+                nix-emacs.packages.${system}.doom-sync
                 pkgs.btop
                 pkgs.tree
               ] 
