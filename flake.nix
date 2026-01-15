@@ -35,19 +35,20 @@
         config.allowUnfree = true;
       };
       
-      username = "gfoster";
+      # Default username
+      defaultUsername = "gfoster";
       
-      # Detect home directory based on OS
-      homeDirectoryFor = system:
+      # Detect home directory based on OS and username
+      homeDirectoryFor = { system, username }:
         if nixpkgs.lib.hasInfix "darwin" system
         then "/Users/${username}"
         else "/home/${username}";
       
-      # Create home configuration for a given system
-      mkHomeConfiguration = system:
+      # Create home configuration for a given system and username
+      mkHomeConfiguration = { system, username ? defaultUsername }:
         let
           pkgs = pkgsFor system;
-          homeDirectory = homeDirectoryFor system;
+          homeDirectory = homeDirectoryFor { inherit system username; };
           zshConfig = nix-zsh.lib.mkZshConfig pkgs;
           gitConfig = nix-git.lib.mkGitConfig pkgs;
           isDarwin = nixpkgs.lib.hasInfix "darwin" system;
@@ -179,26 +180,30 @@
       # Home configurations for all systems
       homeConfigurations = {
         # Linux x86_64
-        "${username}@x86_64-linux" = mkHomeConfiguration "x86_64-linux";
+        "gfoster@x86_64-linux" = mkHomeConfiguration { system = "x86_64-linux"; };
         
         # Linux ARM64
-        "${username}@aarch64-linux" = mkHomeConfiguration "aarch64-linux";
+        "gfoster@aarch64-linux" = mkHomeConfiguration { system = "aarch64-linux"; };
         
         # macOS Intel
-        "${username}@x86_64-darwin" = mkHomeConfiguration "x86_64-darwin";
+        "gfoster@x86_64-darwin" = mkHomeConfiguration { system = "x86_64-darwin"; };
         
         # macOS Apple Silicon
-        "${username}@aarch64-darwin" = mkHomeConfiguration "aarch64-darwin";
+        "gfoster@aarch64-darwin" = mkHomeConfiguration { system = "aarch64-darwin"; };
+        
+        # Work Mac (different username)
+        "888973@aarch64-darwin" = mkHomeConfiguration { system = "aarch64-darwin"; username = "888973"; };
         
         # Default (shorthand) configurations
-        ${username} = mkHomeConfiguration "x86_64-linux";  # Default to Linux
+        "gfoster" = mkHomeConfiguration { system = "x86_64-linux"; };
       };
 
-      # Packages for all systems
+      # Packages for all systems (uses default username)
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          homeDirectory = homeDirectoryFor system;
+          username = defaultUsername;
+          homeDirectory = homeDirectoryFor { inherit system username; };
           isDarwin = nixpkgs.lib.hasInfix "darwin" system;
           isLinux = !isDarwin;
         in
@@ -331,7 +336,8 @@
       apps = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          homeDirectory = homeDirectoryFor system;
+          username = defaultUsername;
+          homeDirectory = homeDirectoryFor { inherit system username; };
           isDarwin = nixpkgs.lib.hasInfix "darwin" system;
           isLinux = !isDarwin;
         in
