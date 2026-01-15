@@ -105,7 +105,7 @@
                 dotDir = "${homeDirectory}";
                 shellAliases = zshConfig.aliases // {
                   nrs = "nixos-rebuild switch --flake .";
-                  hms = "home-manager switch --flake .";
+                  hms = "home-manager switch --flake .#${username}@${system}";
                   nfu = "nix flake update";
                   vim = "lvim";
                   vi = "lvim";
