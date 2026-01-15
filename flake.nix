@@ -71,11 +71,10 @@
               home.packages = [
                 nix-vim.packages.${system}.default
                 nix-tmux.packages.${system}.default
+                nix-emacs.packages.${system}.default
                 pkgs.btop
                 pkgs.tree
               ] 
-              # Only include nix-emacs on Linux (has wayland deps that don't build on Darwin)
-              ++ (if isLinux then [ nix-emacs.packages.${system}.default ] else [ pkgs.emacs ])
               # Only include these on Linux (gsettings/dconf are Linux-specific)
               ++ (if isLinux then [ 
                 pkgs.gsettings-desktop-schemas
