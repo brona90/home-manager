@@ -48,6 +48,7 @@
       mkHomeConfiguration = { system, username ? defaultUsername }:
         let
           pkgs = pkgsFor system;
+          lib = nixpkgs.lib;
           homeDirectory = homeDirectoryFor { inherit system username; };
           zshConfig = nix-zsh.lib.mkZshConfig pkgs;
           gitConfig = nix-git.lib.mkGitConfig pkgs;
@@ -170,6 +171,14 @@
                 EDITOR = "emacs -nw";
                 VISUAL = "emacs -nw";
               };
+
+              # Auto-sync Doom Emacs when Emacs version changes
+              home.activation.doomSync = lib.hm.dag.entryAfter ["writeBoundary"] ''
+                if [ -x "${homeDirectory}/.config/emacs/bin/doom" ]; then
+                  echo "Running doom sync..."
+                  PATH="${pkgs.git}/bin:${pkgs.ripgrep}/bin:$PATH" ${homeDirectory}/.config/emacs/bin/doom sync 2>&1 || true
+                fi
+              '';
 
               xdg.enable = true;
             }
