@@ -201,11 +201,11 @@
         "nixpkgs": "nixpkgs_4"
       },
       "locked": {
-        "lastModified": 1768447442,
-        "narHash": "sha256-3yVFyPy6P2RNhERu3/Ncc7/MV1v/Tv/5Wt5XoBbRXeM=",
+        "lastModified": 1768449149,
+        "narHash": "sha256-vI2LH98UX78LNTcd0OxjGfCRrNj48kqlNk0dUyhB6J8=",
         "owner": "brona90",
         "repo": "nix-vim",
-        "rev": "11ec55f72d0acbd828e1854eda8f20d5dae20b63",
+        "rev": "a98c85d5e960abc0d28d7ea9a13007fa8f24112c",
         "type": "github"
       },
       "original": {
