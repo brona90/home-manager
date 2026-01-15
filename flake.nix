@@ -51,6 +51,7 @@
           zshConfig = nix-zsh.lib.mkZshConfig pkgs;
           gitConfig = nix-git.lib.mkGitConfig pkgs;
           isDarwin = nixpkgs.lib.hasInfix "darwin" system;
+          isLinux = !isDarwin;
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
@@ -66,15 +67,19 @@
               programs.home-manager.enable = true;
 
               home.packages = [
-                nix-emacs.packages.${system}.default
                 nix-vim.packages.${system}.default
                 nix-tmux.packages.${system}.default
                 pkgs.btop
                 pkgs.tree
+              ] 
+              # Only include nix-emacs on Linux (has wayland deps that don't build on Darwin)
+              ++ (if isLinux then [ nix-emacs.packages.${system}.default ] else [ pkgs.emacs ])
+              # Only include these on Linux (gsettings/dconf are Linux-specific)
+              ++ (if isLinux then [ 
                 pkgs.gsettings-desktop-schemas
                 pkgs.glib
                 pkgs.dconf
-              ];
+              ] else []);
 
               programs.git = {
                 enable = true;
@@ -114,10 +119,10 @@
                 initContent = zshConfig.initExtra + ''
                   # Ensure starship is initialized
                   eval "$(${pkgs.starship}/bin/starship init zsh)"
-                  
-                  # Set GSettings schema directory for Emacs
+                '' + (if isLinux then ''
+                  # Set GSettings schema directory for Emacs (Linux only)
                   export GSETTINGS_SCHEMA_DIR="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas"
-                '';
+                '' else "");
                 sessionVariables = zshConfig.sessionVariables;
               };
 
