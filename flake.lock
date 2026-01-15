@@ -145,11 +145,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1768447441,
-        "narHash": "sha256-8zaXBgA49DmxBQJN7hRo1YJxXg4NzN0cWZr4t+sXRAA=",
+        "lastModified": 1768448612,
+        "narHash": "sha256-/lSYvxnU/C1ggiKNGNgwWT+AAHSSIzNvxQlfk5vWWQo=",
         "owner": "brona90",
         "repo": "nix-emacs",
-        "rev": "148663f5135e3763c1371c7e01e884bd9da71063",
+        "rev": "237385c9911302d14bb2b5b9865f61827d1c8f01",
         "type": "github"
       },
       "original": {
