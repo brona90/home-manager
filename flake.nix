@@ -121,10 +121,13 @@
                 initContent = zshConfig.initExtra + ''
                   # Ensure starship is initialized
                   eval "$(${pkgs.starship}/bin/starship init zsh)"
-                '' + (if isLinux then ''
+                '' + (if isDarwin then ''
+                  # Ensure nix-profile comes before homebrew
+                  export PATH="$HOME/.nix-profile/bin:$PATH"
+                '' else ''
                   # Set GSettings schema directory for Emacs (Linux only)
                   export GSETTINGS_SCHEMA_DIR="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas"
-                '' else "");
+                '');
                 sessionVariables = zshConfig.sessionVariables;
               };
 
