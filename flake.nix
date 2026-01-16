@@ -72,7 +72,6 @@
                 nix-vim.packages.${system}.default
                 nix-tmux.packages.${system}.default
                 nix-emacs.packages.${system}.default
-                nix-emacs.packages.${system}.doom-sync
                 pkgs.btop
                 pkgs.tree
               ] 
@@ -171,14 +170,6 @@
                 EDITOR = "emacs -nw";
                 VISUAL = "emacs -nw";
               };
-
-              # Auto-sync Doom Emacs after packages are installed
-              home.activation.doomSync = home-manager.lib.hm.dag.entryAfter ["installPackages"] ''
-                if [ -x "${nix-emacs.packages.${system}.doom-sync}/bin/doom-sync" ]; then
-                  echo "Running doom sync..."
-                  ${nix-emacs.packages.${system}.doom-sync}/bin/doom-sync 2>&1 || true
-                fi
-              '';
 
               xdg.enable = true;
             }
