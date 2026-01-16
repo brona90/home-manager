@@ -117,10 +117,7 @@
                 });
                 oh-my-zsh = zshConfig.ohMyZsh;
                 plugins = zshConfig.plugins;
-                initContent = zshConfig.initExtra + ''
-                  # Ensure starship is initialized
-                  eval "$(${pkgs.starship}/bin/starship init zsh)"
-                '' + (if isLinux then ''
+                initContent = zshConfig.initExtra + (if isLinux then ''
                   # Set GSettings schema directory for Emacs (Linux only)
                   export GSETTINGS_SCHEMA_DIR="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas"
                 '' else "");
