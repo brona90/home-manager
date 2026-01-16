@@ -140,14 +140,14 @@
                     truncation_length = 3;
                     truncate_to_repo = true;
                   };
-                  git_branch.symbol = " ";
+                  # git_branch.symbol = " ";
                   git_status = {
                     ahead = "⇡\${count}";
                     diverged = "⇕⇡\${ahead_count}⇣\${behind_count}";
                     behind = "⇣\${count}";
                   };
                   nix_shell = {
-                    symbol = " ";
+                    # symbol = " ";
                     format = "via [$symbol$state]($style) ";
                   };
                 };
