@@ -220,11 +220,11 @@
         "nixpkgs": "nixpkgs_5"
       },
       "locked": {
-        "lastModified": 1768610736,
-        "narHash": "sha256-kwbMympNpHgeb3qxqf3UrYd5Y85pQTwsQ7BxvrMJ310=",
+        "lastModified": 1768677274,
+        "narHash": "sha256-8hDOFSK65iBOMvE1YRjGRiV767Tw7pcVPCV94vFvxJY=",
         "owner": "brona90",
         "repo": "nix-zsh",
-        "rev": "f2cd46a79796739084c90c9ce0c8ee12713483cd",
+        "rev": "ab8fcf90f1ccbf58732e14721e68c0826634ee74",
         "type": "github"
       },
       "original": {
