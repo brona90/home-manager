@@ -2,6 +2,12 @@
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 vim.opt.rtp:prepend(lazypath)
 
+-- Add Nix-managed treesitter grammars to runtimepath
+local grammars_path = os.getenv("TREESITTER_GRAMMARS")
+if grammars_path then
+  vim.opt.runtimepath:append(grammars_path)
+end
+
 -- Load config options first
 require("config.options")
 
@@ -32,6 +38,8 @@ require("lazy").setup({
     -- Disable luarocks integration (we manage deps via Nix)
     enabled = false,
   },
+  -- Put lockfile in writable location (not read-only Nix store)
+  lockfile = vim.fn.stdpath("data") .. "/lazy-lock.json",
   performance = {
     rtp = {
       disabled_plugins = {
