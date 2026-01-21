@@ -29,8 +29,11 @@ in
     };
 
     # Set TMUX_CONF environment variable for the config to find itself
+    # Set TMUX_PLUGIN_MANAGER_PATH to writable location (not Nix store)
     home.sessionVariables = {
       TMUX_CONF = "${cfg.configDir}/.tmux.conf";
+      TMUX_CONF_LOCAL = "${cfg.configDir}/.tmux.conf.local";
+      TMUX_PLUGIN_MANAGER_PATH = "$HOME/.tmux/plugins";
     };
   };
 }
