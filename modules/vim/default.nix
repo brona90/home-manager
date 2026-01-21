@@ -27,6 +27,12 @@ let
   # Use vimPlugins from nixpkgs
   vp = pkgs.vimPlugins;
 
+  # Create a combined treesitter grammars path from withAllGrammars.dependencies
+  treesitterGrammars = pkgs.symlinkJoin {
+    name = "nvim-treesitter-grammars";
+    paths = vp.nvim-treesitter.withAllGrammars.dependencies;
+  };
+
   # Build the plugins directory using nixpkgs vimPlugins
   pluginsDir = pkgs.linkFarm "lazy-plugins" [
     { name = "lazy.nvim"; path = lazyNvim; }
@@ -161,12 +167,18 @@ let
     # Set sqlite library path for sqlite.lua
     export LIBSQLITE="${pkgs.sqlite.out}/lib/libsqlite3${if pkgs.stdenv.isDarwin then ".dylib" else ".so"}"
 
-    # Symlink pre-fetched plugins if not already done
+    # Export treesitter grammars path for init.lua to use
+    export TREESITTER_GRAMMARS="${treesitterGrammars}"
+
+    # Copy pre-fetched plugins (not symlink) so we can add .git markers
     for plugin in ${pluginsDir}/*; do
       name=$(basename "$plugin")
       target="$XDG_DATA_HOME/nvim/lazy/$name"
-      if [ ! -e "$target" ]; then
-        ln -sf "$plugin" "$target"
+      if [ ! -d "$target" ]; then
+        cp -rL "$plugin" "$target"
+        chmod -R u+w "$target"
+        # Create .git marker so lazy.nvim thinks plugin is installed
+        mkdir -p "$target/.git"
       fi
     done
 
@@ -189,8 +201,13 @@ in
     # Create nvim config directory structure
     xdg.configFile = {
       "nvim/init.lua".source = "${nvimConfigDir}/init.lua";
+      "nvim/init.lua".force = true;
       "nvim/lua/config/options.lua".source = "${nvimConfigDir}/lua/config/options.lua";
+      "nvim/lua/config/options.lua".force = true;
       "nvim/lua/plugins/theme.lua".source = "${nvimConfigDir}/lua/plugins/theme.lua";
+      "nvim/lua/plugins/theme.lua".force = true;
+      "nvim/lua/plugins/treesitter.lua".source = "${nvimConfigDir}/lua/plugins/treesitter.lua";
+      "nvim/lua/plugins/treesitter.lua".force = true;
     };
   };
 }
