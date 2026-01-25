@@ -89,9 +89,9 @@
                 };
               };
 
-              # Platform-specific aliases
+              # Platform-specific aliases (work from any directory)
               my.zsh.extraAliases = {
-                hms = "home-manager switch --flake '.#${username}@${system}'";
+                hms = "home-manager switch --flake ~/.config/home-manager#${username}@${system}";
               } // (if isDarwin then { ls = "ls -G"; } else { });
 
               # Packages
@@ -175,7 +175,7 @@
             type = "app";
             program = toString (pkgs.writeShellScript "activate-home" ''
               echo "Activating home-manager configuration for ${system}..."
-              home-manager switch --flake '.#${username}@${system}'
+              home-manager switch --flake ~/.config/home-manager#${username}@${system}
             '');
           };
         }
@@ -186,7 +186,7 @@
               set -e
               echo "Building Docker image..."
               rm -f result
-              nix build .#dockerImage
+              nix build ~/.config/home-manager#dockerImage
 
               echo "Loading image into Docker..."
               docker load < result

@@ -73,7 +73,7 @@ in
         k9 = "kill -9";
 
         # Nix aliases
-        nrs = "nixos-rebuild switch --flake .";
+        nrs = "sudo nixos-rebuild switch --flake ~/.config/home-manager";
         nfu = "nix flake update";
 
         # Editor aliases
