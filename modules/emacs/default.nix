@@ -59,6 +59,7 @@ in
     ];
 
     # Systemd user service for Emacs daemon
+    # Note: services.emacs sets EDITOR/VISUAL when defaultEditor = true
     services.emacs = mkIf cfg.daemon.enable {
       enable = true;
       package = cfg.package;
@@ -66,17 +67,10 @@ in
       startWithUserSession = "graphical";
     };
 
-    home.sessionVariables = mkMerge [
-      {
-        VISUAL = if cfg.daemon.enable then "emacsclient -c" else "emacs";
-      }
-      (mkIf cfg.daemon.enable {
-        EDITOR = "emacsclient -t";
-        ALTERNATE_EDITOR = "emacs -nw";
-      })
-      (mkIf (!cfg.daemon.enable) {
-        EDITOR = "emacs -nw";
-      })
-    ];
+    # Only set EDITOR/VISUAL when daemon is disabled (services.emacs handles it otherwise)
+    home.sessionVariables = mkIf (!cfg.daemon.enable) {
+      EDITOR = "emacs -nw";
+      VISUAL = "emacs";
+    };
   };
 }
