@@ -46,9 +46,8 @@ jobs:
             accept-flake-config = true
       - uses: cachix/cachix-action@v15
         with:
-          name: ${{ env.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: false
-          extraPullNames: nix-community,emacs
+          name: nix-community
+          extraPullNames: emacs
+          # No authToken = pull only, no push to save cache space
       - name: Build Darwin configuration
         run: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage 2>&1 | grep -v "could not update mtime" || true
