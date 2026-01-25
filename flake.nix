@@ -89,7 +89,7 @@
                 };
               };
 
-              # Platform-specific aliases (work from any directory)
+              # Platform-specific aliases
               my.zsh.extraAliases = {
                 hms = "home-manager switch --flake ~/.config/home-manager#${username}@${system}";
               } // (if isDarwin then { ls = "ls -G"; } else { });
@@ -118,7 +118,6 @@
       # NixOS Configurations
       # ──────────────────────────────────────────────────────────────
       nixosConfigurations = {
-        # Matches default NixOS-WSL hostname
         nixos = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           modules = [
@@ -136,7 +135,6 @@
         "gfoster@aarch64-linux" = mkHomeConfiguration { system = "aarch64-linux"; };
         "gfoster@x86_64-darwin" = mkHomeConfiguration { system = "x86_64-darwin"; };
         "gfoster@aarch64-darwin" = mkHomeConfiguration { system = "aarch64-darwin"; };
-        "gfoster" = mkHomeConfiguration { system = "x86_64-linux"; };
         "888973@aarch64-darwin" = mkHomeConfiguration { system = "aarch64-darwin"; username = "888973"; };
       };
 
@@ -156,7 +154,6 @@
             inherit pkgs username homeDirectory;
             homeConfiguration = self.homeConfigurations."${username}@${system}";
             imageName = "brona90/terminal";
-            imageTag = "latest";
           };
         } else {})
       );
@@ -181,28 +178,7 @@
           };
         }
         // (if isLinux then {
-          docker-test = {
-            type = "app";
-            program = toString (pkgs.writeShellScript "docker-test" ''
-              set -e
-              echo "Building Docker image..."
-              rm -f result
-              nix build ~/.config/home-manager#dockerImage
-
-              echo "Loading image into Docker..."
-              docker load < result
-
-              DOCKER_ARGS="-it --rm --network host"
-              DOCKER_ARGS="$DOCKER_ARGS --tmpfs ${homeDirectory}:exec,uid=1000,gid=1000,mode=0755"
-              DOCKER_ARGS="$DOCKER_ARGS --tmpfs /tmp:exec,mode=1777"
-
-              [ -d "$HOME/.ssh" ] && DOCKER_ARGS="$DOCKER_ARGS -v $HOME/.ssh:${homeDirectory}/.ssh:ro"
-              [ -n "$SSH_AUTH_SOCK" ] && DOCKER_ARGS="$DOCKER_ARGS -v $SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent"
-
-              echo "Starting container..."
-              docker run $DOCKER_ARGS brona90/terminal:latest
-            '');
-          };
+          docker-test = import ./lib/docker-test-app.nix { inherit pkgs homeDirectory; };
         } else {})
       );
     };
