@@ -23,6 +23,7 @@ jobs:
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: false
           extraPullNames: nix-community,emacs
       - name: Free disk space
         run: |
@@ -47,6 +48,7 @@ jobs:
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: false
           extraPullNames: nix-community,emacs
       - name: Build Darwin configuration
         run: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage 2>&1 | grep -v "could not update mtime" || true
