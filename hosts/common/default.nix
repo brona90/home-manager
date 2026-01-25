@@ -1,11 +1,7 @@
-# NixOS-WSL configuration
+# Common NixOS settings shared across all hosts
 { config, lib, pkgs, ... }:
 
 {
-  wsl.enable = true;
-  wsl.defaultUser = "gfoster";
-  wsl.docker-desktop.enable = true;
-
   # Nix settings
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
@@ -34,7 +30,7 @@
     isNormalUser = true;
     home = "/home/gfoster";
     description = "Gregory Foster";
-    extraGroups = [ "wheel" "docker" ];
+    extraGroups = [ "wheel" ];
     shell = pkgs.zsh;
   };
 
@@ -43,6 +39,4 @@
 
   # Passwordless sudo for wheel
   security.sudo.wheelNeedsPassword = false;
-
-  system.stateVersion = "25.05";
 }

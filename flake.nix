@@ -118,13 +118,20 @@
       # NixOS Configurations
       # ──────────────────────────────────────────────────────────────
       nixosConfigurations = {
+        # WSL (default hostname is "nixos")
         nixos = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           modules = [
             nixos-wsl.nixosModules.default
-            ./hosts/wsl-nixos/configuration.nix
+            ./hosts/wsl/configuration.nix
           ];
         };
+
+        # Add more hosts here:
+        # my-desktop = nixpkgs.lib.nixosSystem {
+        #   system = "x86_64-linux";
+        #   modules = [ ./hosts/desktop/configuration.nix ];
+        # };
       };
 
       # ──────────────────────────────────────────────────────────────
