@@ -91,7 +91,7 @@
 
               # Platform-specific aliases
               my.zsh.extraAliases = {
-                hms = "home-manager switch --flake '~/.config/home-manager#${username}@${system}'";
+                hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}"'';
               } // (if isDarwin then { ls = "ls -G"; } else { });
 
               # Packages
