@@ -64,18 +64,10 @@ jobs:
           docker push brona90/terminal:$(date +%Y%m%d)
 
   # Validation builds - run in parallel, don't block docker
-  validate:
-    name: Validate ${{ matrix.name }}
+  validate-nixos:
+    name: Validate NixOS
     runs-on: ubuntu-latest
     needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: NixOS
-            build: nix build .#nixosConfigurations.nixos.config.system.build.toplevel
-          - name: Darwin (aarch64)
-            build: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v27
@@ -92,4 +84,40 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
-      - run: ${{ matrix.build }} --show-trace
+      - run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel --show-trace
+
+  validate-darwin-arm:
+    name: Validate Darwin (Apple Silicon)
+    runs-on: macos-14
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      - uses: cachix/cachix-action@v15
+        with:
+          name: nix-community
+          extraPullNames: emacs
+      - run: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage --show-trace
+
+  validate-darwin-intel:
+    name: Validate Darwin (Intel)
+    runs-on: macos-13
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      - uses: cachix/cachix-action@v15
+        with:
+          name: nix-community
+          extraPullNames: emacs
+      - run: nix build .#homeConfigurations."gfoster@x86_64-darwin".activationPackage --show-trace
