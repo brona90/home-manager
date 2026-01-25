@@ -56,31 +56,33 @@ check_nix() {
   info "Nix found: $(nix --version)"
 }
 
-# Enable flakes if not already enabled
-enable_flakes() {
+# Configure Nix with flakes and caches
+configure_nix() {
   mkdir -p "$NIX_CONF_DIR"
   
-  if [ -f "$NIX_CONF" ] && grep -q "experimental-features.*flakes" "$NIX_CONF"; then
-    info "Flakes already enabled"
+  # Check if already fully configured
+  if [ -f "$NIX_CONF" ] && grep -q "gfoster.cachix.org" "$NIX_CONF"; then
+    info "Nix already configured with caches"
     return
   fi
   
-  info "Enabling flakes..."
+  info "Configuring Nix with flakes and caches..."
   
-  if [ -f "$NIX_CONF" ]; then
-    # Append to existing config
-    echo "" >> "$NIX_CONF"
-    echo "# Enable flakes and new nix command" >> "$NIX_CONF"
-    echo "experimental-features = nix-command flakes" >> "$NIX_CONF"
-  else
-    # Create new config
-    cat > "$NIX_CONF" << 'EOF'
+  cat > "$NIX_CONF" << 'EOF'
 # Enable flakes and new nix command
 experimental-features = nix-command flakes
+
+# Binary caches
+substituters = https://cache.nixos.org https://nix-community.cachix.org https://emacs.cachix.org https://gfoster.cachix.org
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY= gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
+
+# Performance
+max-jobs = auto
+cores = 0
+connect-timeout = 5
 EOF
-  fi
   
-  info "Flakes enabled in $NIX_CONF"
+  info "Nix configured in $NIX_CONF"
 }
 
 # Check if home-manager is available
@@ -116,7 +118,7 @@ main() {
   info "Config: $config"
   
   check_nix
-  enable_flakes
+  configure_nix
   setup_config
   
   cd "$CONFIG_DIR"
