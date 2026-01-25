@@ -1,73 +1,118 @@
-#!/bin/bash
-# Bootstrap home-manager installation
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+# Bootstrap script for Gregory's Nix environment
+# Works on any system with Nix installed
 
-echo "Installing home-manager..."
+REPO_URL="https://github.com/brona90/home-manager.git"
+CONFIG_DIR="${HOME}/.config/home-manager"
 
-# Check if Nix is installed
-if ! command -v nix &> /dev/null; then
-    echo "Error: Nix is not installed. Please install Nix first:"
-    echo "  sh <(curl -L https://nixos.org/nix/install) --daemon"
-    exit 1
-fi
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-# Check if flakes are enabled
-if ! nix flake --help &> /dev/null 2>&1; then
-    echo "Enabling flakes..."
-    mkdir -p ~/.config/nix
-    echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-    echo "Flakes enabled! You may need to restart your terminal."
-fi
+info() { echo -e "${GREEN}[INFO]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # Detect system
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m)
+detect_system() {
+  local arch=$(uname -m)
+  local os=$(uname -s)
+  
+  case "$os" in
+    Linux)
+      case "$arch" in
+        x86_64)  echo "x86_64-linux" ;;
+        aarch64) echo "aarch64-linux" ;;
+        *)       error "Unsupported architecture: $arch" ;;
+      esac
+      ;;
+    Darwin)
+      case "$arch" in
+        x86_64)  echo "x86_64-darwin" ;;
+        arm64)   echo "aarch64-darwin" ;;
+        *)       error "Unsupported architecture: $arch" ;;
+      esac
+      ;;
+    *)
+      error "Unsupported OS: $os"
+      ;;
+  esac
+}
 
-if [ "$OS" = "darwin" ]; then
-    SYSTEM="${ARCH}-darwin"
-else
-    SYSTEM="${ARCH}-linux"
-fi
+# Check if Nix is installed
+check_nix() {
+  if ! command -v nix &>/dev/null; then
+    error "Nix is not installed. Install it first:
+    
+    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install"
+  fi
+  
+  if ! nix --version 2>&1 | grep -q "nix"; then
+    error "Nix installation appears broken"
+  fi
+  
+  info "Nix found: $(nix --version)"
+}
 
-echo "Detected system: $SYSTEM"
+# Check if home-manager is available
+check_home_manager() {
+  if ! command -v home-manager &>/dev/null; then
+    warn "home-manager not in PATH, will use nix run"
+    return 1
+  fi
+  return 0
+}
 
-# Backup existing dotfiles that home-manager will manage
-echo "Backing up existing dotfiles..."
-BACKUP_DIR="$HOME/.config/home-manager-backups/$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$BACKUP_DIR"
+# Clone or update config repo
+setup_config() {
+  if [ -d "$CONFIG_DIR/.git" ]; then
+    info "Config directory exists, pulling latest..."
+    git -C "$CONFIG_DIR" pull --ff-only || warn "Pull failed, using existing config"
+  else
+    info "Cloning config repository..."
+    git clone "$REPO_URL" "$CONFIG_DIR"
+  fi
+}
 
-for file in .zshrc .zshenv .gitconfig .tmux.conf; do
-    if [ -f "$HOME/$file" ] || [ -L "$HOME/$file" ]; then
-        echo "  Backing up ~/$file"
-        cp -P "$HOME/$file" "$BACKUP_DIR/" 2>/dev/null || true
-        # Remove the file after backing up so home-manager can manage it
-        rm -f "$HOME/$file"
-    fi
-done
+# Main bootstrap
+main() {
+  info "=== Nix Environment Bootstrap ==="
+  
+  local system=$(detect_system)
+  local username=$(whoami)
+  local config="${username}@${system}"
+  
+  info "Detected system: $system"
+  info "Username: $username"
+  info "Config: $config"
+  
+  check_nix
+  setup_config
+  
+  cd "$CONFIG_DIR"
+  
+  info "Updating flake inputs..."
+  nix flake update
+  
+  info "Building and activating home-manager configuration..."
+  if check_home_manager; then
+    home-manager switch --flake ".#${config}"
+  else
+    nix run home-manager -- switch --flake ".#${config}"
+  fi
+  
+  info "=== Bootstrap complete! ==="
+  info "Restart your shell or run: exec zsh"
+  info ""
+  info "Commands available:"
+  info "  hms  - Switch home-manager configuration"
+  info "  nfu  - Update flake inputs"
+  info "  em   - Open Emacs (via daemon)"
+  info "  emt  - Open Emacs in terminal"
+}
 
-if [ "$(ls -A $BACKUP_DIR 2>/dev/null)" ]; then
-    echo "✓ Backups saved to: $BACKUP_DIR"
-else
-    rmdir "$BACKUP_DIR" 2>/dev/null || true
-    echo "  No existing files to backup"
-fi
-echo ""
-
-# Build and activate home-manager configuration
-cd ~/.config/home-manager
-
-echo "Building home-manager configuration..."
-nix build .#homeConfigurations.gfoster@${SYSTEM}.activationPackage
-
-echo "Activating home-manager..."
-./result/activate
-
-echo ""
-echo "✓ Home-manager installed and activated!"
-echo ""
-echo "Please restart your terminal or run:"
-echo "  source ~/.zshrc"
-echo ""
-echo "Then you can use 'home-manager' command:"
-echo "  home-manager switch --flake .#gfoster@${SYSTEM}"
+main "$@"
