@@ -151,9 +151,6 @@ in
         bindkey -M vicmd '^[OA' history-substring-search-up
         bindkey -M vicmd '^[OB' history-substring-search-down
 
-        # Environment variables
-        export EDITOR='emacs -nw'
-
         ${cfg.extraInitExtra}
       '';
 
@@ -161,10 +158,6 @@ in
         path = "$HOME/.zsh_history";
         size = 10000;
         save = 10000;
-      };
-
-      sessionVariables = {
-        EDITOR = "emacs -nw";
       };
     };
 
