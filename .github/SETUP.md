@@ -1,86 +1,47 @@
-# GitHub Actions Setup Guide
+# GitHub Setup
 
-This repository includes a GitHub Action that automatically builds and pushes a Docker image to Docker Hub.
+## Required Secrets
 
-## Docker Hub Setup
+For Docker Hub push to work, add these to your repo:
 
-1. **Create Docker Hub account** (if you don't have one)
-   - Go to https://hub.docker.com/
-   - Sign up or log in
+**Settings → Secrets and variables → Actions**
 
-2. **Create Access Token**
-   - Go to Account Settings → Security → Access Tokens
-   - Click "New Access Token"
-   - Name: `github-actions-home-manager`
-   - Permissions: Read, Write, Delete
-   - Copy the token (you won't see it again!)
+| Type | Name | Value |
+|------|------|-------|
+| Variable | `DOCKERHUB_USERNAME` | `brona90` |
+| Secret | `DOCKERHUB_TOKEN` | Your Docker Hub access token |
 
-3. **Add Secrets to GitHub**
-   - Go to your repository: https://github.com/brona90/home-manager
-   - Settings → Secrets and variables → Actions
-   - Click "New repository secret"
-   
-   Add two secrets:
-   - Name: `DOCKERHUB_USERNAME`
-     Value: `brona90`
-   
-   - Name: `DOCKERHUB_TOKEN`
-     Value: [paste the access token from step 2]
+### Creating a Docker Hub Token
 
-## What the Action Does
+1. Go to https://hub.docker.com/settings/security
+2. Click "New Access Token"
+3. Name: `github-actions`
+4. Permissions: Read, Write, Delete
+5. Copy the token
 
-On every push to `master`:
-1. Checks out the code
-2. Installs Nix with flakes enabled
-3. Builds the Docker image using `nix build .#dockerImage`
-4. Tags the image as:
-   - `brona90/terminal:latest`
-   - `brona90/terminal:YYYYMMDD` (date-stamped)
-5. Pushes both tags to Docker Hub
-6. Tests the image to verify tools are available
+## CI Pipeline
 
-## Manual Trigger
+The CI workflow (`.github/workflows/ci.yml`) runs:
 
-You can also trigger the build manually:
-1. Go to Actions tab in GitHub
-2. Select "Build and Push Docker Image"
-3. Click "Run workflow"
-4. Select branch (master)
-5. Click "Run workflow"
+| Job | Trigger | What it does |
+|-----|---------|--------------|
+| `check` | All pushes/PRs | Validates flake structure |
+| `build` | After check | Builds home-manager and NixOS configs |
+| `docker` | Merge to master | Builds, tests, pushes Docker image |
 
-## Using the Published Image
+## Flake Updates
 
-Once published, anyone can use your terminal environment:
+The update workflow (`.github/workflows/update-flake.yml`) runs weekly and creates PRs to update `flake.lock`.
+
+## Using the Docker Image
 
 ```bash
-# Pull and run the latest version
+# Latest
 docker run -it --rm brona90/terminal:latest
 
-# Pull a specific date version
-docker run -it --rm brona90/terminal:20260112
+# Specific date
+docker run -it --rm brona90/terminal:20260124
 
-# Run with mounted SSH keys
-docker run -it --rm \
-  -v ~/.ssh:/home/gfoster/.ssh:ro \
-  brona90/terminal:latest
+# With SSH keys
+docker run -it --rm -v ~/.ssh:/home/gfoster/.ssh:ro brona90/terminal:latest
 ```
-
-## Troubleshooting
-
-### Build fails with "unauthorized"
-- Check that DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets are set correctly
-- Verify the token has write permissions
-
-### Build fails with Nix errors
-- Check that flake.nix is valid
-- Test locally first: `nix build .#dockerImage`
-
-### Image not appearing on Docker Hub
-- Check the Actions tab for errors
-- Verify you're pushing to master branch (PRs don't push)
-- Check Docker Hub repository visibility settings
-
-## Monitoring
-
-- View build status: https://github.com/brona90/home-manager/actions
-- View published images: https://hub.docker.com/r/brona90/terminal
