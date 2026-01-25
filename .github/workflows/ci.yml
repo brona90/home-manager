@@ -26,7 +26,7 @@ jobs:
         with:
           name: nix-community
           extraPullNames: emacs
-      - run: nix flake check --show-trace
+      - run: nix flake check 2>&1 | grep -v "could not update mtime"
 
   docker-build:
     name: Build & Push Docker
@@ -52,7 +52,7 @@ jobs:
           sudo docker image prune --all --force
       - name: Build Docker image
         run: |
-          nix build .#dockerImage --show-trace
+          nix build .#dockerImage 2>&1 | grep -v "could not update mtime" || true
           docker load < result
       - name: Push to Docker Hub
         run: |
@@ -111,7 +111,7 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
       - name: Build NixOS configuration
-        run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel --show-trace
+        run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel 2>&1 | grep -v "could not update mtime" || true
 
   validate-darwin:
     name: Validate Darwin (Apple Silicon)
@@ -132,4 +132,4 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           extraPullNames: nix-community,emacs
       - name: Build Darwin configuration
-        run: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage --show-trace
+        run: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage 2>&1 | grep -v "could not update mtime" || true
