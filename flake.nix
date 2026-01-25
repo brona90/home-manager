@@ -1,11 +1,16 @@
 {
-  description = "Gregory's Home Manager configuration (module-based)";
+  description = "Gregory's Home Manager and NixOS configurations";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     home-manager = {
       url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    nixos-wsl = {
+      url = "github:nix-community/NixOS-WSL";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -20,7 +25,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, sops-nix, doom-emacs, ... }:
+  outputs = { self, nixpkgs, home-manager, nixos-wsl, sops-nix, doom-emacs, ... }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -109,7 +114,22 @@
         };
 
     in {
-      # Home configurations
+      # ──────────────────────────────────────────────────────────────
+      # NixOS Configurations
+      # ──────────────────────────────────────────────────────────────
+      nixosConfigurations = {
+        wsl-nixos = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            nixos-wsl.nixosModules.default
+            ./hosts/wsl-nixos/configuration.nix
+          ];
+        };
+      };
+
+      # ──────────────────────────────────────────────────────────────
+      # Home Manager Configurations
+      # ──────────────────────────────────────────────────────────────
       homeConfigurations = {
         "gfoster@x86_64-linux"  = mkHomeConfiguration { system = "x86_64-linux"; };
         "gfoster@aarch64-linux" = mkHomeConfiguration { system = "aarch64-linux"; };
@@ -119,7 +139,9 @@
         "888973@aarch64-darwin" = mkHomeConfiguration { system = "aarch64-darwin"; username = "888973"; };
       };
 
+      # ──────────────────────────────────────────────────────────────
       # Packages
+      # ──────────────────────────────────────────────────────────────
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
@@ -138,7 +160,9 @@
         } else {})
       );
 
+      # ──────────────────────────────────────────────────────────────
       # Apps
+      # ──────────────────────────────────────────────────────────────
       apps = forAllSystems (system:
         let
           pkgs = pkgsFor system;
