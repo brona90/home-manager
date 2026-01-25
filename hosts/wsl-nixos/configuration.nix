@@ -2,10 +2,6 @@
 { config, lib, pkgs, ... }:
 
 {
-  # Hostname must match the flake's nixosConfigurations attribute name
-  # This allows: sudo nixos-rebuild switch --flake .
-  networking.hostName = "wsl-nixos";
-
   wsl.enable = true;
   wsl.defaultUser = "gfoster";
   wsl.docker-desktop.enable = true;

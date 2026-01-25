@@ -118,7 +118,8 @@
       # NixOS Configurations
       # ──────────────────────────────────────────────────────────────
       nixosConfigurations = {
-        wsl-nixos = nixpkgs.lib.nixosSystem {
+        # Matches default NixOS-WSL hostname
+        nixos = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           modules = [
             nixos-wsl.nixosModules.default

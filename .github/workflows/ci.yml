@@ -36,7 +36,7 @@ jobs:
           - type: home
             config: gfoster@x86_64-linux
           - type: nixos
-            config: wsl-nixos
+            config: nixos
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v27
