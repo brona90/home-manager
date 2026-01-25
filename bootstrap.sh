@@ -6,6 +6,8 @@ set -euo pipefail
 
 REPO_URL="https://github.com/brona90/home-manager.git"
 CONFIG_DIR="${HOME}/.config/home-manager"
+NIX_CONF_DIR="${HOME}/.config/nix"
+NIX_CONF="${NIX_CONF_DIR}/nix.conf"
 
 # Colors
 RED='\033[0;31m'
@@ -51,20 +53,42 @@ check_nix() {
     curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install"
   fi
   
-  if ! nix --version 2>&1 | grep -q "nix"; then
-    error "Nix installation appears broken"
+  info "Nix found: $(nix --version)"
+}
+
+# Enable flakes if not already enabled
+enable_flakes() {
+  mkdir -p "$NIX_CONF_DIR"
+  
+  if [ -f "$NIX_CONF" ] && grep -q "experimental-features.*flakes" "$NIX_CONF"; then
+    info "Flakes already enabled"
+    return
   fi
   
-  info "Nix found: $(nix --version)"
+  info "Enabling flakes..."
+  
+  if [ -f "$NIX_CONF" ]; then
+    # Append to existing config
+    echo "" >> "$NIX_CONF"
+    echo "# Enable flakes and new nix command" >> "$NIX_CONF"
+    echo "experimental-features = nix-command flakes" >> "$NIX_CONF"
+  else
+    # Create new config
+    cat > "$NIX_CONF" << 'EOF'
+# Enable flakes and new nix command
+experimental-features = nix-command flakes
+EOF
+  fi
+  
+  info "Flakes enabled in $NIX_CONF"
 }
 
 # Check if home-manager is available
 check_home_manager() {
-  if ! command -v home-manager &>/dev/null; then
-    warn "home-manager not in PATH, will use nix run"
-    return 1
+  if command -v home-manager &>/dev/null; then
+    return 0
   fi
-  return 0
+  return 1
 }
 
 # Clone or update config repo
@@ -74,6 +98,7 @@ setup_config() {
     git -C "$CONFIG_DIR" pull --ff-only || warn "Pull failed, using existing config"
   else
     info "Cloning config repository..."
+    mkdir -p "$(dirname "$CONFIG_DIR")"
     git clone "$REPO_URL" "$CONFIG_DIR"
   fi
 }
@@ -91,17 +116,16 @@ main() {
   info "Config: $config"
   
   check_nix
+  enable_flakes
   setup_config
   
   cd "$CONFIG_DIR"
-  
-  info "Updating flake inputs..."
-  nix flake update
   
   info "Building and activating home-manager configuration..."
   if check_home_manager; then
     home-manager switch --flake ".#${config}"
   else
+    # First run: use nix run to bootstrap home-manager
     nix run home-manager -- switch --flake ".#${config}"
   fi
   
@@ -110,6 +134,7 @@ main() {
   info ""
   info "Commands available:"
   info "  hms  - Switch home-manager configuration"
+  info "  nrs  - Switch NixOS configuration (NixOS only)"
   info "  nfu  - Update flake inputs"
   info "  em   - Open Emacs (via daemon)"
   info "  emt  - Open Emacs in terminal"
