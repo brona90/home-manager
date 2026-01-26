@@ -10,7 +10,7 @@
 keys:
   # Add your age public keys here (one per machine)
   # Format: age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  - &gfoster_wsl age1REPLACE_WITH_YOUR_PUBLIC_KEY
+  - &gfoster_wsl age1m0ye9zusm48tf6k34ty833qxnn3rxtqe9cdekm9ejanq0m4e85ls8jsd79
 
 creation_rules:
   - path_regex: secrets/.*\.yaml$

@@ -17,20 +17,44 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf (cfg.enable && secretsExist) {
     home.packages = [ pkgs.sops pkgs.age ];
 
     sops = {
       age.keyFile = cfg.ageKeyFile;
-      defaultSopsFile = lib.mkIf secretsExist secretsFile;
+      defaultSopsFile = secretsFile;
 
-      # Example secrets (uncomment when secrets.yaml exists):
-      # secrets.github_token = {};
-      # secrets.openai_api_key = {};
-      # secrets."ssh/id_ed25519" = {
-      #   path = "${config.home.homeDirectory}/.ssh/id_ed25519";
-      #   mode = "0600";
-      # };
+      secrets = {
+        github_token = {};
+        dockerhub_token = {};
+        "ssh/id_rsa" = {
+          path = "${config.home.homeDirectory}/.ssh/id_rsa";
+          mode = "0600";
+        };
+        "ssh/id_rsa_pub" = {
+          path = "${config.home.homeDirectory}/.ssh/id_rsa.pub";
+          mode = "0644";
+        };
+      };
     };
+
+    # Ensure .ssh directory exists with correct permissions
+    home.activation.createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+      mkdir -p "${config.home.homeDirectory}/.ssh"
+      chmod 700 "${config.home.homeDirectory}/.ssh"
+    '';
+
+    # Export tokens as env vars
+    home.sessionVariables = {
+      GITHUB_TOKEN_FILE = config.sops.secrets.github_token.path;
+      DOCKERHUB_TOKEN_FILE = config.sops.secrets.dockerhub_token.path;
+    };
+
+    # Shell helper to read tokens
+    my.zsh.extraInitExtra = ''
+      # Helper functions for secrets
+      github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+      dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+    '';
   };
 }
