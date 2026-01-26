@@ -6,7 +6,7 @@ Reproducible, cross-platform development environment using Nix flakes.
 
 ```bash
 # Bootstrap on fresh system
-curl -fsSL https://raw.githubusercontent.com/yourusername/home-manager/master/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gfoster/home-manager/master/bootstrap.sh | bash
 
 # Or if already have nix:
 home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --impure --raw --expr 'builtins.currentSystem')"
@@ -22,6 +22,8 @@ home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --imp
 | `em`    | Emacs (GUI, uses daemon) |
 | `emt`   | Emacs terminal |
 | `lvim`  | LazyVim |
+| `github-token` | Print GitHub token |
+| `dockerhub-token` | Print Docker Hub token |
 
 ## Structure
 
@@ -39,9 +41,12 @@ home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --imp
 │   ├── zsh.nix
 │   ├── git.nix
 │   ├── btop.nix
+│   ├── sops.nix           # Secrets management
 │   ├── emacs/
 │   ├── vim/
 │   └── tmux/
+├── secrets/               # Encrypted secrets (safe to commit)
+│   └── secrets.yaml
 ├── lib/                   # Helper functions
 │   ├── docker-image.nix
 │   └── docker-test-app.nix
@@ -56,6 +61,96 @@ home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --imp
 - `aarch64-linux` (Raspberry Pi, ARM servers)
 - `x86_64-darwin` (Intel Mac)
 - `aarch64-darwin` (Apple Silicon)
+
+## New Machine Setup
+
+### Existing age key (same key on all machines)
+
+```bash
+# 1. Install nix, clone repo
+curl -fsSL https://raw.githubusercontent.com/gfoster/home-manager/master/bootstrap.sh | bash
+
+# 2. Copy age key from existing machine (via Signal, password manager, etc)
+mkdir -p ~/.config/sops/age
+vim ~/.config/sops/age/keys.txt  # paste key
+chmod 600 ~/.config/sops/age/keys.txt
+
+# 3. Apply
+cd ~/.config/home-manager
+hms
+```
+
+### New age key (one key per machine)
+
+```bash
+# 1. On new machine: generate age key
+mkdir -p ~/.config/sops/age
+age-keygen -o ~/.config/sops/age/keys.txt
+age-keygen -y ~/.config/sops/age/keys.txt
+# Copy the public key (age1...)
+
+# 2. On existing machine: add new key to .sops.yaml
+cd ~/.config/home-manager
+vim .sops.yaml  # add new public key
+
+# 3. Re-encrypt secrets with new key
+sops updatekeys secrets/secrets.yaml
+git add -A
+git commit -m "feat(sops): add <machine> age key"
+git push
+
+# 4. On new machine: pull and apply
+git pull
+hms
+```
+
+## Secrets Management
+
+Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
+
+### Current secrets
+
+- `github_token` - GitHub API token
+- `dockerhub_token` - Docker Hub token
+- `ssh/id_rsa` - SSH private key (synced to `~/.ssh/id_rsa`)
+- `ssh/id_rsa_pub` - SSH public key (synced to `~/.ssh/id_rsa.pub`)
+
+### Edit secrets
+
+```bash
+sops secrets/secrets.yaml
+```
+
+### Add new secret
+
+1. Edit secrets file: `sops secrets/secrets.yaml`
+2. Add to `modules/sops.nix`:
+   ```nix
+   sops.secrets.my_secret = {};
+   ```
+3. Access in shell: `cat $SOPS_SECRETS_DIR/my_secret`
+
+### Security
+
+- **Safe to commit:** `secrets/secrets.yaml` (encrypted), `.sops.yaml` (public keys only)
+- **Never commit:** `~/.config/sops/age/keys.txt` (private key)
+- If private key compromised: generate new key, re-encrypt secrets, revoke tokens
+
+## Flake Updates
+
+```bash
+# Update all inputs (weekly/monthly)
+nfu
+nix flake check
+hms
+# Test, then commit
+git add flake.lock
+git commit -m "chore: update flake inputs"
+git push
+
+# Update single input (when adding new)
+nix flake lock --update-input <name>
+```
 
 ## CI Pipeline
 
@@ -78,7 +173,7 @@ docker run -it --rm brona90/terminal:latest
 
 ## Caches
 
-Uses Cachix for binary caching. Configure on fresh systems:
+Uses Cachix for binary caching.
 
 ```bash
 # NixOS: Configured in hosts/common/default.nix
@@ -112,3 +207,7 @@ in {
 1. Create `hosts/myhost/configuration.nix`
 2. Add to `flake.nix` nixosConfigurations
 3. Import `../common` for shared settings
+
+## TODO
+
+- [ ] Multi-machine deploy alias/script
