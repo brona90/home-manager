@@ -12,6 +12,7 @@
 ;;; Productivity
 (package! org-roam)              ; Zettelkasten note-taking
 (package! org-journal)           ; Daily journaling
+(package! org-drawio)
 (package! deft)                  ; Quick note search
 (package! pdf-tools)             ; Better PDF viewing
 
