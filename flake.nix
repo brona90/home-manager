@@ -1,5 +1,5 @@
 {
-  description = "Gregory's Home Manager and NixOS configurations";
+  description = "Reproducible Home Manager and NixOS configurations";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -27,8 +27,11 @@
 
   outputs = { self, nixpkgs, home-manager, nixos-wsl, doom-emacs, sops-nix, ... }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-      forAllSystems = nixpkgs.lib.genAttrs systems;
+      # Read user configuration
+      userConfig = import ./config.nix;
+
+      allSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      forAllSystems = nixpkgs.lib.genAttrs allSystems;
 
       pkgsFor = system: import nixpkgs {
         inherit system;
@@ -36,14 +39,12 @@
         overlays = [ doom-emacs.overlays.default ];
       };
 
-      defaultUsername = "gfoster";
-
       homeDirectoryFor = { system, username }:
         if nixpkgs.lib.hasInfix "darwin" system
         then "/Users/${username}"
         else "/home/${username}";
 
-      mkHomeConfiguration = { system, username ? defaultUsername }:
+      mkHomeConfiguration = { system, username }:
         let
           pkgs = pkgsFor system;
           homeDirectory = homeDirectoryFor { inherit system username; };
@@ -89,6 +90,17 @@
           }];
         };
 
+      # Generate homeConfigurations from config.nix
+      homeConfigs = builtins.foldl' (acc: user:
+        acc // builtins.foldl' (inner: system:
+          inner // { "${user.username}@${system}" = mkHomeConfiguration { inherit system; inherit (user) username; }; }
+        ) {} user.systems
+      ) {} userConfig.users;
+
+      # Get first user's first system for defaults
+      defaultUser = builtins.head userConfig.users;
+      defaultUsername = defaultUser.username;
+
     in {
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
@@ -99,26 +111,24 @@
         ];
       };
 
-      homeConfigurations = {
-        "gfoster@x86_64-linux"   = mkHomeConfiguration { system = "x86_64-linux"; };
-        "gfoster@aarch64-linux"  = mkHomeConfiguration { system = "aarch64-linux"; };
-        "gfoster@x86_64-darwin"  = mkHomeConfiguration { system = "x86_64-darwin"; };
-        "gfoster@aarch64-darwin" = mkHomeConfiguration { system = "aarch64-darwin"; };
-        "888973@aarch64-darwin"  = mkHomeConfiguration { system = "aarch64-darwin"; username = "888973"; };
-      };
+      homeConfigurations = homeConfigs;
 
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          username = defaultUsername;
-          homeDirectory = homeDirectoryFor { inherit system username; };
+          homeDirectory = homeDirectoryFor { inherit system; username = defaultUsername; };
           isLinux = !(nixpkgs.lib.hasInfix "darwin" system);
+          configKey = "${defaultUsername}@${system}";
+          hasConfig = builtins.hasAttr configKey homeConfigs;
         in
-        { default = self.homeConfigurations."${username}@${system}".activationPackage; }
-        // (if isLinux then {
+        (if hasConfig then {
+          default = homeConfigs.${configKey}.activationPackage;
+        } else {})
+        // (if isLinux && hasConfig then {
           dockerImage = import ./lib/docker-image.nix {
-            inherit pkgs username homeDirectory;
-            homeConfiguration = self.homeConfigurations."${username}@${system}";
+            inherit pkgs homeDirectory;
+            username = defaultUsername;
+            homeConfiguration = homeConfigs.${configKey};
             imageName = "brona90/terminal";
           };
         } else {})
@@ -127,21 +137,22 @@
       apps = forAllSystems (system:
         let
           pkgs = pkgsFor system;
-          username = defaultUsername;
-          homeDirectory = homeDirectoryFor { inherit system username; };
+          homeDirectory = homeDirectoryFor { inherit system; username = defaultUsername; };
           isLinux = !(nixpkgs.lib.hasInfix "darwin" system);
+          configKey = "${defaultUsername}@${system}";
+          hasConfig = builtins.hasAttr configKey homeConfigs;
         in
-        {
+        (if hasConfig then {
           default = {
             type = "app";
             meta.description = "Activate home-manager configuration";
             program = toString (pkgs.writeShellScript "activate-home" ''
               echo "Activating home-manager configuration for ${system}..."
-              home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}"
+              home-manager switch --flake "$HOME/.config/home-manager#${defaultUsername}@${system}"
             '');
           };
-        }
-        // (if isLinux then {
+        } else {})
+        // (if isLinux && hasConfig then {
           docker-test = import ./lib/docker-test-app.nix { inherit pkgs homeDirectory; };
         } else {})
       );

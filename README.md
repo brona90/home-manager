@@ -5,11 +5,28 @@ Reproducible, cross-platform development environment using Nix flakes.
 ## Quick Start
 
 ```bash
-# Bootstrap on fresh system
-curl -fsSL https://raw.githubusercontent.com/gfoster/home-manager/master/bootstrap.sh | bash
+# Bootstrap on fresh system (interactive - prompts for username)
+curl -fsSL https://raw.githubusercontent.com/brona90/home-manager/master/bootstrap.sh | bash
 
-# Or if already have nix:
-home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --impure --raw --expr 'builtins.currentSystem')"
+# Or if already have nix and repo cloned:
+home-manager switch --flake "$HOME/.config/home-manager#USERNAME@SYSTEM" -b backup
+```
+
+## Forking This Repo
+
+1. Fork on GitHub
+2. Update `REPO_URL` in `bootstrap.sh` to your fork
+3. Run bootstrap - it will prompt for your username and add you to `config.nix`
+4. Commit and push your changes
+
+Or manually edit `config.nix`:
+
+```nix
+{
+  users = [
+    { username = "yourusername"; systems = [ "x86_64-linux" ]; }
+  ];
+}
 ```
 
 ## Commands
@@ -30,6 +47,7 @@ home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --imp
 ```
 .
 ├── flake.nix              # Main entry point
+├── config.nix             # User configuration (edit this!)
 ├── home/                  # Home Manager profiles
 │   ├── common.nix         # Shared across all systems
 │   ├── linux.nix          # Linux-specific
@@ -57,49 +75,58 @@ home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --imp
 
 ## Supported Systems
 
-- `x86_64-linux` (Debian WSL, NixOS WSL, Docker)
+- `x86_64-linux` (Debian, Ubuntu, NixOS, WSL)
 - `aarch64-linux` (Raspberry Pi, ARM servers)
 - `x86_64-darwin` (Intel Mac)
-- `aarch64-darwin` (Apple Silicon)
+- `aarch64-darwin` (Apple Silicon Mac)
 
-## New Machine Setup
+## Adding Yourself (for forks)
 
-### Existing age key (same key on all machines)
+Edit `config.nix`:
 
+```nix
+{
+  users = [
+    { username = "alice"; systems = [ "x86_64-linux" "aarch64-darwin" ]; }
+  ];
+}
+```
+
+Then run:
 ```bash
-# 1. Install nix, clone repo
-curl -fsSL https://raw.githubusercontent.com/gfoster/home-manager/master/bootstrap.sh | bash
-
-# 2. Copy age key from existing machine (via Signal, password manager, etc)
-mkdir -p ~/.config/sops/age
-vim ~/.config/sops/age/keys.txt  # paste key
-chmod 600 ~/.config/sops/age/keys.txt
-
-# 3. Apply
-cd ~/.config/home-manager
 hms
 ```
 
-### New age key (one key per machine)
+## New Machine Setup
+
+### Option 1: Same age key (share secrets across machines)
 
 ```bash
-# 1. On new machine: generate age key
-mkdir -p ~/.config/sops/age
-age-keygen -o ~/.config/sops/age/keys.txt
-age-keygen -y ~/.config/sops/age/keys.txt
-# Copy the public key (age1...)
+# 1. Run bootstrap
+curl -fsSL https://raw.githubusercontent.com/.../bootstrap.sh | bash
 
-# 2. On existing machine: add new key to .sops.yaml
+# 2. When prompted for sops setup, paste your existing age key
+# (copy from ~/.config/sops/age/keys.txt on existing machine)
+
+# 3. Done! Secrets will decrypt automatically
+```
+
+### Option 2: New age key (per-machine keys)
+
+```bash
+# 1. On new machine: run bootstrap, choose to generate new key
+curl -fsSL https://raw.githubusercontent.com/.../bootstrap.sh | bash
+
+# 2. Bootstrap will show your public key (age1...)
+
+# 3. On existing machine with secrets:
 cd ~/.config/home-manager
-vim .sops.yaml  # add new public key
-
-# 3. Re-encrypt secrets with new key
+vim .sops.yaml  # Add new public key
 sops updatekeys secrets/secrets.yaml
-git add -A
-git commit -m "feat(sops): add <machine> age key"
-git push
+git add -A && git commit -m "feat(sops): add <machine> key" && git push
 
-# 4. On new machine: pull and apply
+# 4. On new machine:
+cd ~/.config/home-manager
 git pull
 hms
 ```
@@ -121,20 +148,10 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 sops secrets/secrets.yaml
 ```
 
-### Add new secret
-
-1. Edit secrets file: `sops secrets/secrets.yaml`
-2. Add to `modules/sops.nix`:
-   ```nix
-   sops.secrets.my_secret = {};
-   ```
-3. Access in shell: `cat $SOPS_SECRETS_DIR/my_secret`
-
 ### Security
 
-- **Safe to commit:** `secrets/secrets.yaml` (encrypted), `.sops.yaml` (public keys only)
+- **Safe to commit:** `secrets/secrets.yaml` (encrypted), `.sops.yaml` (public keys)
 - **Never commit:** `~/.config/sops/age/keys.txt` (private key)
-- If private key compromised: generate new key, re-encrypt secrets, revoke tokens
 
 ## Flake Updates
 
@@ -143,12 +160,11 @@ sops secrets/secrets.yaml
 nfu
 nix flake check
 hms
-# Test, then commit
 git add flake.lock
 git commit -m "chore: update flake inputs"
 git push
 
-# Update single input (when adding new)
+# Update single input
 nix flake lock --update-input <name>
 ```
 
@@ -173,12 +189,11 @@ docker run -it --rm brona90/terminal:latest
 
 ## Caches
 
-Uses Cachix for binary caching.
+Uses Cachix for binary caching. Bootstrap configures this automatically.
 
+Manual setup:
 ```bash
-# NixOS: Configured in hosts/common/default.nix
-
-# Non-NixOS: Add to /etc/nix/nix.conf
+# Add to ~/.config/nix/nix.conf or /etc/nix/nix.conf
 extra-substituters = https://gfoster.cachix.org
 extra-trusted-public-keys = gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
 ```
@@ -201,12 +216,6 @@ in {
 
 2. Import in `flake.nix` modules list
 3. Enable in `home/common.nix`: `my.mymodule.enable = true;`
-
-## Adding a New Host
-
-1. Create `hosts/myhost/configuration.nix`
-2. Add to `flake.nix` nixosConfigurations
-3. Import `../common` for shared settings
 
 ## TODO
 
