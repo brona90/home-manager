@@ -6,6 +6,7 @@
 
 {
   type = "app";
+  meta.description = "Build and test Docker image locally";
   program = toString (pkgs.writeShellScript "docker-test" ''
     set -e
     echo "Building Docker image..."

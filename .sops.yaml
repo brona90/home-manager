@@ -1,0 +1,20 @@
+# SOPS configuration
+# See: https://github.com/Mic92/sops-nix
+
+# To set up:
+# 1. Generate age key: mkdir -p ~/.config/sops/age && age-keygen -o ~/.config/sops/age/keys.txt
+# 2. Get public key: age-keygen -y ~/.config/sops/age/keys.txt
+# 3. Add public key below
+# 4. Create secrets: sops secrets/secrets.yaml
+
+keys:
+  # Add your age public keys here (one per machine)
+  # Format: age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  - &gfoster_wsl age1REPLACE_WITH_YOUR_PUBLIC_KEY
+
+creation_rules:
+  - path_regex: secrets/.*\.yaml$
+    key_groups:
+      - age:
+          - *gfoster_wsl
+          # Add more keys for other machines

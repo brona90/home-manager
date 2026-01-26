@@ -1,34 +1,32 @@
 { config, lib, pkgs, ... }:
 
-with lib;
-
 let
   cfg = config.my.zsh;
 in
 {
   options.my.zsh = {
-    enable = mkEnableOption "Gregory's zsh configuration";
+    enable = lib.mkEnableOption "Gregory's zsh configuration";
 
-    extraOhMyZshPlugins = mkOption {
-      type = types.listOf types.str;
+    extraOhMyZshPlugins = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "Additional oh-my-zsh plugins to enable";
     };
 
-    extraAliases = mkOption {
-      type = types.attrsOf types.str;
+    extraAliases = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
       default = { };
       description = "Additional shell aliases";
     };
 
-    extraInitExtra = mkOption {
-      type = types.lines;
+    extraInitExtra = lib.mkOption {
+      type = lib.types.lines;
       default = "";
       description = "Additional zsh init commands";
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     programs.zsh = {
       enable = true;
       enableCompletion = true;
@@ -73,7 +71,7 @@ in
         k9 = "kill -9";
 
         # Nix aliases
-        nrs = "sudo nixos-rebuild switch --flake ~/.config/home-manager";
+        nrs = ''sudo nixos-rebuild switch --flake "$HOME/.config/home-manager"'';
         nfu = "nix flake update";
 
         # Editor aliases
@@ -89,13 +87,8 @@ in
           "direnv"
         ] ++ cfg.extraOhMyZshPlugins;
         extraConfig = ''
-          # Update settings
           zstyle ':omz:update' mode auto
-
-          # Enable command auto-correction
           ENABLE_CORRECTION="true"
-
-          # Completion waiting dots
           COMPLETION_WAITING_DOTS="true"
         '';
       };
@@ -114,28 +107,20 @@ in
       ];
 
       initContent = ''
-        # Enable extended globbing (required for history-substring-search)
         setopt extendedglob
-
-        # Enable vi mode
         bindkey -v
         export KEYTIMEOUT=1
 
-        # History substring search highlighting
-        # Use typeset -g to ensure these are global and visible to the plugin
         typeset -g HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_FOUND='bg=green,fg=white,bold'
         typeset -g HISTORY_SUBSTRING_SEARCH_HIGHLIGHT_NOT_FOUND='bg=red,fg=white,bold'
         typeset -g HISTORY_SUBSTRING_SEARCH_FUZZY=1
         typeset -g HISTORY_SUBSTRING_SEARCH_ENSURE_UNIQUE=1
 
-        # History substring search keybindings
-        # Bind both escape sequences for terminal compatibility
         bindkey '^[[A' history-substring-search-up
         bindkey '^[[B' history-substring-search-down
         bindkey '^[OA' history-substring-search-up
         bindkey '^[OB' history-substring-search-down
         
-        # Vi insert mode
         bindkey -M viins '^[[A' history-substring-search-up
         bindkey -M viins '^[[B' history-substring-search-down
         bindkey -M viins '^[OA' history-substring-search-up
@@ -143,7 +128,6 @@ in
         bindkey -M viins '^P' history-substring-search-up
         bindkey -M viins '^N' history-substring-search-down
         
-        # Vi command mode
         bindkey -M vicmd 'k' history-substring-search-up
         bindkey -M vicmd 'j' history-substring-search-down
         bindkey -M vicmd '^[[A' history-substring-search-up

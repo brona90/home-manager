@@ -1,149 +1,114 @@
-# Nix Configuration
+# Home Manager Configuration
 
-A reproducible, cross-platform development environment using Nix flakes.
+Reproducible, cross-platform development environment using Nix flakes.
 
 ## Quick Start
 
 ```bash
-# On any system with Nix installed:
-curl -sL https://raw.githubusercontent.com/brona90/home-manager/master/bootstrap.sh | bash
+# Bootstrap on fresh system
+curl -fsSL https://raw.githubusercontent.com/yourusername/home-manager/master/bootstrap.sh | bash
+
+# Or if already have nix:
+home-manager switch --flake "$HOME/.config/home-manager#gfoster@$(nix eval --impure --raw --expr 'builtins.currentSystem')"
 ```
-
-Or manually:
-
-```bash
-git clone https://github.com/brona90/home-manager.git ~/.config/home-manager
-cd ~/.config/home-manager
-./bootstrap.sh
-```
-
-## Supported Platforms
-
-| Platform | Config |
-|----------|--------|
-| Linux x86_64 | `gfoster@x86_64-linux` |
-| Linux ARM64 | `gfoster@aarch64-linux` |
-| macOS Intel | `gfoster@x86_64-darwin` |
-| macOS Apple Silicon | `gfoster@aarch64-darwin` |
-| NixOS WSL | `wsl-nixos` |
 
 ## Commands
 
-After installation, these commands work on **any** platform:
+| Command | Description |
+|---------|-------------|
+| `hms`   | Home Manager switch (rebuild config) |
+| `nrs`   | NixOS rebuild switch |
+| `nfu`   | Nix flake update |
+| `em`    | Emacs (GUI, uses daemon) |
+| `emt`   | Emacs terminal |
+| `lvim`  | LazyVim |
 
-```bash
-hms   # Switch home-manager configuration
-nfu   # Update flake inputs
-em    # Open Emacs (connects to daemon, starts if needed)
-emt   # Open Emacs in terminal mode
-```
-
-## What's Included
-
-| Tool | Description |
-|------|-------------|
-| **zsh** | oh-my-zsh, starship prompt, syntax highlighting, vi mode |
-| **emacs** | Doom Emacs with daemon mode |
-| **vim** | LazyVim with LSPs, formatters, treesitter |
-| **tmux** | gpakosz/.tmux configuration |
-| **git** | Aliases and global config |
-| **btop** | System monitor |
-
-## Repository Structure
+## Structure
 
 ```
-├── flake.nix           # Main flake (inputs, outputs, configs)
-├── modules/            # Home Manager modules
+.
+├── flake.nix              # Main entry point
+├── home/                  # Home Manager profiles
+│   ├── common.nix         # Shared across all systems
+│   ├── linux.nix          # Linux-specific
+│   └── darwin.nix         # macOS-specific
+├── hosts/                 # NixOS configurations
+│   ├── common/            # Shared NixOS settings
+│   └── wsl/               # WSL-specific config
+├── modules/               # Reusable Home Manager modules
 │   ├── zsh.nix
 │   ├── git.nix
 │   ├── btop.nix
-│   ├── vim/
 │   ├── emacs/
+│   ├── vim/
 │   └── tmux/
-├── hosts/              # NixOS host configurations
-│   └── wsl-nixos/
-├── lib/                # Reusable Nix functions
-│   └── docker-image.nix
-└── .github/workflows/  # CI/CD
+├── lib/                   # Helper functions
+│   ├── docker-image.nix
+│   └── docker-test-app.nix
+└── .github/workflows/     # CI/CD
+    ├── ci.yml             # Main pipeline
+    └── validate.yml       # Manual validation
 ```
 
-## Usage
+## Supported Systems
 
-### Home Manager (any system)
+- `x86_64-linux` (Debian WSL, NixOS WSL, Docker)
+- `aarch64-linux` (Raspberry Pi, ARM servers)
+- `x86_64-darwin` (Intel Mac)
+- `aarch64-darwin` (Apple Silicon)
 
-```bash
-# After bootstrap, just use:
-hms
+## CI Pipeline
 
-# Or explicitly:
-home-manager switch --flake ~/.config/home-manager#gfoster@x86_64-linux
+```
+lint (statix, deadnix)
+  └─> check (nix flake check)
+        ├─> docker-build → docker-test
+        └─> validate-nixos
 ```
 
-### NixOS
+## Docker
 
 ```bash
-sudo nixos-rebuild switch --flake ~/.config/home-manager#wsl-nixos
-```
+# Build and test locally
+nix run .#docker-test
 
-### Docker Image
-
-```bash
-# Build locally
-nix build .#dockerImage
-docker load < result
-docker run -it --rm brona90/terminal:latest
-
-# Or pull from Docker Hub
+# Pull from Docker Hub
 docker run -it --rm brona90/terminal:latest
 ```
+
+## Caches
+
+Uses Cachix for binary caching. Configure on fresh systems:
+
+```bash
+# NixOS: Configured in hosts/common/default.nix
+
+# Non-NixOS: Add to /etc/nix/nix.conf
+extra-substituters = https://gfoster.cachix.org
+extra-trusted-public-keys = gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
+```
+
+## Adding a New Module
+
+1. Create `modules/mymodule.nix`:
+```nix
+{ config, lib, pkgs, ... }:
+let cfg = config.my.mymodule;
+in {
+  options.my.mymodule = {
+    enable = lib.mkEnableOption "my module";
+  };
+  config = lib.mkIf cfg.enable {
+    # configuration here
+  };
+}
+```
+
+2. Import in `flake.nix` modules list
+3. Enable in `home/common.nix`: `my.mymodule.enable = true;`
 
 ## Adding a New Host
 
-### For Home Manager (non-NixOS)
-
-Add to `flake.nix`:
-
-```nix
-homeConfigurations = {
-  # ... existing configs ...
-  "myuser@x86_64-linux" = mkHomeConfiguration { 
-    system = "x86_64-linux"; 
-    username = "myuser"; 
-  };
-};
-```
-
-### For NixOS
-
-1. Create `hosts/my-host/configuration.nix`
-2. Add to `flake.nix`:
-
-```nix
-nixosConfigurations = {
-  my-host = nixpkgs.lib.nixosSystem {
-    system = "x86_64-linux";
-    modules = [
-      ./hosts/my-host/configuration.nix
-    ];
-  };
-};
-```
-
-## CI/CD
-
-GitHub Actions automatically:
-- Checks flake validity on every PR
-- Builds home-manager and NixOS configs
-- Builds and pushes Docker image on merge to master
-
-## Prerequisites
-
-Install Nix with flakes:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
-```
-
-## License
-
-MIT
+1. Create `hosts/myhost/configuration.nix`
+2. Add to `flake.nix` nixosConfigurations
+3. Import `../common` for shared settings

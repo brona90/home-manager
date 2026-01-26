@@ -11,10 +11,16 @@ home-manager-generation
 # Backup directories
 home-manager-backups/
 
-# Secrets (if using sops)
-secrets/
-*.age
+# SOPS - allow encrypted secrets, block unencrypted
+# secrets/*.yaml files are encrypted by sops and safe to commit
+!secrets/
+secrets/*.dec.yaml
+secrets/*.unencrypted.yaml
+*.age.key
 *.key
+
+# Age private keys (NEVER commit these)
+keys.txt
 
 # Editor files
 .vscode/
