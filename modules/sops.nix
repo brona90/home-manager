@@ -18,7 +18,19 @@ in
   };
 
   config = lib.mkIf (cfg.enable && secretsExist) {
-    home.packages = [ pkgs.sops pkgs.age ];
+    home = {
+      packages = [ pkgs.sops pkgs.age ];
+
+      activation.createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+        mkdir -p "${config.home.homeDirectory}/.ssh"
+        chmod 700 "${config.home.homeDirectory}/.ssh"
+      '';
+
+      sessionVariables = {
+        GITHUB_TOKEN_FILE = config.sops.secrets.github_token.path;
+        DOCKERHUB_TOKEN_FILE = config.sops.secrets.dockerhub_token.path;
+      };
+    };
 
     sops = {
       age.keyFile = cfg.ageKeyFile;
@@ -38,21 +50,7 @@ in
       };
     };
 
-    # Ensure .ssh directory exists with correct permissions
-    home.activation.createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-      mkdir -p "${config.home.homeDirectory}/.ssh"
-      chmod 700 "${config.home.homeDirectory}/.ssh"
-    '';
-
-    # Export tokens as env vars
-    home.sessionVariables = {
-      GITHUB_TOKEN_FILE = config.sops.secrets.github_token.path;
-      DOCKERHUB_TOKEN_FILE = config.sops.secrets.dockerhub_token.path;
-    };
-
-    # Shell helper to read tokens
     my.zsh.extraInitExtra = ''
-      # Helper functions for secrets
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
     '';

@@ -1,15 +1,4 @@
 # Build a Docker image from a Home Manager configuration
-#
-# Usage in flake.nix:
-#   dockerImage = import ./lib/docker-image.nix {
-#     inherit pkgs;
-#     homeConfiguration = self.homeConfigurations."gfoster@x86_64-linux";
-#     username = "gfoster";
-#     homeDirectory = "/home/gfoster";
-#     imageName = "brona90/terminal";
-#     imageTag = "latest";
-#   };
-
 { pkgs
 , homeConfiguration
 , username
@@ -19,10 +8,9 @@
 }:
 
 let
-  activationPackage = homeConfiguration.activationPackage;
+  inherit (homeConfiguration) activationPackage;
   homePath = "${activationPackage}/home-path";
 
-  # Custom NSS files for user resolution in container
   customNss = pkgs.symlinkJoin {
     name = "custom-nss";
     paths = [
@@ -49,7 +37,6 @@ let
     export HOME=${homeDirectory}
     export USER=${username}
 
-    # Create directories with proper permissions
     mkdir -p ~/.cache/oh-my-zsh/completions 2>/dev/null || true
     mkdir -p ~/.cache/starship 2>/dev/null || true
     mkdir -p ~/.local/share/nvim/lazy 2>/dev/null || true
@@ -68,8 +55,6 @@ let
 
     export PATH="${homePath}/bin:$PATH"
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
-
-    # Set tmux plugin path to writable location
     export TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins"
 
     if [ -f ${homePath}/etc/profile.d/hm-session-vars.sh ]; then
@@ -85,7 +70,6 @@ pkgs.dockerTools.buildLayeredImage {
   tag = imageTag;
 
   contents = [
-    # Base utilities
     pkgs.bashInteractive
     pkgs.coreutils
     pkgs.findutils
@@ -95,25 +79,17 @@ pkgs.dockerTools.buildLayeredImage {
     pkgs.less
     pkgs.which
     pkgs.ncurses
-
-    # Nix itself
     pkgs.nix
     pkgs.cacert
-
-    # Build tools
     pkgs.rsync
     pkgs.gcc
     pkgs.glibc
     pkgs.zlib
     pkgs.stdenv.cc.cc.lib
-
-    # Networking
     pkgs.iana-etc
     pkgs.curl
     pkgs.dnsutils
     pkgs.iputils
-
-    # Our custom files
     customNss
     homePath
     activationPackage

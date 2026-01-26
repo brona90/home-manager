@@ -1,31 +1,22 @@
 { config, lib, pkgs, ... }:
 
-with lib;
-
 let
   cfg = config.my.emacs;
 
-  # Wrapper script that connects to daemon or starts it
   emacsClientWrapper = pkgs.writeShellScriptBin "em" ''
-    # Try to connect to existing daemon, start one if needed
     if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
       echo "Starting Emacs daemon..."
       ${cfg.package}/bin/emacs --daemon
     fi
 
-    # Connect to daemon
     if [ -t 0 ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
-      # Terminal mode (no GUI available)
       exec ${cfg.package}/bin/emacsclient -t "$@"
     else
-      # GUI mode
       exec ${cfg.package}/bin/emacsclient -c "$@"
     fi
   '';
 
-  # Terminal-only version
   emacsClientTerminal = pkgs.writeShellScriptBin "emt" ''
-    # Try to connect to existing daemon, start one if needed
     if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
       echo "Starting Emacs daemon..."
       ${cfg.package}/bin/emacs --daemon
@@ -36,39 +27,36 @@ let
 in
 {
   options.my.emacs = {
-    enable = mkEnableOption "Gregory's Doom Emacs configuration";
+    enable = lib.mkEnableOption "Gregory's Doom Emacs configuration";
 
-    package = mkOption {
-      type = types.package;
+    package = lib.mkOption {
+      type = lib.types.package;
       description = "The Doom Emacs package (built externally with nix-doom-emacs-unstraightened)";
     };
 
-    daemon.enable = mkOption {
-      type = types.bool;
+    daemon.enable = lib.mkOption {
+      type = lib.types.bool;
       default = true;
       description = "Enable Emacs daemon via systemd user service";
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     home.packages = [
       cfg.package
       pkgs.ispell
-      emacsClientWrapper   # 'em' command
-      emacsClientTerminal  # 'emt' command
+      emacsClientWrapper
+      emacsClientTerminal
     ];
 
-    # Systemd user service for Emacs daemon
-    # Note: services.emacs sets EDITOR/VISUAL when defaultEditor = true
-    services.emacs = mkIf cfg.daemon.enable {
+    services.emacs = lib.mkIf cfg.daemon.enable {
       enable = true;
-      package = cfg.package;
+      inherit (cfg) package;
       defaultEditor = true;
       startWithUserSession = "graphical";
     };
 
-    # Only set EDITOR/VISUAL when daemon is disabled (services.emacs handles it otherwise)
-    home.sessionVariables = mkIf (!cfg.daemon.enable) {
+    home.sessionVariables = lib.mkIf (!cfg.daemon.enable) {
       EDITOR = "emacs -nw";
       VISUAL = "emacs";
     };

@@ -43,7 +43,6 @@
         then "/Users/${username}"
         else "/home/${username}";
 
-      # Home Manager configuration builder
       mkHomeConfiguration = { system, username ? defaultUsername }:
         let
           pkgs = pkgsFor system;
@@ -71,48 +70,35 @@
               stateVersion = "24.11";
             };
 
-            # Tmux config
-            my.tmux = {
-              enable = true;
-              configDir = ./modules/tmux/tmux-config;
-            };
-
-            # Emacs config
-            my.emacs = {
-              enable = true;
-              package = pkgs.emacsWithDoom {
-                doomDir = if isDarwin && builtins.pathExists ./modules/emacs/doom.d-darwin
-                          then ./modules/emacs/doom.d-darwin
-                          else ./modules/emacs/doom.d;
-                doomLocalDir = "~/.local/share/nix-doom";
+            my = {
+              tmux = {
+                enable = true;
+                configDir = ./modules/tmux/tmux-config;
               };
-            };
-
-            # Platform-aware hms alias
-            my.zsh.extraAliases = {
-              hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}"'';
+              emacs = {
+                enable = true;
+                package = pkgs.emacsWithDoom {
+                  doomDir = if isDarwin && builtins.pathExists ./modules/emacs/doom.d-darwin
+                            then ./modules/emacs/doom.d-darwin
+                            else ./modules/emacs/doom.d;
+                  doomLocalDir = "~/.local/share/nix-doom";
+                };
+              };
+              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}"'';
             };
           }];
         };
 
     in {
-      # ──────────────────────────────────────────────────────────────
-      # NixOS Configurations
-      # ──────────────────────────────────────────────────────────────
-      nixosConfigurations = {
-        nixos = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [
-            nixos-wsl.nixosModules.default
-            sops-nix.nixosModules.sops
-            ./hosts/wsl/configuration.nix
-          ];
-        };
+      nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          nixos-wsl.nixosModules.default
+          sops-nix.nixosModules.sops
+          ./hosts/wsl/configuration.nix
+        ];
       };
 
-      # ──────────────────────────────────────────────────────────────
-      # Home Manager Configurations
-      # ──────────────────────────────────────────────────────────────
       homeConfigurations = {
         "gfoster@x86_64-linux"   = mkHomeConfiguration { system = "x86_64-linux"; };
         "gfoster@aarch64-linux"  = mkHomeConfiguration { system = "aarch64-linux"; };
@@ -121,9 +107,6 @@
         "888973@aarch64-darwin"  = mkHomeConfiguration { system = "aarch64-darwin"; username = "888973"; };
       };
 
-      # ──────────────────────────────────────────────────────────────
-      # Packages
-      # ──────────────────────────────────────────────────────────────
       packages = forAllSystems (system:
         let
           pkgs = pkgsFor system;
@@ -141,9 +124,6 @@
         } else {})
       );
 
-      # ──────────────────────────────────────────────────────────────
-      # Apps
-      # ──────────────────────────────────────────────────────────────
       apps = forAllSystems (system:
         let
           pkgs = pkgsFor system;

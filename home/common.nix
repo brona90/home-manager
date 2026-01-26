@@ -5,12 +5,13 @@
   programs.home-manager.enable = true;
   xdg.enable = true;
 
-  # Enable modules
-  my.zsh.enable = true;
-  my.git.enable = true;
-  my.btop.enable = true;
-  my.vim.enable = true;
-  my.sops.enable = true;
+  my = {
+    zsh.enable = true;
+    git.enable = true;
+    btop.enable = true;
+    vim.enable = true;
+    sops.enable = true;
+  };
 
   # Common packages
   home.packages = with pkgs; [
