@@ -25,5 +25,7 @@
     tree
     bazel_7
     bazel-buildtools
+    aspell
+    aspellDicts.en
   ];
 }
