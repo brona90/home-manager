@@ -29,6 +29,8 @@
     let
       # Read user configuration
       userConfig = import ./config.nix;
+      repoConfig = userConfig.repo;
+      gitConfig = userConfig.git;
 
       allSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs allSystems;
@@ -53,6 +55,7 @@
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
+          extraSpecialArgs = { inherit gitConfig; };
           modules = [
             sops-nix.homeManagerModules.sops
             ./modules/zsh.nix
@@ -101,6 +104,9 @@
       defaultUser = builtins.head userConfig.users;
       defaultUsername = defaultUser.username;
 
+      # Docker image name from config
+      dockerImageName = "${repoConfig.dockerHubUser}/terminal";
+
     in {
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
@@ -129,7 +135,7 @@
             inherit pkgs homeDirectory;
             username = defaultUsername;
             homeConfiguration = homeConfigs.${configKey};
-            imageName = "brona90/terminal";
+            imageName = dockerImageName;
           };
         } else {})
       );

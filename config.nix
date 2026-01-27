@@ -1,13 +1,27 @@
-# User configuration - edit this file for your setup
-#
-# Add your username and the systems you use.
-# Run `nix eval --impure --raw --expr 'builtins.currentSystem'` to find your system.
+# Repository configuration
+# Fork this repo and update these values for your setup
+
 {
+  # Repository settings (used by CI and bootstrap)
+  repo = {
+    # GitHub username/org (for clone URL and Docker image naming)
+    owner = "brona90";
+    
+    # Repository name
+    name = "home-manager";
+    
+    # Docker Hub username (where images are pushed)
+    dockerHubUser = "brona90";
+    
+    # Cachix cache name
+    cachixCache = "gfoster";
+  };
+
+  # User configurations
   users = [
     {
       username = "gfoster";
       systems = [ "x86_64-linux" ];
-      # email = "your@email.com";  # Optional: override git email
     }
     {
       username = "888973";
