@@ -36,6 +36,9 @@ in
       age.keyFile = cfg.ageKeyFile;
       defaultSopsFile = secretsFile;
 
+      # Required on macOS: LaunchAgent needs PATH to find getconf
+      environment.PATH = "/usr/bin";
+
       secrets = {
         github_token = {};
         dockerhub_token = {};
