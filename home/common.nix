@@ -13,6 +13,12 @@
     sops.enable = true;
   };
 
+  # Locale settings (important for SSH sessions and special characters)
+  home.sessionVariables = {
+    LANG = "en_US.UTF-8";
+    LC_ALL = "en_US.UTF-8";
+  };
+
   # Common packages
   home.packages = with pkgs; [
     tree

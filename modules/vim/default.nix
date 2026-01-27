@@ -1,7 +1,5 @@
 { config, lib, pkgs, ... }:
 
-with lib;
-
 let
   cfg = config.my.vim;
 
@@ -103,16 +101,16 @@ let
     sqlite ast-grep
   ] ++ (if pkgs.stdenv.isLinux then [ xclip wl-clipboard gcc ] else [ ]);
 
-  # Language servers
+  # Language servers (marksman excluded on darwin due to Swift build issues)
   lspServers = with pkgs; [
     lua-language-server nil pyright ruff
     nodePackages.typescript-language-server
     nodePackages.vscode-langservers-extracted
     gopls delve rust-analyzer
     nodePackages.bash-language-server
-    yaml-language-server taplo marksman
+    yaml-language-server taplo
     dockerfile-language-server terraform-ls
-  ];
+  ] ++ (if pkgs.stdenv.isDarwin then [ ] else [ marksman ]);
 
   # Formatters
   formatters = with pkgs; [
@@ -189,10 +187,10 @@ let
 in
 {
   options.my.vim = {
-    enable = mkEnableOption "Gregory's LazyVim configuration";
+    enable = lib.mkEnableOption "LazyVim configuration";
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     home.packages = [
       lazyVimWrapper
       victorMonoNerdFont

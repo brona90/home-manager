@@ -44,7 +44,8 @@ in
           ga = "git add -A";
           gm = "git merge";
           gr = "git remote -v";
-          gl = "git log --oneline --graph";
+          gl = "git log --graph --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
+          gla = "git log --graph --all --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
           gf = "git fetch";
           gd = "git diff";
           gb = "git branch";

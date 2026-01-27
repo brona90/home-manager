@@ -1,34 +1,32 @@
 { config, lib, pkgs, ... }:
 
-with lib;
-
 let
   cfg = config.my.git;
 in
 {
   options.my.git = {
-    enable = mkEnableOption "Gregory's git configuration";
+    enable = lib.mkEnableOption "Git configuration";
 
-    userName = mkOption {
-      type = types.str;
+    userName = lib.mkOption {
+      type = lib.types.str;
       default = "Gregory Foster";
       description = "Git user name";
     };
 
-    userEmail = mkOption {
-      type = types.str;
+    userEmail = lib.mkOption {
+      type = lib.types.str;
       default = "brona90@gmail.com";
       description = "Git user email";
     };
 
-    extraConfig = mkOption {
-      type = types.attrs;
+    extraConfig = lib.mkOption {
+      type = lib.types.attrs;
       default = { };
       description = "Additional git config";
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     programs.git = {
       enable = true;
 
@@ -47,38 +45,40 @@ in
         branch.sort = "-committerdate";
 
         alias = {
-        st = "status";
-        s = "status -s";
-        ci = "commit";
-        cm = "commit -m";
-        ca = "commit --amend";
-        cam = "commit --amend -m";
-        a = "add";
-        aa = "add -A";
-        ap = "add -p";
-        co = "checkout";
-        cob = "checkout -b";
-        br = "branch";
-        brd = "branch -d";
-        brD = "branch -D";
-        l = "log --oneline --graph --decorate";
-        lg = "log --oneline --graph --decorate --all";
-        ll = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
-        d = "diff";
-        ds = "diff --staged";
-        dc = "diff --cached";
-        stash-all = "stash save --include-untracked";
-        pf = "push --force-with-lease";
-        pl = "pull";
-        plo = "pull origin";
-        psh = "push";
-        psho = "push origin";
-        rb = "rebase";
-        rbi = "rebase -i";
-        rbc = "rebase --continue";
-        rba = "rebase --abort";
-        unstage = "restore --staged";
-        uncommit = "reset --soft HEAD~1";
+          st = "status";
+          s = "status -s";
+          ci = "commit";
+          cm = "commit -m";
+          ca = "commit --amend";
+          cam = "commit --amend -m";
+          a = "add";
+          aa = "add -A";
+          ap = "add -p";
+          co = "checkout";
+          cob = "checkout -b";
+          br = "branch";
+          brd = "branch -d";
+          brD = "branch -D";
+          l = "log --oneline --graph --decorate";
+          lg = "log --graph --all --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
+          ll = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
+          le = "log --oneline --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset'";
+          lle = "log --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset'";
+          d = "diff";
+          ds = "diff --staged";
+          dc = "diff --cached";
+          stash-all = "stash save --include-untracked";
+          pf = "push --force-with-lease";
+          pl = "pull";
+          plo = "pull origin";
+          psh = "push";
+          psho = "push origin";
+          rb = "rebase";
+          rbi = "rebase -i";
+          rbc = "rebase --continue";
+          rba = "rebase --abort";
+          unstage = "restore --staged";
+          uncommit = "reset --soft HEAD~1";
         };
       } // cfg.extraConfig;
 
@@ -100,11 +100,11 @@ in
         "target/"
         "*.class"
       ];
-
     };
 
-    # Force overwrite to handle conflicts with existing files
-    xdg.configFile."git/config".force = true;
-    xdg.configFile."git/ignore".force = true;
+    xdg.configFile = {
+      "git/config".force = true;
+      "git/ignore".force = true;
+    };
   };
 }
