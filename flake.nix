@@ -25,7 +25,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, nixos-wsl, doom-emacs, sops-nix, ... }:
+  outputs = { nixpkgs, home-manager, nixos-wsl, doom-emacs, sops-nix, ... }:
     let
       # Read user configuration
       userConfig = import ./config.nix;

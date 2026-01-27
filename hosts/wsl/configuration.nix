@@ -1,5 +1,5 @@
 # NixOS-WSL specific configuration
-{ config, lib, pkgs, ... }:
+{ ... }:
 
 {
   imports = [ ../common ];

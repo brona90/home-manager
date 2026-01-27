@@ -1,5 +1,5 @@
 # Common NixOS settings shared across all hosts
-{ config, lib, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   # Nix settings

@@ -1,5 +1,5 @@
 # Common home-manager configuration shared across all systems
-{ config, lib, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   programs.home-manager.enable = true;

@@ -1,5 +1,5 @@
 # Linux-specific home-manager configuration
-{ config, lib, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   home.packages = with pkgs; [
