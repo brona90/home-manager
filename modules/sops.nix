@@ -19,11 +19,18 @@ in
 
   config = lib.mkIf (cfg.enable && secretsExist) {
     home = {
-      packages = [ pkgs.sops pkgs.age ];
+      packages = [ pkgs.sops pkgs.age pkgs.gnupg ];
 
       activation.createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
         mkdir -p "${config.home.homeDirectory}/.ssh"
         chmod 700 "${config.home.homeDirectory}/.ssh"
+      '';
+
+      activation.importGpgKey = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
+        if [ -f "${config.sops.secrets."gpg/private_key".path}" ]; then
+          export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
+          ${pkgs.gnupg}/bin/gpg --batch --import "${config.sops.secrets."gpg/private_key".path}" 2>/dev/null || true
+        fi
       '';
 
       sessionVariables = {
@@ -50,7 +57,18 @@ in
           path = "${config.home.homeDirectory}/.ssh/id_rsa.pub";
           mode = "0644";
         };
+        "gpg/private_key" = {
+          mode = "0600";
+        };
+        "gpg/public_key" = {
+          mode = "0644";
+        };
       };
+    };
+
+    programs.gpg = {
+      enable = true;
+      homedir = "${config.home.homeDirectory}/.gnupg";
     };
 
     my.zsh.extraInitExtra = ''

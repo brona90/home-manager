@@ -8,6 +8,7 @@
   my = {
     zsh.enable = true;
     git.enable = true;
+    git.signing.enable = true;
     btop.enable = true;
     vim.enable = true;
     sops.enable = true;

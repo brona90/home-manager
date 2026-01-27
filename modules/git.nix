@@ -19,6 +19,22 @@ in
       description = "Git user email";
     };
 
+    signing = {
+      enable = lib.mkEnableOption "GPG commit signing";
+
+      key = lib.mkOption {
+        type = lib.types.str;
+        default = "ECA2632B08E80FC6";
+        description = "GPG key ID for signing commits";
+      };
+
+      signByDefault = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Sign all commits by default";
+      };
+    };
+
     extraConfig = lib.mkOption {
       type = lib.types.attrs;
       default = { };
@@ -30,10 +46,17 @@ in
     programs.git = {
       enable = true;
 
+      signing = lib.mkIf cfg.signing.enable {
+        key = cfg.signing.key;
+        signByDefault = cfg.signing.signByDefault;
+      };
+
       settings = {
         user = {
           name = cfg.userName;
           email = cfg.userEmail;
+        } // lib.optionalAttrs cfg.signing.enable {
+          signingkey = cfg.signing.key;
         };
         init.defaultBranch = "main";
         core.editor = "emacs -nw";
@@ -80,6 +103,9 @@ in
           unstage = "restore --staged";
           uncommit = "reset --soft HEAD~1";
         };
+
+        # GPG program for signing
+        gpg.program = lib.mkIf cfg.signing.enable "gpg";
       } // cfg.extraConfig;
 
       ignores = [
