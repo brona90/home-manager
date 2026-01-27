@@ -14,20 +14,32 @@ home-manager switch --flake "$HOME/.config/home-manager#USERNAME@SYSTEM" -b back
 
 ## Forking This Repo
 
-1. Fork on GitHub
-2. Update `REPO_URL` in `bootstrap.sh` to your fork
-3. Run bootstrap - it will prompt for your username and add you to `config.nix`
-4. Commit and push your changes
+This repo is designed to be easily forked:
 
-Or manually edit `config.nix`:
+1. **Fork on GitHub**
 
-```nix
-{
-  users = [
-    { username = "yourusername"; systems = [ "x86_64-linux" ]; }
-  ];
-}
-```
+2. **Update `config.nix`:**
+   ```nix
+   {
+     repo = {
+       owner = "your-github-username";
+       name = "home-manager";
+       dockerHubUser = "your-dockerhub-username";  # or same as owner
+       cachixCache = "your-cachix-cache";          # optional
+     };
+     users = [
+       { username = "yourusername"; systems = [ "x86_64-linux" ]; }
+     ];
+     git = {
+       userName = "Your Name";
+       userEmail = "your@email.com";
+     };
+   }
+   ```
+
+3. **Run bootstrap** (it will prompt for your fork URL)
+
+4. **(Optional) Configure CI** - See [.github/SETUP.md](.github/SETUP.md)
 
 ## Commands
 
@@ -47,7 +59,7 @@ Or manually edit `config.nix`:
 ```
 .
 ├── flake.nix              # Main entry point
-├── config.nix             # User configuration (edit this!)
+├── config.nix             # User & repo configuration (edit this!)
 ├── home/                  # Home Manager profiles
 │   ├── common.nix         # Shared across all systems
 │   ├── linux.nix          # Linux-specific
@@ -57,7 +69,7 @@ Or manually edit `config.nix`:
 │   └── wsl/               # WSL-specific config
 ├── modules/               # Reusable Home Manager modules
 │   ├── zsh.nix
-│   ├── git.nix
+│   ├── git.nix            # Git + GPG signing
 │   ├── btop.nix
 │   ├── sops.nix           # Secrets management
 │   ├── emacs/
@@ -79,23 +91,6 @@ Or manually edit `config.nix`:
 - `aarch64-linux` (Raspberry Pi, ARM servers)
 - `x86_64-darwin` (Intel Mac)
 - `aarch64-darwin` (Apple Silicon Mac)
-
-## Adding Yourself (for forks)
-
-Edit `config.nix`:
-
-```nix
-{
-  users = [
-    { username = "alice"; systems = [ "x86_64-linux" "aarch64-darwin" ]; }
-  ];
-}
-```
-
-Then run:
-```bash
-hms
-```
 
 ## New Machine Setup
 
@@ -140,7 +135,9 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 - `github_token` - GitHub API token
 - `dockerhub_token` - Docker Hub token
 - `ssh/id_rsa` - SSH private key (synced to `~/.ssh/id_rsa`)
-- `ssh/id_rsa_pub` - SSH public key (synced to `~/.ssh/id_rsa.pub`)
+- `ssh/id_rsa_pub` - SSH public key
+- `gpg/private_key` - GPG private key (for commit signing)
+- `gpg/public_key` - GPG public key
 
 ### Edit secrets
 
@@ -152,6 +149,50 @@ sops secrets/secrets.yaml
 
 - **Safe to commit:** `secrets/secrets.yaml` (encrypted), `.sops.yaml` (public keys)
 - **Never commit:** `~/.config/sops/age/keys.txt` (private key)
+
+## GPG Commit Signing
+
+Commits are automatically signed with GPG when `my.git.signing.enable = true` (default).
+
+### Setup GPG key for GitHub
+
+After `hms`, your GPG key is imported. To add it to GitHub:
+
+```bash
+# Copy public key to clipboard
+gpg --armor --export YOUR_KEY_ID | pbcopy  # macOS
+gpg --armor --export YOUR_KEY_ID | xclip   # Linux
+
+# Find your key ID
+gpg --list-secret-keys --keyid-format=long
+```
+
+Then: **GitHub → Settings → SSH and GPG keys → New GPG key** → paste.
+
+### Verify signing works
+
+```bash
+# Check git config
+git config --list | grep -E '(sign|gpg)'
+
+# Test signing
+echo "test" | gpg --clearsign
+
+# View signature on commits
+git log --show-signature -1
+```
+
+### Troubleshooting GPG
+
+If signing fails:
+
+```bash
+# Restart gpg-agent
+gpgconf --kill all
+
+# Set TTY (should be automatic after hms)
+export GPG_TTY=$(tty)
+```
 
 ## Flake Updates
 
@@ -173,9 +214,13 @@ nix flake lock --update-input <name>
 ```
 lint (statix, deadnix)
   └─> check (nix flake check)
-        ├─> docker-build → docker-test
+        ├─> docker-build → docker-test (if credentials available)
         └─> validate-nixos
 ```
+
+The CI is fork-friendly - lint and check always run, push operations only run if secrets are configured.
+
+See [.github/SETUP.md](.github/SETUP.md) for detailed CI setup instructions.
 
 ## Docker
 
@@ -183,7 +228,7 @@ lint (statix, deadnix)
 # Build and test locally
 nix run .#docker-test
 
-# Pull from Docker Hub
+# Pull from Docker Hub (replace with your username if forked)
 docker run -it --rm brona90/terminal:latest
 ```
 
@@ -216,7 +261,3 @@ in {
 
 2. Import in `flake.nix` modules list
 3. Enable in `home/common.nix`: `my.mymodule.enable = true;`
-
-## TODO
-
-- [ ] Multi-machine deploy alias/script
