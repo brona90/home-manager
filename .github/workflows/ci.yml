@@ -67,7 +67,6 @@ jobs:
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
           extraPullNames: nix-community,emacs
       
       - name: Free disk space
@@ -81,18 +80,19 @@ jobs:
           docker load < result
       
       - name: Push to Docker Hub
-        if: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ env.DOCKER_USERNAME }}" --password-stdin
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::notice::Skipping Docker Hub push - DOCKERHUB_TOKEN not configured"
+            echo "To enable Docker push, add DOCKERHUB_TOKEN secret in repository settings"
+            exit 0
+          fi
+          
+          echo "$DOCKERHUB_TOKEN" | docker login -u "${{ env.DOCKER_USERNAME }}" --password-stdin
           docker tag "${{ env.DOCKER_USERNAME }}/terminal:latest" "${{ env.DOCKER_USERNAME }}/terminal:$(date +%Y%m%d)"
           docker push "${{ env.DOCKER_USERNAME }}/terminal:latest"
           docker push "${{ env.DOCKER_USERNAME }}/terminal:$(date +%Y%m%d)"
-      
-      - name: Skip Docker push (no credentials)
-        if: ${{ secrets.DOCKERHUB_TOKEN == '' }}
-        run: |
-          echo "::notice::Skipping Docker Hub push - DOCKERHUB_TOKEN not configured"
-          echo "To enable Docker push, add DOCKERHUB_TOKEN secret in repository settings"
 
   docker-test:
     name: Test Docker Image
@@ -102,12 +102,13 @@ jobs:
       - name: Pull and test image
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          IMAGE: ${{ env.DOCKER_USERNAME }}/terminal:latest
         run: |
           if [ -z "$DOCKERHUB_TOKEN" ]; then
             echo "::notice::Skipping Docker test - no image was pushed"
             exit 0
           fi
+          
+          IMAGE="${{ env.DOCKER_USERNAME }}/terminal:latest"
           
           echo "Pulling fresh image from Docker Hub..."
           docker pull "$IMAGE"
@@ -150,7 +151,6 @@ jobs:
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
           extraPullNames: nix-community,emacs
       
       - name: Free disk space
