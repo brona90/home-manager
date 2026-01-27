@@ -14,7 +14,7 @@ Edit the `repo` section with your values:
     owner = "your-github-username";
     name = "home-manager";
     dockerHubUser = "your-dockerhub-username";
-    cachixCache = "your-cachix-cache";
+    cachixCache = "your-cachix-cache";  # or remove if not using Cachix
   };
   # ...
 }
@@ -95,13 +95,15 @@ The update workflow (`.github/workflows/update-flake.yml`) runs weekly and creat
 
 ## Using the Docker Image
 
+Replace `<docker-user>` and `<username>` with values from your `config.nix`:
+
 ```bash
-# Latest (replace brona90 with your Docker Hub username)
-docker run -it --rm brona90/terminal:latest
+# Latest
+docker run -it --rm <docker-user>/terminal:latest
 
 # Specific date
-docker run -it --rm brona90/terminal:20260124
+docker run -it --rm <docker-user>/terminal:20260124
 
 # With SSH keys
-docker run -it --rm -v ~/.ssh:/home/gfoster/.ssh:ro brona90/terminal:latest
+docker run -it --rm -v ~/.ssh:/home/<username>/.ssh:ro <docker-user>/terminal:latest
 ```

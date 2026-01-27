@@ -9,7 +9,7 @@ Reproducible, cross-platform development environment using Nix flakes.
 curl -fsSL https://raw.githubusercontent.com/brona90/home-manager/master/bootstrap.sh | bash
 
 # Or if already have nix and repo cloned:
-home-manager switch --flake "$HOME/.config/home-manager#USERNAME@SYSTEM" -b backup
+home-manager switch --flake '$HOME/.config/home-manager#USERNAME@SYSTEM' -b backup
 ```
 
 ## Forking This Repo
@@ -25,7 +25,7 @@ This repo is designed to be easily forked:
        owner = "your-github-username";
        name = "home-manager";
        dockerHubUser = "your-dockerhub-username";  # or same as owner
-       cachixCache = "your-cachix-cache";          # optional
+       cachixCache = "your-cachix-cache";          # optional, or remove
      };
      users = [
        { username = "yourusername"; systems = [ "x86_64-linux" ]; }
@@ -226,22 +226,28 @@ See [.github/SETUP.md](.github/SETUP.md) for detailed CI setup instructions.
 
 ```bash
 # Build and test locally
-nix run .#docker-test
+nix run '.#docker-test'
 
-# Pull from Docker Hub (replace with your username if forked)
-docker run -it --rm brona90/terminal:latest
+# Pull from Docker Hub (replace <dockerhub-user> from config.nix)
+docker run -it --rm <dockerhub-user>/terminal:latest
 ```
 
 ## Caches
 
-Uses Cachix for binary caching. Bootstrap configures this automatically.
+Uses Cachix for binary caching. Bootstrap configures this automatically based on `config.nix`.
 
-Manual setup:
+For forks, either:
+1. Create your own Cachix cache and update `repo.cachixCache` in `config.nix`
+2. Remove the cachix lines from `~/.config/nix/nix.conf` to skip
+
+Manual setup (replace `<cache>` with your cache name):
 ```bash
 # Add to ~/.config/nix/nix.conf or /etc/nix/nix.conf
-extra-substituters = https://gfoster.cachix.org
-extra-trusted-public-keys = gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
+extra-substituters = https://<cache>.cachix.org
+extra-trusted-public-keys = <cache>.cachix.org-1:<your-public-key>
 ```
+
+Get your cache's public key from: https://app.cachix.org → Your cache → Settings
 
 ## Adding a New Module
 
