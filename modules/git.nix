@@ -54,8 +54,6 @@ in
         user = {
           name = cfg.userName;
           email = cfg.userEmail;
-        } // lib.optionalAttrs cfg.signing.enable {
-          signingkey = cfg.signing.key;
         };
         init.defaultBranch = "main";
         core.editor = "emacs -nw";

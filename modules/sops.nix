@@ -72,6 +72,9 @@ in
     };
 
     my.zsh.extraInitExtra = ''
+      # GPG needs TTY for pinentry
+      export GPG_TTY=$(tty)
+
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
     '';
