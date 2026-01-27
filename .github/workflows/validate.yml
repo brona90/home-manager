@@ -3,8 +3,9 @@ name: Validate
 on:
   workflow_dispatch:
 
+# Fork-friendly: Use repository variables or fall back to defaults
 env:
-  CACHIX_CACHE: gfoster
+  CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'gfoster' }}
 
 jobs:
   nixos:
@@ -23,7 +24,7 @@ jobs:
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: false
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
           extraPullNames: nix-community,emacs
       - name: Free disk space
         run: |
