@@ -64,14 +64,13 @@ check_nix() {
 # Read cachix cache from config.nix if available
 get_cachix_cache() {
   if [ -f "$CONFIG_DIR/config.nix" ]; then
-    # Try to extract cachixCache value
     local cache=$(grep -oP 'cachixCache\s*=\s*"\K[^"]+' "$CONFIG_DIR/config.nix" 2>/dev/null || echo "")
     if [ -n "$cache" ]; then
       echo "$cache"
       return
     fi
   fi
-  echo "gfoster"
+  echo ""
 }
 
 # Configure Nix with flakes and caches
@@ -80,17 +79,30 @@ configure_nix() {
   
   local cachix_cache=$(get_cachix_cache)
   
-  if [ -f "$NIX_CONF" ] && grep -q "${cachix_cache}.cachix.org" "$NIX_CONF"; then
+  # Check if already configured
+  if [ -f "$NIX_CONF" ] && grep -q "nix-community.cachix.org" "$NIX_CONF"; then
     info "Nix already configured with caches"
     return
   fi
   
   info "Configuring Nix with flakes and caches..."
   
+  # Base substituters (always included)
+  local substituters="https://cache.nixos.org https://nix-community.cachix.org https://emacs.cachix.org"
+  local trusted_keys="cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY="
+  
+  # Add custom cachix if configured
+  if [ -n "$cachix_cache" ]; then
+    info "Adding custom Cachix cache: $cachix_cache"
+    substituters="$substituters https://${cachix_cache}.cachix.org"
+    # Note: User will need to add their public key manually or via `cachix use`
+    warn "Run 'cachix use ${cachix_cache}' to add the public key, or add it manually to nix.conf"
+  fi
+  
   cat > "$NIX_CONF" << EOF
 experimental-features = nix-command flakes
-substituters = https://cache.nixos.org https://nix-community.cachix.org https://emacs.cachix.org https://${cachix_cache}.cachix.org
-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY= ${cachix_cache}.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
+substituters = $substituters
+trusted-public-keys = $trusted_keys
 max-jobs = auto
 cores = 0
 connect-timeout = 5
@@ -149,7 +161,6 @@ add_user() {
   
   # Check if user exists but needs system added
   if grep -q "username = \"${username}\"" "$config_file"; then
-    # User exists, check if system needs to be added
     warn "User ${username} exists. Please verify ${system} is in their systems list."
     warn "Edit $config_file if needed."
     return
@@ -160,7 +171,7 @@ add_user() {
   
   # Use sed to insert new user before the last user entry's closing
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS sed - find "  ];" that closes users array and insert before
+    # macOS sed
     sed -i '' "/^  \];$/i\\
 ${new_entry}
 " "$config_file"

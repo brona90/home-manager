@@ -24,7 +24,6 @@ jobs:
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
           extraPullNames: nix-community,emacs
       - name: Free disk space
         run: |
@@ -49,6 +48,27 @@ jobs:
         with:
           name: nix-community
           extraPullNames: emacs
-          # No authToken = pull only, no push to save cache space
+      - name: Find Darwin configuration
+        id: config
+        run: |
+          # List available homeConfigurations and find one for aarch64-darwin
+          CONFIGS=$(nix flake show --json 2>/dev/null | jq -r '.homeConfigurations | keys[]' 2>/dev/null || echo "")
+          DARWIN_CONFIG=$(echo "$CONFIGS" | grep 'aarch64-darwin' | head -1)
+          
+          if [ -z "$DARWIN_CONFIG" ]; then
+            echo "No aarch64-darwin configuration found"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Found: $DARWIN_CONFIG"
+            echo "config=$DARWIN_CONFIG" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
       - name: Build Darwin configuration
-        run: nix build .#homeConfigurations."gfoster@aarch64-darwin".activationPackage 2>&1 | grep -v "could not update mtime" || true
+        if: steps.config.outputs.skip != 'true'
+        run: |
+          CONFIG="${{ steps.config.outputs.config }}"
+          echo "Building: $CONFIG"
+          nix build ".#homeConfigurations.\"$CONFIG\".activationPackage" 2>&1 | grep -v "could not update mtime" || true
+      - name: Skip (no Darwin config)
+        if: steps.config.outputs.skip == 'true'
+        run: echo "::notice::No aarch64-darwin configuration found in flake, skipping"
