@@ -4,7 +4,10 @@ set -euo pipefail
 # Bootstrap script for Nix Home Manager environment
 # Works on any system with Nix installed
 
-REPO_URL="https://github.com/brona90/home-manager.git"
+# These values are read from config.nix after clone, but we need defaults for initial clone
+DEFAULT_REPO_OWNER="brona90"
+DEFAULT_REPO_NAME="home-manager"
+REPO_URL="https://github.com/${DEFAULT_REPO_OWNER}/${DEFAULT_REPO_NAME}.git"
 CONFIG_DIR="${HOME}/.config/home-manager"
 NIX_CONF_DIR="${HOME}/.config/nix"
 NIX_CONF="${NIX_CONF_DIR}/nix.conf"
@@ -58,21 +61,36 @@ check_nix() {
   info "Nix found: $(nix --version)"
 }
 
+# Read cachix cache from config.nix if available
+get_cachix_cache() {
+  if [ -f "$CONFIG_DIR/config.nix" ]; then
+    # Try to extract cachixCache value
+    local cache=$(grep -oP 'cachixCache\s*=\s*"\K[^"]+' "$CONFIG_DIR/config.nix" 2>/dev/null || echo "")
+    if [ -n "$cache" ]; then
+      echo "$cache"
+      return
+    fi
+  fi
+  echo "gfoster"
+}
+
 # Configure Nix with flakes and caches
 configure_nix() {
   mkdir -p "$NIX_CONF_DIR"
   
-  if [ -f "$NIX_CONF" ] && grep -q "gfoster.cachix.org" "$NIX_CONF"; then
+  local cachix_cache=$(get_cachix_cache)
+  
+  if [ -f "$NIX_CONF" ] && grep -q "${cachix_cache}.cachix.org" "$NIX_CONF"; then
     info "Nix already configured with caches"
     return
   fi
   
   info "Configuring Nix with flakes and caches..."
   
-  cat > "$NIX_CONF" << 'EOF'
+  cat > "$NIX_CONF" << EOF
 experimental-features = nix-command flakes
-substituters = https://cache.nixos.org https://nix-community.cachix.org https://emacs.cachix.org https://gfoster.cachix.org
-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY= gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
+substituters = https://cache.nixos.org https://nix-community.cachix.org https://emacs.cachix.org https://${cachix_cache}.cachix.org
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY= ${cachix_cache}.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=
 max-jobs = auto
 cores = 0
 connect-timeout = 5
@@ -92,6 +110,15 @@ setup_config() {
     info "Config directory exists, pulling latest..."
     git -C "$CONFIG_DIR" pull --ff-only || warn "Pull failed, using existing config"
   else
+    # Check if user wants to use a fork
+    prompt "Use default repo ($REPO_URL)? (y/n)"
+    read -r use_default
+    
+    if [[ "$use_default" != "y" ]]; then
+      prompt "Enter your fork URL (e.g., https://github.com/yourname/home-manager.git):"
+      read -r REPO_URL
+    fi
+    
     info "Cloning config repository..."
     mkdir -p "$(dirname "$CONFIG_DIR")"
     git clone "$REPO_URL" "$CONFIG_DIR"
@@ -123,19 +150,17 @@ add_user() {
   # Check if user exists but needs system added
   if grep -q "username = \"${username}\"" "$config_file"; then
     # User exists, check if system needs to be added
-    # This is a simple check - might need manual edit for complex cases
     warn "User ${username} exists. Please verify ${system} is in their systems list."
     warn "Edit $config_file if needed."
     return
   fi
   
-  # Add new user entry before the closing bracket
-  # Find the line with "];" and insert before it
+  # Add new user entry - find the closing ]; of users array
   local new_entry="    { username = \"${username}\"; systems = [ \"${system}\" ]; }"
   
-  # Use sed to insert new user
+  # Use sed to insert new user before the last user entry's closing
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS sed
+    # macOS sed - find "  ];" that closes users array and insert before
     sed -i '' "/^  \];$/i\\
 ${new_entry}
 " "$config_file"
@@ -217,8 +242,8 @@ main() {
   info "Will configure: $config"
   
   check_nix
-  configure_nix
   setup_config
+  configure_nix  # Run after setup_config so we can read cachix cache from config.nix
   
   cd "$CONFIG_DIR"
   
