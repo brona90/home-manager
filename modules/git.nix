@@ -47,8 +47,7 @@ in
       enable = true;
 
       signing = lib.mkIf cfg.signing.enable {
-        key = cfg.signing.key;
-        signByDefault = cfg.signing.signByDefault;
+        inherit (cfg.signing) key signByDefault;
       };
 
       settings = {

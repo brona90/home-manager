@@ -1,5 +1,5 @@
 # macOS-specific home-manager configuration
-{ ... }:
+_:
 
 {
   my.zsh.extraAliases = {
