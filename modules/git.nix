@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, gitConfig, ... }:
 
 let
   cfg = config.my.git;
@@ -9,13 +9,13 @@ in
 
     userName = lib.mkOption {
       type = lib.types.str;
-      default = "Gregory Foster";
+      default = gitConfig.userName;
       description = "Git user name";
     };
 
     userEmail = lib.mkOption {
       type = lib.types.str;
-      default = "brona90@gmail.com";
+      default = gitConfig.userEmail;
       description = "Git user email";
     };
 
