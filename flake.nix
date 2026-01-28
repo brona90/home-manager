@@ -88,7 +88,7 @@
                   doomLocalDir = "~/.local/share/nix-doom";
                 };
               };
-              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}"'';
+              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup'';
             };
           }];
         };
@@ -154,7 +154,7 @@
             meta.description = "Activate home-manager configuration";
             program = toString (pkgs.writeShellScript "activate-home" ''
               echo "Activating home-manager configuration for ${system}..."
-              home-manager switch --flake "$HOME/.config/home-manager#${defaultUsername}@${system}"
+              home-manager switch --flake "$HOME/.config/home-manager#${defaultUsername}@${system}" -b backup
             '');
           };
         } else {})
