@@ -1,6 +1,32 @@
 # Home Manager Configuration
 
-Reproducible, cross-platform development environment using Nix flakes.
+A reproducible, cross-platform development environment using [Nix](https://nixos.org/) flakes.
+
+## What's Included
+
+| Tool | Description |
+|------|-------------|
+| [Doom Emacs](https://github.com/doomemacs/doomemacs) | Emacs distribution with sensible defaults via [nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened) |
+| [LazyVim](https://www.lazyvim.org/) | Neovim setup with lazy.nvim plugin manager |
+| [oh-my-tmux](https://github.com/gpakosz/.tmux) | tmux configuration with powerline-style status bar |
+| [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `direnv`, `zsh-syntax-highlighting`, `zsh-history-substring-search` |
+| [Starship](https://starship.rs/) | Fast, customizable shell prompt |
+| [mise](https://mise.jdx.dev/) | Polyglot runtime manager (node, python, go, etc.) |
+| [btop](https://github.com/aristocratos/btop) | Resource monitor with TUI |
+| [fzf](https://github.com/junegunn/fzf) | Fuzzy finder |
+| [ripgrep](https://github.com/BurntSushi/ripgrep) | Fast grep replacement |
+| [fd](https://github.com/sharkdp/fd) | Fast find replacement |
+| [bat](https://github.com/sharkdp/bat) | Cat with syntax highlighting |
+| [direnv](https://direnv.net/) | Per-directory environment variables |
+| [sops-nix](https://github.com/Mic92/sops-nix) | Encrypted secrets management with [age](https://github.com/FiloSottile/age) |
+
+## Concepts
+
+**[Nix Flakes](https://nixos.wiki/wiki/Flakes)** — A pure, reproducible way to manage Nix projects with locked dependencies. Think `package-lock.json` but for your entire system.
+
+**[Home Manager](https://github.com/nix-community/home-manager)** — Manages user dotfiles and packages declaratively. Instead of manually editing `~/.zshrc`, you define it in Nix and rebuild.
+
+**Modules** — Reusable configuration units. Each tool (zsh, git, emacs) has its own module in `modules/` with options you can enable/configure.
 
 ## Quick Start
 
@@ -58,7 +84,7 @@ This repo is designed to be easily forked:
 
 ```
 .
-├── flake.nix              # Main entry point
+├── flake.nix              # Main entry point, defines inputs and outputs
 ├── config.nix             # User & repo configuration (edit this!)
 ├── home/                  # Home Manager profiles
 │   ├── common.nix         # Shared across all systems
@@ -68,17 +94,17 @@ This repo is designed to be easily forked:
 │   ├── common/            # Shared NixOS settings
 │   └── wsl/               # WSL-specific config
 ├── modules/               # Reusable Home Manager modules
-│   ├── zsh.nix
+│   ├── zsh.nix            # Shell config with oh-my-zsh
 │   ├── git.nix            # Git + GPG signing
-│   ├── btop.nix
+│   ├── btop.nix           # System monitor
 │   ├── sops.nix           # Secrets management
-│   ├── emacs/
-│   ├── vim/
-│   └── tmux/
+│   ├── emacs/             # Doom Emacs
+│   ├── vim/               # LazyVim
+│   └── tmux/              # oh-my-tmux
 ├── secrets/               # Encrypted secrets (safe to commit)
 │   └── secrets.yaml
 ├── lib/                   # Helper functions
-│   ├── docker-image.nix
+│   ├── docker-image.nix   # Docker image builder
 │   └── docker-test-app.nix
 └── .github/workflows/     # CI/CD
     ├── ci.yml             # Main pipeline
@@ -206,7 +232,7 @@ git commit -m "chore: update flake inputs"
 git push
 
 # Update single input
-nix flake lock --update-input <name>
+nix flake lock --update-input <n>
 ```
 
 ## CI Pipeline
@@ -234,20 +260,11 @@ docker run -it --rm <dockerhub-user>/terminal:latest
 
 ## Caches
 
-Uses Cachix for binary caching. Bootstrap configures this automatically based on `config.nix`.
+Uses [Cachix](https://cachix.org) for binary caching. Bootstrap configures this automatically based on `config.nix`.
 
 For forks, either:
 1. Create your own Cachix cache and update `repo.cachixCache` in `config.nix`
 2. Remove the cachix lines from `~/.config/nix/nix.conf` to skip
-
-Manual setup (replace `<cache>` with your cache name):
-```bash
-# Add to ~/.config/nix/nix.conf or /etc/nix/nix.conf
-extra-substituters = https://<cache>.cachix.org
-extra-trusted-public-keys = <cache>.cachix.org-1:<your-public-key>
-```
-
-Get your cache's public key from: https://app.cachix.org → Your cache → Settings
 
 ## Adding a New Module
 
@@ -267,3 +284,7 @@ in {
 
 2. Import in `flake.nix` modules list
 3. Enable in `home/common.nix`: `my.mymodule.enable = true;`
+
+## License
+
+MIT
