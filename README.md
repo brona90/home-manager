@@ -79,6 +79,7 @@ This repo is designed to be easily forked:
 | `emt`   | Emacs terminal |
 | `lvim`  | LazyVim |
 | `dev-disk` | Show disk usage for Nix, Docker, mise, etc. |
+| `dev-clean` | Interactive cleanup of all dev tools |
 
 ### Nix (n = nix)
 
@@ -102,6 +103,26 @@ This repo is designed to be easily forked:
 | `dcpv`  | Docker clean prune volumes |
 | `dcpb`  | Docker clean prune builder cache |
 | `dca`   | Docker clean all (everything) |
+
+### Mise (m = mise)
+
+| Command | Description |
+|---------|-------------|
+| `mcp`   | Mise clean prune (remove unused versions) |
+| `mcc`   | Mise cache clear |
+| `mca`   | Mise clean all (prune + cache) |
+
+### Neovim (v = vim)
+
+| Command | Description |
+|---------|-------------|
+| `vcc`   | Vim cache clean (removes all nvim data/cache) |
+
+### Cache
+
+| Command | Description |
+|---------|-------------|
+| `ccc`   | Clear ~/.cache (careful!) |
 
 ### Git (g = git)
 
