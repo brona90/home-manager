@@ -84,6 +84,17 @@ in
           dcpb = "docker builder prune -f";                     # prune build cache
           dca = "docker system prune -af --volumes && docker builder prune -af";  # clean all
 
+          # Mise (m = mise)
+          mcp = "mise prune -y";                                # prune unused versions
+          mcc = "mise cache clear";                             # clear download cache
+          mca = "mise prune -y && mise cache clear";            # clean all mise
+
+          # Neovim/LazyVim (v = vim)
+          vcc = "rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim"; # vim cache clean
+
+          # General cache
+          ccc = "rm -rf ~/.cache/*";                            # cache clean (careful!)
+
           # Editors
           vim = "lvim";
           vi = "lvim";
@@ -147,6 +158,8 @@ in
             local green='\033[0;32m'
             local yellow='\033[1;33m'
             local red='\033[0;31m'
+            local cyan='\033[0;36m'
+            local magenta='\033[0;35m'
             local nc='\033[0m'
             local bold='\033[1m'
 
@@ -162,6 +175,7 @@ in
               echo "''${blue}❄  Nix Store''${nc}"
               echo "   Size:  ''${bold}$nix_size''${nc}"
               echo "   Paths: $nix_paths"
+              echo "   Clean: ''${cyan}nsc''${nc}"
               echo ""
             fi
 
@@ -170,6 +184,7 @@ in
               local hm_gens=$(ls ~/.local/state/nix/profiles/home-manager-*-link 2>/dev/null | wc -l | tr -d ' ')
               echo "''${green}🏠 Home Manager''${nc}"
               echo "   Generations: $hm_gens"
+              echo "   Clean: ''${cyan}ncgd''${nc} (deletes old generations)"
               echo ""
             fi
 
@@ -179,48 +194,141 @@ in
               docker system df 2>/dev/null | tail -n +2 | while read line; do
                 echo "   $line"
               done
+              echo "   Clean: ''${cyan}dca''${nc}"
               echo ""
             fi
 
             # Mise (runtime versions)
-            if [ -d ~/.local/share/mise/installs ]; then
-              local mise_size=$(du -sh ~/.local/share/mise/installs 2>/dev/null | cut -f1)
+            if [ -d ~/.local/share/mise ]; then
+              local mise_install_size=$(du -sh ~/.local/share/mise/installs 2>/dev/null | cut -f1 || echo "0")
+              local mise_cache_size=$(du -sh ~/.local/share/mise/cache 2>/dev/null | cut -f1 || echo "0")
               local mise_runtimes=$(ls ~/.local/share/mise/installs 2>/dev/null | wc -l | tr -d ' ')
-              echo "''${red}🔧 Mise Runtimes''${nc}"
-              echo "   Size:     ''${bold}$mise_size''${nc}"
-              echo "   Runtimes: $mise_runtimes"
+              echo "''${red}🔧 Mise''${nc}"
+              echo "   Installs: ''${bold}$mise_install_size''${nc} ($mise_runtimes runtimes)"
+              echo "   Cache:    $mise_cache_size"
               if [ -d ~/.local/share/mise/installs ]; then
                 for rt in ~/.local/share/mise/installs/*/; do
                   if [ -d "$rt" ]; then
                     local rt_name=$(basename "$rt")
                     local rt_vers=$(ls "$rt" 2>/dev/null | wc -l | tr -d ' ')
-                    echo "   - $rt_name: $rt_vers versions"
+                    local rt_size=$(du -sh "$rt" 2>/dev/null | cut -f1)
+                    echo "   - $rt_name: $rt_vers versions ($rt_size)"
                   fi
                 done
               fi
+              echo "   Clean: ''${cyan}mca''${nc}"
               echo ""
             fi
 
             # Doom Emacs
             if [ -d ~/.local/share/nix-doom ]; then
               local doom_size=$(du -sh ~/.local/share/nix-doom 2>/dev/null | cut -f1)
-              echo "''${blue}👿 Doom Emacs''${nc}"
+              echo "''${magenta}👿 Doom Emacs''${nc}"
               echo "   Size: ''${bold}$doom_size''${nc}"
               echo ""
             fi
 
             # Neovim/LazyVim
-            if [ -d ~/.local/share/nvim ]; then
-              local nvim_size=$(du -sh ~/.local/share/nvim 2>/dev/null | cut -f1)
+            local nvim_total=0
+            if [ -d ~/.local/share/nvim ] || [ -d ~/.local/state/nvim ] || [ -d ~/.cache/nvim ]; then
+              local nvim_data=$(du -sh ~/.local/share/nvim 2>/dev/null | cut -f1 || echo "0")
+              local nvim_state=$(du -sh ~/.local/state/nvim 2>/dev/null | cut -f1 || echo "0")
+              local nvim_cache=$(du -sh ~/.cache/nvim 2>/dev/null | cut -f1 || echo "0")
               echo "''${green}📝 Neovim/LazyVim''${nc}"
-              echo "   Size: ''${bold}$nvim_size''${nc}"
+              echo "   Data:  $nvim_data"
+              echo "   State: $nvim_state"
+              echo "   Cache: $nvim_cache"
+              echo "   Clean: ''${cyan}vcc''${nc}"
+              echo ""
+            fi
+
+            # General cache
+            if [ -d ~/.cache ]; then
+              local cache_size=$(du -sh ~/.cache 2>/dev/null | cut -f1)
+              echo "''${cyan}💾 General Cache (~/.cache)''${nc}"
+              echo "   Size: ''${bold}$cache_size''${nc}"
+              echo "   Clean: ''${cyan}ccc''${nc} (careful!)"
               echo ""
             fi
 
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "''${bold}Cleanup commands:''${nc}"
-            echo "  nsc   - Nix store clean (gc + optimise)"
-            echo "  dca   - Docker clean all"
+            echo "''${bold}Quick cleanup commands:''${nc}"
+            echo "  nsc  - Nix store clean (gc + optimise)"
+            echo "  dca  - Docker clean all"
+            echo "  mca  - Mise clean all (prune + cache)"
+            echo "  vcc  - Neovim cache clean"
+            echo "  ccc  - Clear ~/.cache (careful!)"
+            echo ""
+            echo "''${bold}Full cleanup:''${nc}"
+            echo "  dev-clean  - Interactive cleanup of everything"
+            echo ""
+          }
+
+          # Interactive full cleanup
+          dev-clean() {
+            local blue='\033[0;34m'
+            local green='\033[0;32m'
+            local yellow='\033[1;33m'
+            local red='\033[0;31m'
+            local nc='\033[0m'
+            local bold='\033[1m'
+
+            echo ""
+            echo "''${bold}🧹 Development Environment Cleanup''${nc}"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+
+            # Nix
+            echo -n "''${blue}❄  Clean Nix store?''${nc} (nix-collect-garbage -d && nix store optimise) [y/N] "
+            read -r yn
+            if [[ "$yn" =~ ^[Yy]$ ]]; then
+              echo "   Running nix-collect-garbage -d..."
+              nix-collect-garbage -d
+              echo "   Running nix store optimise..."
+              nix store optimise
+              echo "   ''${green}✓ Done''${nc}"
+            fi
+            echo ""
+
+            # Docker
+            if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+              echo -n "''${yellow}🐳 Clean Docker?''${nc} (system prune + volumes + builder) [y/N] "
+              read -r yn
+              if [[ "$yn" =~ ^[Yy]$ ]]; then
+                docker system prune -af --volumes
+                docker builder prune -af
+                echo "   ''${green}✓ Done''${nc}"
+              fi
+              echo ""
+            fi
+
+            # Mise
+            if command -v mise &>/dev/null; then
+              echo -n "''${red}🔧 Clean Mise?''${nc} (prune unused + clear cache) [y/N] "
+              read -r yn
+              if [[ "$yn" =~ ^[Yy]$ ]]; then
+                mise prune -y
+                mise cache clear
+                echo "   ''${green}✓ Done''${nc}"
+              fi
+              echo ""
+            fi
+
+            # Neovim
+            if [ -d ~/.local/share/nvim ] || [ -d ~/.cache/nvim ]; then
+              echo -n "''${green}📝 Clean Neovim/LazyVim cache?''${nc} [y/N] "
+              read -r yn
+              if [[ "$yn" =~ ^[Yy]$ ]]; then
+                rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim
+                echo "   ''${green}✓ Done''${nc} (plugins will reinstall on next launch)"
+              fi
+              echo ""
+            fi
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "''${green}✓ Cleanup complete!''${nc}"
+            echo ""
+            echo "Run ''${bold}dev-disk''${nc} to see current usage."
             echo ""
           }
 
