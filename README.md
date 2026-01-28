@@ -69,14 +69,59 @@ This repo is designed to be easily forked:
 
 ## Commands
 
+### General
+
 | Command | Description |
 |---------|-------------|
 | `hms`   | Home Manager switch (rebuild config) |
 | `nrs`   | NixOS rebuild switch |
-| `nfu`   | Nix flake update |
 | `em`    | Emacs (GUI, uses daemon) |
 | `emt`   | Emacs terminal |
 | `lvim`  | LazyVim |
+| `dev-disk` | Show disk usage for Nix, Docker, mise, etc. |
+
+### Nix (n = nix)
+
+| Command | Description |
+|---------|-------------|
+| `nfu`   | Nix flake update |
+| `ncg`   | Nix collect garbage (basic) |
+| `ncgd`  | Nix collect garbage + delete old generations |
+| `nco`   | Nix store optimise (deduplicate) |
+| `nsc`   | Nix store clean (gc -d + optimise) |
+
+### Docker (d = docker)
+
+| Command | Description |
+|---------|-------------|
+| `dps`   | Docker ps |
+| `dpsa`  | Docker ps -a |
+| `di`    | Docker images |
+| `dcp`   | Docker clean prune (unused containers/networks) |
+| `dcpa`  | Docker clean prune all (+ unused images) |
+| `dcpv`  | Docker clean prune volumes |
+| `dcpb`  | Docker clean prune builder cache |
+| `dca`   | Docker clean all (everything) |
+
+### Git (g = git)
+
+| Command | Description |
+|---------|-------------|
+| `gs`    | git status |
+| `ga`    | git add -A |
+| `gd`    | git diff |
+| `gl`    | git log (graph) |
+| `gla`   | git log --all (graph) |
+| `gco`   | git checkout |
+| `gnb`   | git checkout -b (new branch) |
+| `gpl`   | git pull |
+| `gf`    | git fetch |
+| `gb`    | git branch |
+
+### Secrets
+
+| Command | Description |
+|---------|-------------|
 | `github-token` | Print GitHub token |
 | `dockerhub-token` | Print Docker Hub token |
 
