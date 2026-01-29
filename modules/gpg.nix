@@ -44,7 +44,7 @@ in
       enableSshSupport = cfg.enableSshSupport;
       
       # Use curses pinentry for WSL/headless systems
-      pinentryPackage = pkgs.pinentry-curses;
+      pinentry.package = pkgs.pinentry-curses;
       
       # Cache settings
       defaultCacheTtl = 3600;         # 1 hour
