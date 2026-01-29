@@ -377,5 +377,9 @@ in
         nix-direnv.enable = true;
       };
     };
+
+    # Force overwrite files that may exist from manual configuration
+    home.file.".zshenv".force = true;
+    xdg.configFile."starship.toml".force = true;
   };
 }
