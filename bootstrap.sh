@@ -95,8 +95,20 @@ configure_nix() {
   if [ -n "$cachix_cache" ]; then
     info "Adding custom Cachix cache: $cachix_cache"
     substituters="$substituters https://${cachix_cache}.cachix.org"
-    # Note: User will need to add their public key manually or via `cachix use`
-    warn "Run 'cachix use ${cachix_cache}' to add the public key, or add it manually to nix.conf"
+    # Try to get the public key automatically
+    if command -v curl &>/dev/null; then
+      local cache_key=$(curl -sL "https://${cachix_cache}.cachix.org/api/v1/cache" 2>/dev/null | grep -oP '"publicSigningKeys":\["\K[^"]+' | head -1)
+      if [ -n "$cache_key" ]; then
+        trusted_keys="$trusted_keys ${cachix_cache}.cachix.org-1:$cache_key"
+        info "Added public key for ${cachix_cache} cache"
+      else
+        warn "Could not fetch public key for ${cachix_cache}"
+        warn "Run 'cachix use ${cachix_cache}' to add the public key manually"
+      fi
+    else
+      warn "curl not available, cannot fetch cachix public key"
+      warn "Run 'cachix use ${cachix_cache}' to add the public key, or add it manually to nix.conf"
+    fi
   fi
   
   cat > "$NIX_CONF" << EOF
