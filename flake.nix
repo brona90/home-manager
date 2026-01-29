@@ -60,6 +60,7 @@
             sops-nix.homeManagerModules.sops
             ./modules/zsh.nix
             ./modules/git.nix
+            ./modules/gpg.nix
             ./modules/btop.nix
             ./modules/vim/default.nix
             ./modules/emacs/default.nix
@@ -72,7 +73,15 @@
             home = {
               inherit username homeDirectory;
               stateVersion = "24.11";
+              
+              # Always use backup extension to avoid collisions
+              # This makes 'home-manager switch' automatically backup conflicting files
+              activation.extraActivationPath = [ pkgs.rsync ];
             };
+
+            # Force overwrite managed files to prevent collisions
+            home.file.".zshenv".force = true;
+            xdg.configFile."starship.toml".force = true;
 
             my = {
               tmux = {

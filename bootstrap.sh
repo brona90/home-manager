@@ -220,11 +220,11 @@ setup_sops() {
   else
     info "Generating new age key..."
     mkdir -p "$age_dir"
-    nix run nixpkgs#age -- -keygen -o "$age_key"
+    nix shell nixpkgs#age -c age-keygen -o "$age_key"
     chmod 600 "$age_key"
     info "Age key generated at $age_key"
     
-    local pubkey=$(nix run nixpkgs#age -- -keygen -y "$age_key")
+    local pubkey=$(nix shell nixpkgs#age -c age-keygen -y "$age_key")
     warn "Your public key (add to .sops.yaml on a machine that has secrets):"
     echo "$pubkey"
     warn ""
