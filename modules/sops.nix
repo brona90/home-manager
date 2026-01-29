@@ -36,6 +36,17 @@ in
       sessionVariables = {
         GITHUB_TOKEN_FILE = config.sops.secrets.github_token.path;
         DOCKERHUB_TOKEN_FILE = config.sops.secrets.dockerhub_token.path;
+        # Use script that ensures Emacs daemon is running
+        SOPS_EDITOR = "${pkgs.writeShellScript "sops-emacs-editor" ''
+          # Check if emacs daemon is running, start it if not
+          if ! ${pkgs.emacs}/bin/emacsclient -e "(+ 1 1)" >/dev/null 2>&1; then
+            ${pkgs.emacs}/bin/emacs --daemon >/dev/null 2>&1
+            # Give daemon a moment to start
+            sleep 1
+          fi
+          # Open file in emacsclient
+          exec ${pkgs.emacs}/bin/emacsclient -nw "$@"
+        ''}";
       };
     };
 
