@@ -5,6 +5,7 @@ keys:
   - &gfoster_wsl_debian age1m0ye9zusm48tf6k34ty833qxnn3rxtqe9cdekm9ejanq0m4e85ls8jsd79
   - &gfoster_wsl_nix age1rdhwvz3tt4rs05e3lns4ey5g2n20c7m49ulplvt4v5gvymjjafsquykn9y
   - &gfoster_mac age1plqyalfct2hdwtd9yrsvstthqewledfga0sh9fw86a2wlesaxvvqvs3ru2
+  - &gfoster_wsl_ubuntu age1m9f993r5vcf8u5sk6zll6qsul4vdrxv8fr0xg2dn7sacv0yul4ssvfke7d
 
 creation_rules:
   - path_regex: secrets/.*\.yaml$
