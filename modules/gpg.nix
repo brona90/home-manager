@@ -62,7 +62,7 @@ in
       gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
     '';
 
-    programs.bash.initContent = lib.mkAfter ''
+    programs.bash.initExtra = lib.mkAfter ''
       # GPG TTY configuration
       export GPG_TTY=$(tty)
       
