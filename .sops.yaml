@@ -14,3 +14,4 @@ creation_rules:
           - *gfoster_wsl_debian
           - *gfoster_wsl_nix
           - *gfoster_mac
+          - *gfoster_wsl_ubuntu
