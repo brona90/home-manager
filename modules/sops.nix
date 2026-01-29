@@ -26,7 +26,53 @@ in
         chmod 700 "${config.home.homeDirectory}/.ssh"
       '';
 
-      activation.importGpgKey = lib.hm.dag.entryAfter [ "writeBoundary" "sops-nix" ] ''
+      activation.decryptSopsSecrets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        # On WSL, systemd user services don't work, so decrypt secrets manually
+        if [ -f "${cfg.ageKeyFile}" ]; then
+          export SOPS_AGE_KEY_FILE="${cfg.ageKeyFile}"
+          
+          # Create secrets directory  
+          SECRETS_DIR="${config.home.homeDirectory}/.config/sops-nix/secrets"
+          mkdir -p "$SECRETS_DIR"
+          chmod 700 "$SECRETS_DIR"
+          
+          # Decrypt github_token
+          if ${pkgs.sops}/bin/sops -d --extract '["github_token"]' "${secretsFile}" > "$SECRETS_DIR/github_token.tmp" 2>/dev/null; then
+            chmod 0400 "$SECRETS_DIR/github_token.tmp"
+            mv -f "$SECRETS_DIR/github_token.tmp" "$SECRETS_DIR/github_token"
+          fi
+          
+          # Decrypt dockerhub_token
+          if ${pkgs.sops}/bin/sops -d --extract '["dockerhub_token"]' "${secretsFile}" > "$SECRETS_DIR/dockerhub_token.tmp" 2>/dev/null; then
+            chmod 0400 "$SECRETS_DIR/dockerhub_token.tmp"
+            mv -f "$SECRETS_DIR/dockerhub_token.tmp" "$SECRETS_DIR/dockerhub_token"
+          fi
+          
+          # Decrypt SSH keys
+          if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["id_rsa"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/id_rsa.tmp" 2>/dev/null; then
+            chmod 0600 "${config.home.homeDirectory}/.ssh/id_rsa.tmp"
+            mv -f "${config.home.homeDirectory}/.ssh/id_rsa.tmp" "${config.home.homeDirectory}/.ssh/id_rsa"
+          fi
+          
+          if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["id_rsa_pub"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/id_rsa.pub.tmp" 2>/dev/null; then
+            chmod 0644 "${config.home.homeDirectory}/.ssh/id_rsa.pub.tmp"
+            mv -f "${config.home.homeDirectory}/.ssh/id_rsa.pub.tmp" "${config.home.homeDirectory}/.ssh/id_rsa.pub"
+          fi
+          
+          # Decrypt GPG keys
+          if ${pkgs.sops}/bin/sops -d --extract '["gpg"]["private_key"]' "${secretsFile}" > "$SECRETS_DIR/gpg_private_key.tmp" 2>/dev/null; then
+            chmod 0600 "$SECRETS_DIR/gpg_private_key.tmp"
+            mv -f "$SECRETS_DIR/gpg_private_key.tmp" "$SECRETS_DIR/gpg_private_key"
+          fi
+          
+          if ${pkgs.sops}/bin/sops -d --extract '["gpg"]["public_key"]' "${secretsFile}" > "$SECRETS_DIR/gpg_public_key.tmp" 2>/dev/null; then
+            chmod 0644 "$SECRETS_DIR/gpg_public_key.tmp"
+            mv -f "$SECRETS_DIR/gpg_public_key.tmp" "$SECRETS_DIR/gpg_public_key"
+          fi
+        fi
+      '';
+
+      activation.importGpgKey = lib.hm.dag.entryAfter [ "decryptSopsSecrets" ] ''
         if [ -f "${config.sops.secrets."gpg/private_key".path}" ]; then
           export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
           ${pkgs.gnupg}/bin/gpg --batch --import "${config.sops.secrets."gpg/private_key".path}" 2>/dev/null || true
@@ -36,17 +82,6 @@ in
       sessionVariables = {
         GITHUB_TOKEN_FILE = config.sops.secrets.github_token.path;
         DOCKERHUB_TOKEN_FILE = config.sops.secrets.dockerhub_token.path;
-        # Use script that ensures Emacs daemon is running
-        SOPS_EDITOR = "${pkgs.writeShellScript "sops-emacs-editor" ''
-          # Check if emacs daemon is running, start it if not
-          if ! ${pkgs.emacs}/bin/emacsclient -e "(+ 1 1)" >/dev/null 2>&1; then
-            ${pkgs.emacs}/bin/emacs --daemon >/dev/null 2>&1
-            # Give daemon a moment to start
-            sleep 1
-          fi
-          # Open file in emacsclient
-          exec ${pkgs.emacs}/bin/emacsclient -nw "$@"
-        ''}";
       };
     };
 
@@ -58,8 +93,12 @@ in
       environment.PATH = lib.mkForce "/usr/bin";
 
       secrets = {
-        github_token = {};
-        dockerhub_token = {};
+        github_token = {
+          path = "${config.home.homeDirectory}/.config/sops-nix/secrets/github_token";
+        };
+        dockerhub_token = {
+          path = "${config.home.homeDirectory}/.config/sops-nix/secrets/dockerhub_token";
+        };
         "ssh/id_rsa" = {
           path = "${config.home.homeDirectory}/.ssh/id_rsa";
           mode = "0600";
@@ -69,9 +108,11 @@ in
           mode = "0644";
         };
         "gpg/private_key" = {
+          path = "${config.home.homeDirectory}/.config/sops-nix/secrets/gpg_private_key";
           mode = "0600";
         };
         "gpg/public_key" = {
+          path = "${config.home.homeDirectory}/.config/sops-nix/secrets/gpg_public_key";
           mode = "0644";
         };
       };
@@ -85,6 +126,9 @@ in
     my.zsh.extraInitExtra = ''
       # GPG needs TTY for pinentry
       export GPG_TTY=$(tty)
+
+      # SOPS editor - use emt which handles daemon startup
+      export SOPS_EDITOR="emt"
 
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
