@@ -27,21 +27,40 @@ in
       pinentry-curses  # Terminal-based pinentry for WSL/headless systems
     ];
 
-    # Configure GPG
-    programs.gpg = {
-      enable = true;
-      settings = {
-        # Use GPG agent
-        use-agent = true;
-        # Default key
-        default-key = cfg.defaultKey;
+    programs = {
+      # Configure GPG
+      gpg = {
+        enable = true;
+        settings = {
+          # Use GPG agent
+          use-agent = true;
+          # Default key
+          default-key = cfg.defaultKey;
+        };
       };
+
+      # Set GPG_TTY in shell
+      zsh.initContent = lib.mkAfter ''
+        # GPG TTY configuration
+        export GPG_TTY=$(tty)
+        
+        # Refresh gpg-agent tty in case user switches to another tty
+        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+      '';
+
+      bash.initExtra = lib.mkAfter ''
+        # GPG TTY configuration
+        export GPG_TTY=$(tty)
+        
+        # Refresh gpg-agent tty
+        gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+      '';
     };
 
     # Configure GPG agent
     services.gpg-agent = {
       enable = true;
-      enableSshSupport = cfg.enableSshSupport;
+      inherit (cfg) enableSshSupport;
       
       # Use curses pinentry for WSL/headless systems
       pinentry.package = pkgs.pinentry-curses;
@@ -52,22 +71,5 @@ in
       maxCacheTtl = 86400;            # 24 hours
       maxCacheTtlSsh = 86400;
     };
-
-    # Set GPG_TTY in shell
-    programs.zsh.initContent = lib.mkAfter ''
-      # GPG TTY configuration
-      export GPG_TTY=$(tty)
-      
-      # Refresh gpg-agent tty in case user switches to another tty
-      gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
-    '';
-
-    programs.bash.initExtra = lib.mkAfter ''
-      # GPG TTY configuration
-      export GPG_TTY=$(tty)
-      
-      # Refresh gpg-agent tty
-      gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
-    '';
   };
 }

@@ -21,12 +21,13 @@ in
     home = {
       packages = [ pkgs.sops pkgs.age pkgs.gnupg ];
 
-      activation.createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-        mkdir -p "${config.home.homeDirectory}/.ssh"
-        chmod 700 "${config.home.homeDirectory}/.ssh"
-      '';
+      activation = {
+        createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+          mkdir -p "${config.home.homeDirectory}/.ssh"
+          chmod 700 "${config.home.homeDirectory}/.ssh"
+        '';
 
-      activation.decryptSopsSecrets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        decryptSopsSecrets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         # On WSL, systemd user services don't work, so decrypt secrets manually
         if [ -f "${cfg.ageKeyFile}" ]; then
           export SOPS_AGE_KEY_FILE="${cfg.ageKeyFile}"
@@ -69,15 +70,15 @@ in
             chmod 0644 "$SECRETS_DIR/gpg_public_key.tmp"
             mv -f "$SECRETS_DIR/gpg_public_key.tmp" "$SECRETS_DIR/gpg_public_key"
           fi
-        fi
-      '';
+        '';
 
-      activation.importGpgKey = lib.hm.dag.entryAfter [ "decryptSopsSecrets" ] ''
-        if [ -f "${config.sops.secrets."gpg/private_key".path}" ]; then
-          export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
-          ${pkgs.gnupg}/bin/gpg --batch --import "${config.sops.secrets."gpg/private_key".path}" 2>/dev/null || true
-        fi
-      '';
+        importGpgKey = lib.hm.dag.entryAfter [ "decryptSopsSecrets" ] ''
+          if [ -f "${config.sops.secrets."gpg/private_key".path}" ]; then
+            export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
+            ${pkgs.gnupg}/bin/gpg --batch --import "${config.sops.secrets."gpg/private_key".path}" 2>/dev/null || true
+          fi
+        '';
+      };
 
       sessionVariables = {
         GITHUB_TOKEN_FILE = config.sops.secrets.github_token.path;
