@@ -8,9 +8,10 @@
   (when (file-directory-p lily-path)
     (add-to-list 'load-path lily-path)))
 
-;; Auto-load lilypond-mode for .ly files
-(autoload 'lilypond-mode "lilypond-mode" "LilyPond mode" t)
-(add-to-list 'auto-mode-alist '("\\.ly\\'" . lilypond-mode))
+;; Load and configure lilypond-mode
+(after! files
+  (require 'lilypond-mode nil t)
+  (add-to-list 'auto-mode-alist '("\\.ly\\'" . lilypond-mode) t))
 
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets. It is optional.
