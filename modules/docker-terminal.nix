@@ -3,8 +3,8 @@
 let
   cfg = config.my.dockerTerminal;
   repoConfig = userConfig.repo;
-  homeDir = config.home.homeDirectory;
-  username = config.home.username;
+  inherit (config.home) homeDirectory username;
+  homeDir = homeDirectory;
   
   terminalScript = pkgs.writeShellScriptBin "terminal" ''
     IMAGE="''${DOCKER_TERMINAL_IMAGE:-${repoConfig.dockerHubUser}/terminal:latest}"
