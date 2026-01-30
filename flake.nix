@@ -84,9 +84,7 @@
               emacs = {
                 enable = true;
                 package = pkgs.emacsWithDoom {
-                  doomDir = if isDarwin && builtins.pathExists ./modules/emacs/doom.d-darwin
-                            then ./modules/emacs/doom.d-darwin
-                            else ./modules/emacs/doom.d;
+                  doomDir = ./modules/emacs/doom.d;
                   doomLocalDir = "~/.local/share/nix-doom";
                 };
               };
