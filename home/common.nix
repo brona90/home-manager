@@ -29,5 +29,6 @@
     bazel-buildtools
     aspell
     aspellDicts.en
+    lilypond  # Music engraving for Doom Emacs
   ];
 }

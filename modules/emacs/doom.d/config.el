@@ -3,6 +3,12 @@
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
+(setq load-path (append (list (expand-file-name "/usr/share/emacs/site-lisp")) load-path))
+
+(autoload 'lilypond-mode "lilypond-mode")
+(setq auto-mode-alist (cons '("\\\\.ly$" . lilypond-mode) auto-mode-alist))
+(add-hook 'lilypond-mode-hook (lambda () (turn-on-font-lock)))
+
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets. It is optional.
 (setq user-full-name "Gregory Foster"
