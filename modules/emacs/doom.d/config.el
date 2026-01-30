@@ -10,8 +10,8 @@
 
 ;; Require and configure lilypond-mode
 (when (require 'lilypond-mode nil t)
-  ;; Prepend to auto-mode-alist so it takes priority
-  (add-to-list 'auto-mode-alist '("\\.ly\\'" . lilypond-mode)))
+  ;; Force it into auto-mode-alist
+  (setq auto-mode-alist (cons '("\\.ly\\'" . lilypond-mode) auto-mode-alist)))
 
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets. It is optional.
