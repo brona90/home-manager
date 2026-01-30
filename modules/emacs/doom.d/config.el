@@ -3,6 +3,15 @@
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
+;; Add lilypond elisp directory to load-path
+(let ((lily-path (concat (file-name-directory (executable-find "lilypond")) "../share/emacs/site-lisp")))
+  (when (file-directory-p lily-path)
+    (add-to-list 'load-path lily-path)))
+
+;; Auto-load lilypond-mode for .ly files
+(autoload 'lilypond-mode "lilypond-mode" "LilyPond mode" t)
+(add-to-list 'auto-mode-alist '("\\.ly\\'" . lilypond-mode))
+
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets. It is optional.
 (setq user-full-name "Gregory Foster"
