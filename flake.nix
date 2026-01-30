@@ -55,7 +55,7 @@
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          extraSpecialArgs = { inherit gitConfig; };
+          extraSpecialArgs = { inherit gitConfig userConfig; };
           modules = [
             sops-nix.homeManagerModules.sops
             ./modules/zsh.nix
@@ -66,6 +66,7 @@
             ./modules/emacs/default.nix
             ./modules/tmux/default.nix
             ./modules/sops.nix
+            ./modules/docker-terminal.nix
             ./home/common.nix
           ]
           ++ (if isLinux then [ ./home/linux.nix ] else [ ./home/darwin.nix ])
@@ -89,7 +90,7 @@
                   doomLocalDir = "~/.local/share/nix-doom";
                 };
               };
-              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager\#${username}@${system}" -b backup'';
+              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup'';
             };
           }];
         };

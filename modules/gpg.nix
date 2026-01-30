@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, gitConfig, ... }:
 
 let
   cfg = config.my.gpg;
@@ -9,7 +9,7 @@ in
 
     defaultKey = lib.mkOption {
       type = lib.types.str;
-      default = "ECA2632B08E80FC6";
+      default = gitConfig.signingKey or "";
       description = "Default GPG key ID for signing";
     };
 

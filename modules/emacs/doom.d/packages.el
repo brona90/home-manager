@@ -10,6 +10,7 @@
 (package! forge)                 ; GitHub/GitLab integration for magit
 
 ;;; Productivity
+(package! minimap)               ; mini code map in margin
 (package! org-roam)              ; Zettelkasten note-taking
 (package! org-journal)           ; Daily journaling
 (package! org-drawio)

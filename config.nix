@@ -38,5 +38,6 @@
   git = {
     userName = "Gregory Foster";
     userEmail = "brona90@gmail.com";
+    signingKey = "ECA2632B08E80FC6";  # GPG key ID for commit signing
   };
 }
