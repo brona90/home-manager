@@ -13,6 +13,7 @@
     btop.enable = true;
     vim.enable = true;
     sops.enable = true;
+    dockerTerminal.enable = true;
   };
 
   # Locale settings (important for SSH sessions and special characters)
