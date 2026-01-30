@@ -70,6 +70,7 @@ in
             chmod 0644 "$SECRETS_DIR/gpg_public_key.tmp"
             mv -f "$SECRETS_DIR/gpg_public_key.tmp" "$SECRETS_DIR/gpg_public_key"
           fi
+        fi
         '';
 
         importGpgKey = lib.hm.dag.entryAfter [ "decryptSopsSecrets" ] ''
