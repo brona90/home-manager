@@ -3,7 +3,7 @@
 let
   cfg = config.my.dockerTerminal;
   repoConfig = userConfig.repo;
-  inherit (config.home) homeDirectory username;
+  inherit (config.home) homeDirectory;
   homeDir = homeDirectory;
   
   terminalScript = pkgs.writeShellScriptBin "terminal" ''
