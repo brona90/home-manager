@@ -89,7 +89,7 @@
                   doomLocalDir = "~/.local/share/nix-doom";
                 };
               };
-              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup'';
+              zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager\#${username}@${system}" -b backup'';
             };
           }];
         };
