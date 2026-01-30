@@ -113,7 +113,7 @@
        tty               ; improve the terminal Emacs experience
 
        :lang
-       ;;(lilypond +lsp)  ; Manually loaded in config.el
+       ;;(lilypond +lsp)  ; Doesn't work with nix-doom-emacs
        ;;agda              ; types of types of types of types...
        ;;beancount         ; mind the GAAP
        ;;(cc +lsp)         ; C > C++ == 1
