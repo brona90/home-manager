@@ -3,17 +3,18 @@
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
-;; LilyPond: Add elisp directory and load mode
-(let ((lily-path (concat (file-name-directory (executable-find "lilypond")) "../share/emacs/site-lisp")))
-  (when (file-directory-p lily-path)
-    (add-to-list 'load-path lily-path)))
+;; LilyPond: Add elisp directory and load mode (skip if lilypond not available)
+(when (executable-find "lilypond")
+  (let ((lily-path (concat (file-name-directory (executable-find "lilypond")) "../share/emacs/site-lisp")))
+    (when (file-directory-p lily-path)
+      (add-to-list 'load-path lily-path)))
 
-(require 'lilypond-mode nil t)
+  (require 'lilypond-mode nil t)
 
-;; Set up auto-mode-alist using setq-default to ensure it persists
-(with-eval-after-load 'lilypond-mode
-  (setq-default auto-mode-alist
-                (cons '("\\.ly\\'" . LilyPond-mode) auto-mode-alist)))
+  ;; Set up auto-mode-alist using setq-default to ensure it persists
+  (with-eval-after-load 'lilypond-mode
+    (setq-default auto-mode-alist
+                  (cons '("\\.ly\\'" . LilyPond-mode) auto-mode-alist))))
 
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets. It is optional.
