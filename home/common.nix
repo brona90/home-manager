@@ -29,6 +29,9 @@
     bazel-buildtools
     aspell
     aspellDicts.en
+  ] ++ (if pkgs.stdenv.isDarwin then [
+    # Skip lilypond on macOS - it has build errors on aarch64-darwin
+  ] else [
     lilypond  # Music engraving for Doom Emacs
-  ];
+  ]);
 }
