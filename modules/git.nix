@@ -24,8 +24,8 @@ in
 
       key = lib.mkOption {
         type = lib.types.str;
-        default = "ECA2632B08E80FC6";
-        description = "GPG key ID for signing commits";
+        default = gitConfig.signingKey;
+        description = "GPG key ID for signing commits (from config.nix)";
       };
 
       signByDefault = lib.mkOption {
