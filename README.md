@@ -59,6 +59,7 @@ This repo is designed to be easily forked:
      git = {
        userName = "Your Name";
        userEmail = "your@email.com";
+       signingKey = "YOUR_GPG_KEY_ID";  # GPG key for commit signing
      };
    }
    ```
@@ -218,6 +219,221 @@ git pull
 hms
 ```
 
+## Doom Emacs
+
+This configuration uses [nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened) to provide a fully reproducible Doom Emacs setup. The Doom configuration files live in `modules/emacs/doom.d/`.
+
+### Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `modules/emacs/doom.d/init.el` | Enable/disable Doom modules |
+| `modules/emacs/doom.d/packages.el` | Declare additional packages |
+| `modules/emacs/doom.d/config.el` | Personal configuration |
+
+### Applying Changes
+
+**Unlike standard Doom Emacs, you don't run `doom sync`.**
+
+All changes to `doom.d/` files require a Home Manager rebuild:
+
+```bash
+# After editing doom.d files:
+hms
+
+# Restart emacs daemon to pick up changes:
+systemctl --user restart emacs  # Linux with systemd
+# Or manually:
+emacsclient -e '(kill-emacs)'
+em  # This will restart the daemon
+```
+
+### Adding Packages
+
+Edit `modules/emacs/doom.d/packages.el`:
+
+```elisp
+;; Add a package from MELPA
+(package! some-package)
+
+;; Add a package from a git repo
+(package! another-package
+  :recipe (:host github :repo "user/repo"))
+
+;; Pin a package to a specific commit
+(package! pinned-package :pin "abc123")
+```
+
+Then rebuild: `hms`
+
+### Enabling Doom Modules
+
+Edit `modules/emacs/doom.d/init.el` and uncomment modules:
+
+```elisp
+:lang
+(python +lsp +pyright)  ; enable python with LSP
+(rust +lsp)             ; enable rust with LSP
+```
+
+Then rebuild: `hms`
+
+### Why This Approach?
+
+Traditional Doom Emacs uses `doom sync` which downloads packages imperatively. This creates reproducibility issues because packages can differ between machines.
+
+With nix-doom-emacs-unstraightened:
+- All packages are pinned in `flake.lock`
+- Builds are reproducible across machines
+- No network access needed after initial build
+- Rollback is trivial (previous generations)
+
+### Troubleshooting Doom Emacs
+
+```bash
+# Check if emacs daemon is running
+systemctl --user status emacs
+
+# View daemon logs
+journalctl --user -u emacs -f
+
+# Force restart daemon
+systemctl --user restart emacs
+
+# Run emacs without daemon (for debugging)
+emacs --debug-init
+
+# Check what packages are installed
+nix path-info -rsh $(which emacs) | sort -hk2 | tail -20
+```
+
+## LazyVim
+
+This configuration provides a Nix-managed LazyVim setup where all plugins are pre-fetched and pinned. The wrapper script `lvim` handles the complexity of running LazyVim in a reproducible way.
+
+### How It Works
+
+The `modules/vim/default.nix` module:
+
+1. **Pre-fetches plugins** - LazyVim and all plugins are fetched at Nix build time using `fetchFromGitHub`
+2. **Uses nixpkgs treesitter grammars** - All grammars are pre-compiled, no runtime compilation
+3. **Creates a wrapper script** (`lvim`) that:
+   - Sets up environment variables (fonts, SSL, paths)
+   - Copies pre-fetched plugins to `~/.local/share/nvim/lazy/`
+   - Creates `.git` markers so lazy.nvim thinks plugins are installed
+   - Runs neovim with the bundled config
+
+### Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `modules/vim/nvim-config/init.lua` | Main entry point, loads LazyVim |
+| `modules/vim/nvim-config/lua/config/options.lua` | Neovim options |
+| `modules/vim/nvim-config/lua/plugins/theme.lua` | Theme configuration |
+| `modules/vim/nvim-config/lua/plugins/treesitter.lua` | Treesitter overrides |
+
+### Applying Changes
+
+For config changes (lua files):
+```bash
+hms  # Rebuild home-manager
+```
+
+For plugin version updates, edit `modules/vim/default.nix`:
+```nix
+# Update lazy.nvim version
+lazyNvim = pkgs.fetchFromGitHub {
+  owner = "folke";
+  repo = "lazy.nvim";
+  rev = "v11.16.2";  # Change this
+  sha256 = "...";     # nix will tell you the new hash
+};
+
+# Update LazyVim version
+lazyVimDistro = pkgs.fetchFromGitHub {
+  owner = "LazyVim";
+  repo = "LazyVim";
+  rev = "v15.13.0";  # Change this
+  sha256 = "...";
+};
+```
+
+Then rebuild and clear cache:
+```bash
+hms
+vcc  # Clear nvim cache to force plugin reinstall
+lvim
+```
+
+### Adding Plugins
+
+Edit `modules/vim/default.nix` and add to the `pluginsDir` linkFarm:
+
+```nix
+pluginsDir = pkgs.linkFarm "lazy-plugins" [
+  # ... existing plugins ...
+  { name = "new-plugin.nvim"; path = vp.new-plugin-nvim; }  # from nixpkgs
+  # Or fetch directly:
+  { name = "custom-plugin"; path = pkgs.fetchFromGitHub {
+      owner = "author";
+      repo = "custom-plugin";
+      rev = "v1.0.0";
+      sha256 = "sha256-...";
+    };
+  }
+];
+```
+
+Then create a lua config in `modules/vim/nvim-config/lua/plugins/`:
+
+```lua
+-- modules/vim/nvim-config/lua/plugins/new-plugin.lua
+return {
+  { "author/new-plugin.nvim", opts = {} }
+}
+```
+
+Rebuild: `hms && vcc && lvim`
+
+### Why This Approach?
+
+Traditional LazyVim downloads plugins at runtime, which:
+- Requires network access
+- Can break if GitHub is slow/down
+- Results in different versions across machines
+
+With Nix-managed LazyVim:
+- All plugins pinned in Nix
+- No network access after build
+- Reproducible across machines
+- Treesitter grammars pre-compiled (faster startup)
+
+### Limitations & Caveats
+
+1. **Plugin updates require manual Nix changes** - You can't just run `:Lazy update`
+2. **Mason is disabled** - LSP servers are managed by Nix, not Mason
+3. **Some lazy.nvim features don't work** - Plugin installation, updates via UI
+4. **Cache clearing sometimes needed** - After updates, run `vcc` to clear state
+
+### Troubleshooting LazyVim
+
+```bash
+# Clear all nvim state (nuclear option)
+vcc
+
+# Check what's in the lazy plugins dir
+ls -la ~/.local/share/nvim/lazy/
+
+# Run with verbose output
+lvim --startuptime /tmp/startup.log
+
+# Check treesitter grammars
+lvim -c ':TSInstallInfo'
+
+# Debug LSP
+lvim -c ':LspInfo'
+```
+
 ## Secrets Management
 
 Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
@@ -245,6 +461,16 @@ sops secrets/secrets.yaml
 ## GPG Commit Signing
 
 Commits are automatically signed with GPG when `my.git.signing.enable = true` (default).
+
+The signing key is configured in `config.nix`:
+
+```nix
+git = {
+  userName = "Your Name";
+  userEmail = "your@email.com";
+  signingKey = "YOUR_GPG_KEY_ID";  # Used by modules/git.nix
+};
+```
 
 ### Setup GPG key for GitHub
 
