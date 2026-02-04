@@ -21,8 +21,34 @@ NC='\033[0m'
 
 info() { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+fatal() { echo -e "${RED}[FATAL]${NC} $*" >&2; exit 1; }
 prompt() { echo -e "${BLUE}[INPUT]${NC} $*"; }
+
+# Validation helpers
+validate_command() {
+  local cmd="$1"
+  local description="$2"
+  if ! command -v "$cmd" &>/dev/null; then
+    fatal "$description requires '$cmd' but it's not installed."
+  fi
+}
+
+validate_directory() {
+  local dir="$1"
+  local description="$2"
+  if [ ! -d "$dir" ]; then
+    fatal "$description: directory '$dir' does not exist."
+  fi
+}
+
+validate_file() {
+  local file="$1"
+  local description="$2"
+  if [ ! -f "$file" ]; then
+    fatal "$description: file '$file' does not exist."
+  fi
+}
 
 # Detect system
 detect_system() {
@@ -34,18 +60,18 @@ detect_system() {
       case "$arch" in
         x86_64)  echo "x86_64-linux" ;;
         aarch64) echo "aarch64-linux" ;;
-        *)       error "Unsupported architecture: $arch" ;;
+        *)       fatal "Unsupported architecture: $arch" ;;
       esac
       ;;
     Darwin)
       case "$arch" in
         x86_64)  echo "x86_64-darwin" ;;
         arm64)   echo "aarch64-darwin" ;;
-        *)       error "Unsupported architecture: $arch" ;;
+        *)       fatal "Unsupported architecture: $arch" ;;
       esac
       ;;
     *)
-      error "Unsupported OS: $os"
+      fatal "Unsupported OS: $os"
       ;;
   esac
 }
@@ -53,18 +79,26 @@ detect_system() {
 # Check if Nix is installed
 check_nix() {
   if ! command -v nix &>/dev/null; then
-    error "Nix is not installed. Install it first:
+    fatal "Nix is not installed. Install it first:
     
     curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install"
   fi
   
-  info "Nix found: $(nix --version)"
+  local nix_version
+  nix_version=$(nix --version 2>/dev/null) || fatal "Nix is installed but 'nix --version' failed."
+  info "Nix found: $nix_version"
+  
+  # Verify nix can evaluate simple expressions
+  if ! nix eval --expr "1 + 1" &>/dev/null; then
+    fatal "Nix is installed but cannot evaluate expressions. Check your Nix configuration."
+  fi
 }
 
 # Read cachix cache from config.nix if available
 get_cachix_cache() {
   if [ -f "$CONFIG_DIR/config.nix" ]; then
-    local cache=$(grep -oP 'cachixCache\s*=\s*"\K[^"]+' "$CONFIG_DIR/config.nix" 2>/dev/null || echo "")
+    local cache
+    cache=$(grep -oP 'cachixCache\s*=\s*"\K[^"]+' "$CONFIG_DIR/config.nix" 2>/dev/null || echo "")
     if [ -n "$cache" ]; then
       echo "$cache"
       return
@@ -77,7 +111,8 @@ get_cachix_cache() {
 configure_nix() {
   mkdir -p "$NIX_CONF_DIR"
   
-  local cachix_cache=$(get_cachix_cache)
+  local cachix_cache
+  cachix_cache=$(get_cachix_cache)
   
   # Check if already configured
   if [ -f "$NIX_CONF" ] && grep -q "nix-community.cachix.org" "$NIX_CONF"; then
@@ -97,7 +132,8 @@ configure_nix() {
     substituters="$substituters https://${cachix_cache}.cachix.org"
     # Try to get the public key automatically
     if command -v curl &>/dev/null; then
-      local cache_key=$(curl -sL "https://${cachix_cache}.cachix.org/api/v1/cache" 2>/dev/null | grep -oP '"publicSigningKeys":\["\K[^"]+' | head -1)
+      local cache_key
+      cache_key=$(curl -sL "https://${cachix_cache}.cachix.org/api/v1/cache" 2>/dev/null | grep -oP '"publicSigningKeys":\["\K[^"]+' | head -1 || echo "")
       if [ -n "$cache_key" ]; then
         trusted_keys="$trusted_keys ${cachix_cache}.cachix.org-1:$cache_key"
         info "Added public key for ${cachix_cache} cache"
@@ -132,7 +168,15 @@ check_home_manager() {
 setup_config() {
   if [ -d "$CONFIG_DIR/.git" ]; then
     info "Config directory exists, pulling latest..."
-    git -C "$CONFIG_DIR" pull --ff-only || warn "Pull failed, using existing config"
+    if git -C "$CONFIG_DIR" pull --ff-only; then
+      info "Successfully updated config repository"
+    else
+      warn "Pull failed (may have local changes), using existing config"
+    fi
+    
+    # Validate essential files exist
+    validate_file "$CONFIG_DIR/flake.nix" "Config repository validation"
+    validate_file "$CONFIG_DIR/config.nix" "Config repository validation"
   else
     # Check if user wants to use a fork
     prompt "Use default repo ($REPO_URL)? (y/n)"
@@ -141,11 +185,29 @@ setup_config() {
     if [[ "$use_default" != "y" ]]; then
       prompt "Enter your fork URL (e.g., https://github.com/yourname/home-manager.git):"
       read -r REPO_URL
+      
+      # Validate URL format
+      if [[ ! "$REPO_URL" =~ ^https?://|^git@ ]]; then
+        fatal "Invalid repository URL: $REPO_URL"
+      fi
     fi
     
-    info "Cloning config repository..."
+    info "Cloning config repository from $REPO_URL..."
     mkdir -p "$(dirname "$CONFIG_DIR")"
-    git clone "$REPO_URL" "$CONFIG_DIR"
+    
+    if ! git clone "$REPO_URL" "$CONFIG_DIR"; then
+      fatal "Failed to clone repository from $REPO_URL. Check:
+  - URL is correct
+  - Network connectivity
+  - Repository exists and is accessible"
+    fi
+    
+    # Validate clone was successful
+    validate_directory "$CONFIG_DIR/.git" "Git clone verification"
+    validate_file "$CONFIG_DIR/flake.nix" "Repository structure validation"
+    validate_file "$CONFIG_DIR/config.nix" "Repository structure validation"
+    
+    info "Successfully cloned config repository"
   fi
 }
 
@@ -168,6 +230,9 @@ add_user() {
   local username="$1"
   local system="$2"
   local config_file="$CONFIG_DIR/config.nix"
+  
+  # Validate config file exists
+  validate_file "$config_file" "Adding user"
   
   info "Adding ${username}@${system} to config.nix..."
   
@@ -192,8 +257,14 @@ ${new_entry}
     sed -i "/^  \];$/i\\${new_entry}" "$config_file"
   fi
   
-  info "Added ${username}@${system} to config.nix"
-  info "Don't forget to commit this change!"
+  # Validate config.nix is still valid Nix
+  if ! nix eval --file "$config_file" &>/dev/null; then
+    error "config.nix may be malformed after adding user"
+    warn "Please review $config_file manually"
+  else
+    info "Added ${username}@${system} to config.nix"
+    info "Don't forget to commit this change!"
+  fi
 }
 
 # Setup sops age key
@@ -226,17 +297,35 @@ setup_sops() {
       [[ -z "$line" ]] && break
       key+="$line"$'\n'
     done
+    
+    # Validate key format
+    if [[ ! "$key" =~ ^AGE-SECRET-KEY- ]]; then
+      fatal "Invalid age key format. Key must start with 'AGE-SECRET-KEY-'"
+    fi
+    
     echo -n "$key" > "$age_key"
     chmod 600 "$age_key"
+    
+    # Validate key was written
+    validate_file "$age_key" "Age key creation"
     info "Age key saved to $age_key"
   else
     info "Generating new age key..."
     mkdir -p "$age_dir"
-    nix shell nixpkgs#age -c age-keygen -o "$age_key"
-    chmod 600 "$age_key"
-    info "Age key generated at $age_key"
     
-    local pubkey=$(nix shell nixpkgs#age -c age-keygen -y "$age_key")
+    if ! nix shell nixpkgs#age -c age-keygen -o "$age_key"; then
+      fatal "Failed to generate age key. Check Nix and network connectivity."
+    fi
+    
+    chmod 600 "$age_key"
+    
+    # Validate key was generated
+    validate_file "$age_key" "Age key generation"
+    
+    local pubkey
+    pubkey=$(nix shell nixpkgs#age -c age-keygen -y "$age_key") || fatal "Failed to extract public key"
+    
+    info "Age key generated at $age_key"
     warn "Your public key (add to .sops.yaml on a machine that has secrets):"
     echo "$pubkey"
     warn ""
@@ -248,18 +337,68 @@ setup_sops() {
   fi
 }
 
+# Build and activate home-manager
+activate_home_manager() {
+  local config="$1"
+  
+  info "Building and activating home-manager configuration..."
+  info "This may take a while on first run (downloading packages)..."
+  
+  local hm_cmd
+  local exit_code=0
+  
+  if check_home_manager; then
+    hm_cmd="home-manager switch --flake \".#${config}\" -b backup"
+    info "Running: $hm_cmd"
+    if ! home-manager switch --flake ".#${config}" -b backup; then
+      exit_code=$?
+    fi
+  else
+    hm_cmd="nix run home-manager -- switch --flake \".#${config}\" -b backup"
+    info "Running: $hm_cmd"
+    if ! nix run home-manager -- switch --flake ".#${config}" -b backup; then
+      exit_code=$?
+    fi
+  fi
+  
+  if [ $exit_code -ne 0 ]; then
+    error "Home Manager activation failed (exit code: $exit_code)"
+    echo ""
+    error "Common issues:"
+    error "  - Missing user in config.nix"
+    error "  - Syntax errors in Nix files"
+    error "  - Network issues downloading packages"
+    error "  - Conflicting dotfiles (check backup files)"
+    echo ""
+    error "Debug steps:"
+    error "  1. cd $CONFIG_DIR"
+    error "  2. nix flake check (validate flake)"
+    error "  3. nix build '.#homeConfigurations.${config}.activationPackage' (detailed errors)"
+    fatal "Bootstrap failed during home-manager activation"
+  fi
+  
+  info "Home Manager activated successfully"
+}
+
 # Main bootstrap
 main() {
   info "=== Nix Home Manager Bootstrap ==="
   
-  local system=$(detect_system)
-  local default_username=$(whoami)
+  local system
+  system=$(detect_system)
+  local default_username
+  default_username=$(whoami)
   
   info "Detected system: $system"
   
   prompt "Enter username [$default_username]:"
   read -r username
   username="${username:-$default_username}"
+  
+  # Validate username
+  if [[ ! "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    fatal "Invalid username: $username (must be alphanumeric with - or _)"
+  fi
   
   local config="${username}@${system}"
   info "Will configure: $config"
@@ -268,7 +407,7 @@ main() {
   setup_config
   configure_nix  # Run after setup_config so we can read cachix cache from config.nix
   
-  cd "$CONFIG_DIR"
+  cd "$CONFIG_DIR" || fatal "Cannot change to config directory: $CONFIG_DIR"
   
   # Check/add user to config.nix
   if ! user_exists "$username" "$system"; then
@@ -280,12 +419,8 @@ main() {
   # Setup sops
   setup_sops
   
-  info "Building and activating home-manager configuration..."
-  if check_home_manager; then
-    home-manager switch --flake ".#${config}" -b backup
-  else
-    nix run home-manager -- switch --flake ".#${config}" -b backup
-  fi
+  # Activate home-manager
+  activate_home_manager "$config"
   
   info "=== Bootstrap complete! ==="
   info "Restart your shell or run: exec zsh"
