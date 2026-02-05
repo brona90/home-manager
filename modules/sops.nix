@@ -5,7 +5,7 @@ let
   cfg = config.my.sops;
   secretsFile = ../secrets/secrets.yaml;
   secretsExist = builtins.pathExists secretsFile;
-  isDarwin = pkgs.stdenv.isDarwin;
+  inherit (pkgs.stdenv) isDarwin;
   secretsDir = "${config.home.homeDirectory}/.config/sops-nix/secrets";
 in
 {
@@ -52,6 +52,12 @@ in
               mv -f "${secretsDir}/dockerhub_token.tmp" "${secretsDir}/dockerhub_token"
             fi
             
+            # Decrypt cachix_token
+            if ${pkgs.sops}/bin/sops -d --extract '["cachix_token"]' "${secretsFile}" > "${secretsDir}/cachix_token.tmp" 2>/dev/null; then
+              chmod 0400 "${secretsDir}/cachix_token.tmp"
+              mv -f "${secretsDir}/cachix_token.tmp" "${secretsDir}/cachix_token"
+            fi
+            
             # Decrypt SSH keys - write directly, not via symlink
             if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["id_rsa"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/id_rsa.tmp" 2>/dev/null; then
               chmod 0600 "${config.home.homeDirectory}/.ssh/id_rsa.tmp"
@@ -92,6 +98,7 @@ in
       sessionVariables = {
         GITHUB_TOKEN_FILE = "${secretsDir}/github_token";
         DOCKERHUB_TOKEN_FILE = "${secretsDir}/dockerhub_token";
+        CACHIX_TOKEN_FILE = "${secretsDir}/cachix_token";
       };
     };
 
@@ -107,6 +114,9 @@ in
         };
         dockerhub_token = {
           path = "${secretsDir}/dockerhub_token";
+        };
+        cachix_token = {
+          path = "${secretsDir}/cachix_token";
         };
         "ssh/id_rsa" = {
           path = "${config.home.homeDirectory}/.ssh/id_rsa";
@@ -139,8 +149,26 @@ in
       # SOPS editor - use emt which handles daemon startup
       export SOPS_EDITOR="emt"
 
+      # Secret file paths (home.sessionVariables doesn't auto-load in zsh)
+      export GITHUB_TOKEN_FILE="${secretsDir}/github_token"
+      export DOCKERHUB_TOKEN_FILE="${secretsDir}/dockerhub_token"
+      export CACHIX_TOKEN_FILE="${secretsDir}/cachix_token"
+
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+      cachix-token() { cat "$CACHIX_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+      
+      # Authenticate cachix using stored token
+      cachix-auth() {
+        local token
+        token=$(cat "$CACHIX_TOKEN_FILE" 2>/dev/null)
+        if [ -n "$token" ]; then
+          echo "$token" | cachix authtoken --stdin
+          echo "Cachix authenticated"
+        else
+          echo "Cachix token not available"
+        fi
+      }
     '';
   };
 }
