@@ -107,6 +107,38 @@ get_cachix_cache() {
   echo ""
 }
 
+# Configure trusted-users in system nix.conf (requires sudo)
+configure_trusted_user() {
+  local username="$1"
+  local system_nix_conf="/etc/nix/nix.conf"
+  
+  # Check if already trusted
+  if grep -q "trusted-users.*$username" "$system_nix_conf" 2>/dev/null; then
+    info "User $username already in trusted-users"
+    return
+  fi
+  
+  info "Adding $username to trusted-users (required for cachix)..."
+  warn "This requires sudo access"
+  
+  if grep -q "^trusted-users" "$system_nix_conf" 2>/dev/null; then
+    # Append to existing trusted-users line
+    sudo sed -i.bak "s/^trusted-users.*/& $username/" "$system_nix_conf"
+  else
+    # Add new trusted-users line
+    echo "trusted-users = root $username" | sudo tee -a "$system_nix_conf" > /dev/null
+  fi
+  
+  # Restart nix-daemon to pick up changes
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    sudo pkill nix-daemon || true
+  else
+    sudo systemctl restart nix-daemon 2>/dev/null || sudo pkill nix-daemon || true
+  fi
+  
+  info "User $username added to trusted-users"
+}
+
 # Configure Nix with flakes and caches
 configure_nix() {
   mkdir -p "$NIX_CONF_DIR"
@@ -406,6 +438,15 @@ main() {
   check_nix
   setup_config
   configure_nix  # Run after setup_config so we can read cachix cache from config.nix
+  configure_trusted_user "$username"  # Required for cachix push
+  
+  # Setup cachix substituter if configured
+  local cachix_cache
+  cachix_cache=$(get_cachix_cache)
+  if [ -n "$cachix_cache" ]; then
+    info "Configuring cachix substituter for $cachix_cache..."
+    nix run nixpkgs#cachix -- use "$cachix_cache" || warn "Could not configure cachix substituter"
+  fi
   
   cd "$CONFIG_DIR" || fatal "Cannot change to config directory: $CONFIG_DIR"
   
@@ -426,11 +467,13 @@ main() {
   info "Restart your shell or run: exec zsh"
   info ""
   info "Commands available:"
-  info "  hms  - Switch home-manager configuration"
-  info "  nrs  - Switch NixOS configuration (NixOS only)"
-  info "  nfu  - Update flake inputs"
-  info "  em   - Open Emacs (via daemon)"
-  info "  emt  - Open Emacs in terminal"
+  info "  hms        - Switch home-manager configuration"
+  info "  nrs        - Switch NixOS configuration (NixOS only)"
+  info "  nfu        - Update flake inputs"
+  info "  em         - Open Emacs (via daemon)"
+  info "  emt        - Open Emacs in terminal"
+  info "  dev-disk   - Show disk usage for dev tools"
+  info "  cachix-auth - Authenticate cachix for pushing to cache"
 }
 
 main "$@"
