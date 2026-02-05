@@ -29,6 +29,7 @@
     bazel-buildtools
     aspell
     aspellDicts.en
+    cachix  # Nix binary cache
   ] ++ (if pkgs.stdenv.isDarwin then [
     # Skip lilypond on macOS - it has build errors on aarch64-darwin
   ] else [

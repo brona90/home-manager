@@ -242,6 +242,24 @@ in
               echo ""
             fi
 
+            # Cachix
+            if command -v cachix &>/dev/null; then
+              echo "''${cyan}☁️  Cachix Cache''${nc}"
+              if [ -f ~/.config/cachix/cachix.dhall ]; then
+                echo "   Status: ''${green}Authenticated''${nc}"
+              else
+                echo "   Status: ''${yellow}Not authenticated''${nc} (run ''${cyan}cachix-auth''${nc})"
+              fi
+              # Check if cache is configured in nix.conf
+              if grep -q "gfoster.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
+                echo "   Substituter: ''${green}Configured''${nc}"
+              else
+                echo "   Substituter: ''${yellow}Not configured''${nc} (run ''${cyan}cachix use gfoster''${nc})"
+              fi
+              echo "   Push: ''${cyan}cachix push gfoster /nix/store/...''${nc}"
+              echo ""
+            fi
+
             # General cache
             if [ -d ~/.cache ]; then
               local cache_size=$(du -sh ~/.cache 2>/dev/null | cut -f1)
