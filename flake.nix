@@ -35,11 +35,27 @@
       allSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs allSystems;
 
-      pkgsFor = system: import nixpkgs {
-        inherit system;
-        config.allowUnfree = true;
-        overlays = [ doom-emacs.overlays.default ];
-      };
+      pkgsFor = system:
+        let
+          isDarwin = nixpkgs.lib.hasInfix "darwin" system;
+          # Overlay to stub out lilypond on Darwin (fails to build with newer clang)
+          lilypondOverlay = final: prev: nixpkgs.lib.optionalAttrs isDarwin {
+            lilypond = prev.runCommand "lilypond-stub" {} ''
+              mkdir -p $out/bin
+              echo '#!/bin/sh' > $out/bin/lilypond
+              echo 'echo "lilypond stub - install via brew on macOS"' >> $out/bin/lilypond
+              chmod +x $out/bin/lilypond
+            '';
+          };
+        in
+        import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+          overlays = [
+            lilypondOverlay
+            doom-emacs.overlays.default
+          ];
+        };
 
       homeDirectoryFor = { system, username }:
         if nixpkgs.lib.hasInfix "darwin" system
