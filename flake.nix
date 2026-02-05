@@ -39,7 +39,7 @@
         let
           isDarwin = nixpkgs.lib.hasInfix "darwin" system;
           # Overlay to stub out lilypond on Darwin (fails to build with newer clang)
-          lilypondOverlay = final: prev: nixpkgs.lib.optionalAttrs isDarwin {
+          lilypondOverlay = _: prev: nixpkgs.lib.optionalAttrs isDarwin {
             lilypond = prev.runCommand "lilypond-stub" {} ''
               mkdir -p $out/bin
               echo '#!/bin/sh' > $out/bin/lilypond
