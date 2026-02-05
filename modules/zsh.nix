@@ -154,6 +154,10 @@ in
 
           # Dev disk usage - pretty print disk usage for dev tools
           dev-disk() {
+            _dev-disk-inner | less -R
+          }
+
+          _dev-disk-inner() {
             local blue='\033[0;34m'
             local green='\033[0;32m'
             local yellow='\033[1;33m'
@@ -246,9 +250,9 @@ in
             if command -v cachix &>/dev/null; then
               echo "''${cyan}☁️  Cachix Cache''${nc}"
               if [ -f ~/.config/cachix/cachix.dhall ]; then
-                echo "   Status: ''${green}Authenticated''${nc}"
+                echo "   Auth: ''${green}Authenticated''${nc}"
               else
-                echo "   Status: ''${yellow}Not authenticated''${nc} (run ''${cyan}cachix-auth''${nc})"
+                echo "   Auth: ''${yellow}Not authenticated''${nc} (run ''${cyan}cachix-auth''${nc})"
               fi
               # Check if cache is configured in nix.conf
               if grep -q "gfoster.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
@@ -256,7 +260,23 @@ in
               else
                 echo "   Substituter: ''${yellow}Not configured''${nc} (run ''${cyan}cachix use gfoster''${nc})"
               fi
-              echo "   Push: ''${cyan}cachix push gfoster /nix/store/...''${nc}"
+              # Try to get cache size from API (requires auth)
+              if [ -f ~/.config/cachix/cachix.dhall ]; then
+                local cache_info
+                cache_info=$(curl -s "https://app.cachix.org/api/v1/cache/gfoster" 2>/dev/null)
+                if [ -n "$cache_info" ]; then
+                  local cache_size
+                  cache_size=$(echo "$cache_info" | grep -oP '"size":\s*\K[0-9]+' 2>/dev/null || echo "")
+                  if [ -n "$cache_size" ]; then
+                    # Convert bytes to human readable
+                    local human_size
+                    human_size=$(numfmt --to=iec-i --suffix=B "$cache_size" 2>/dev/null || echo "$cache_size bytes")
+                    echo "   Size: ''${bold}$human_size''${nc}"
+                  fi
+                fi
+              fi
+              echo "   Push: ''${cyan}cachix push gfoster ./result''${nc}"
+              echo "   Clean: Set retention at ''${cyan}https://app.cachix.org/cache/gfoster''${nc} (Settings tab)"
               echo ""
             fi
 
