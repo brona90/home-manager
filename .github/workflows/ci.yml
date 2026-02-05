@@ -69,6 +69,7 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
       
+      # This job PUSHES to cachix (has authToken)
       - uses: cachix/cachix-action@v15
         with:
           name: ${{ env.CACHIX_CACHE }}
@@ -89,7 +90,7 @@ jobs:
   docker-build:
     name: Build & Push Docker
     runs-on: ubuntu-latest
-    needs: check
+    needs: build-home  # Run after home configs cached
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
     # Only run on push to main/master (not PRs)
@@ -103,10 +104,10 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
       
+      # Read-only: pull from caches but don't push (Docker images bloat cachix)
       - uses: cachix/cachix-action@v15
         with:
           name: ${{ env.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           extraPullNames: nix-community,emacs
       
       - name: Free disk space
@@ -197,10 +198,10 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
       
+      # Read-only: pull from caches but don't push
       - uses: cachix/cachix-action@v15
         with:
           name: ${{ env.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           extraPullNames: nix-community,emacs
       
       - name: Free disk space
