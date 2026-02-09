@@ -3,18 +3,35 @@
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
-;; LilyPond: Add elisp directory and load mode (skip if lilypond not available)
-(when (executable-find "lilypond")
-  (let ((lily-path (concat (file-name-directory (executable-find "lilypond")) "../share/emacs/site-lisp")))
-    (when (file-directory-p lily-path)
-      (add-to-list 'load-path lily-path)))
-
+;; LilyPond mode setup - load from system installation
+(when-let ((lily-bin (executable-find "lilypond")))
+  (let* ((lily-dir (file-name-directory lily-bin))
+         ;; Try common elisp locations relative to bin
+         (elisp-paths (list
+                       (expand-file-name "../share/emacs/site-lisp" lily-dir)
+                       (expand-file-name "../share/lilypond/current/elisp" lily-dir)
+                       (expand-file-name "../share/lilypond/2.24.4/elisp" lily-dir))))
+    (dolist (path elisp-paths)
+      (when (file-directory-p path)
+        (add-to-list 'load-path path))))
+  
+  ;; Load lilypond-mode
   (require 'lilypond-mode nil t)
-
-  ;; Set up auto-mode-alist using setq-default to ensure it persists
+  
   (with-eval-after-load 'lilypond-mode
-    (setq-default auto-mode-alist
-                  (cons '("\\.ly\\'" . LilyPond-mode) auto-mode-alist))))
+    (add-to-list 'auto-mode-alist '("\\.ly\\'" . LilyPond-mode))
+    (add-to-list 'auto-mode-alist '("\\.ily\\'" . LilyPond-mode))
+    
+    ;; Flycheck integration
+    (after! flycheck
+      (flycheck-define-checker lilypond
+        "A LilyPond syntax checker."
+        :command ("lilypond" "-dno-print-pages" "-o" temporary-file-name source)
+        :error-patterns
+        ((error line-start (file-name) ":" line ":" column ": error: " (message) line-end)
+         (warning line-start (file-name) ":" line ":" column ": warning: " (message) line-end))
+        :modes LilyPond-mode)
+      (add-to-list 'flycheck-checkers 'lilypond))))
 
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets. It is optional.
