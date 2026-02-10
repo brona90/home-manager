@@ -10,7 +10,6 @@
     git.enable = true;
     git.signing.enable = true;
     gpg.enable = true;
-    gpg.enableYubiKey = true;
     btop.enable = true;
     vim.enable = true;
     sops.enable = true;
