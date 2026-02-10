@@ -116,9 +116,14 @@
         ) {} user.systems
       ) {} userConfig.users;
 
-      # Get first user's first system for defaults
-      defaultUser = builtins.head userConfig.users;
-      defaultUsername = defaultUser.username;
+      # Find the first user that supports a given system
+      userForSystem = system:
+        let
+          matchingUsers = builtins.filter (user: builtins.elem system user.systems) userConfig.users;
+        in
+        if matchingUsers != []
+        then builtins.head matchingUsers
+        else null;
 
       # Docker image name from config
       dockerImageName = "${repoConfig.dockerHubUser}/terminal";
@@ -137,46 +142,54 @@
 
       packages = forAllSystems (system:
         let
+          user = userForSystem system;
           pkgs = pkgsFor system;
-          homeDirectory = homeDirectoryFor { inherit system; username = defaultUsername; };
           isLinux = !(nixpkgs.lib.hasInfix "darwin" system);
-          configKey = "${defaultUsername}@${system}";
-          hasConfig = builtins.hasAttr configKey homeConfigs;
         in
-        (if hasConfig then {
-          default = homeConfigs.${configKey}.activationPackage;
-        } else {})
-        // (if isLinux && hasConfig then {
-          dockerImage = import ./lib/docker-image.nix {
-            inherit pkgs homeDirectory;
-            username = defaultUsername;
-            homeConfiguration = homeConfigs.${configKey};
-            imageName = dockerImageName;
-          };
-        } else {})
+        if user != null then
+          let
+            username = user.username;
+            homeDirectory = homeDirectoryFor { inherit system username; };
+            configKey = "${username}@${system}";
+          in
+          {
+            default = homeConfigs.${configKey}.activationPackage;
+          }
+          // (if isLinux then {
+            dockerImage = import ./lib/docker-image.nix {
+              inherit pkgs homeDirectory username;
+              homeConfiguration = homeConfigs.${configKey};
+              imageName = dockerImageName;
+            };
+          } else {})
+        else {}
       );
 
       apps = forAllSystems (system:
         let
+          user = userForSystem system;
           pkgs = pkgsFor system;
-          homeDirectory = homeDirectoryFor { inherit system; username = defaultUsername; };
           isLinux = !(nixpkgs.lib.hasInfix "darwin" system);
-          configKey = "${defaultUsername}@${system}";
-          hasConfig = builtins.hasAttr configKey homeConfigs;
         in
-        (if hasConfig then {
-          default = {
-            type = "app";
-            meta.description = "Activate home-manager configuration";
-            program = toString (pkgs.writeShellScript "activate-home" ''
-              echo "Activating home-manager configuration for ${system}..."
-              home-manager switch --flake "$HOME/.config/home-manager#${defaultUsername}@${system}" -b backup
-            '');
-          };
-        } else {})
-        // (if isLinux && hasConfig then {
-          docker-test = import ./lib/docker-test-app.nix { inherit pkgs homeDirectory; };
-        } else {})
+        if user != null then
+          let
+            username = user.username;
+            homeDirectory = homeDirectoryFor { inherit system username; };
+          in
+          {
+            default = {
+              type = "app";
+              meta.description = "Activate home-manager configuration";
+              program = toString (pkgs.writeShellScript "activate-home" ''
+                echo "Activating home-manager configuration for ${system}..."
+                home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup
+              '');
+            };
+          }
+          // (if isLinux then {
+            docker-test = import ./lib/docker-test-app.nix { inherit pkgs homeDirectory; };
+          } else {})
+        else {}
       );
     };
 }
