@@ -148,7 +148,7 @@
         in
         if user != null then
           let
-            username = user.username;
+            inherit (user) username;
             homeDirectory = homeDirectoryFor { inherit system username; };
             configKey = "${username}@${system}";
           in
@@ -173,7 +173,7 @@
         in
         if user != null then
           let
-            username = user.username;
+            inherit (user) username;
             homeDirectory = homeDirectoryFor { inherit system username; };
           in
           {
