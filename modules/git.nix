@@ -101,8 +101,6 @@ in
           uncommit = "reset --soft HEAD~1";
         };
 
-        # GPG program for signing
-        gpg.program = lib.mkIf cfg.signing.enable "gpg";
       } // cfg.extraConfig;
 
       ignores = [
@@ -125,9 +123,5 @@ in
       ];
     };
 
-    xdg.configFile = {
-      "git/config".force = true;
-      "git/ignore".force = true;
-    };
   };
 }
