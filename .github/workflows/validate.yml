@@ -25,7 +25,7 @@ jobs:
             accept-flake-config = true
       # authToken intentionally included: manual validation builds are
       # worth caching so subsequent CI runs and local builds benefit.
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -49,7 +49,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: nix-community
           extraPullNames: emacs
