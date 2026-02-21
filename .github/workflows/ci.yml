@@ -46,7 +46,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: nix-community
           extraPullNames: emacs
@@ -74,7 +74,7 @@ jobs:
             accept-flake-config = true
       
       # This job PUSHES to cachix (has authToken)
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -109,7 +109,7 @@ jobs:
             accept-flake-config = true
       
       # Read-only: pull from caches but don't push (Docker images bloat cachix)
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: ${{ env.CACHIX_CACHE }}
           extraPullNames: nix-community,emacs
@@ -203,7 +203,7 @@ jobs:
             accept-flake-config = true
       
       # Read-only: pull from caches but don't push
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: ${{ env.CACHIX_CACHE }}
           extraPullNames: nix-community,emacs
