@@ -28,10 +28,10 @@ in
           mkdir -p "${config.home.homeDirectory}/.ssh"
           chmod 700 "${config.home.homeDirectory}/.ssh"
         '';
-
-        # Manual decryption for all platforms
+      } // lib.optionalAttrs isDarwin {
+        # Manual decryption for Darwin only
         # On Darwin: LaunchAgent is blocked by AMFI/code signing, so this is required
-        # On Linux/WSL: systemd user services may not work, so this is a fallback
+        # On Linux: native sops-nix systemd service handles decryption
         decryptSopsSecrets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           if [ -f "${cfg.ageKeyFile}" ]; then
             export SOPS_AGE_KEY_FILE="${cfg.ageKeyFile}"
