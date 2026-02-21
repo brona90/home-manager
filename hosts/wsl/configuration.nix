@@ -6,7 +6,7 @@ let
     (user: builtins.elem "x86_64-linux" user.systems)
     userConfig.users;
   primaryUser = builtins.head linuxUsers;
-  username = primaryUser.username;
+  inherit (primaryUser) username;
 in
 {
   imports = [ ../common ];
