@@ -7,8 +7,8 @@ let
     (user: builtins.elem "x86_64-linux" user.systems)
     userConfig.users;
   primaryUser = builtins.head linuxUsers;
-  username = primaryUser.username;
-  cachixCache = userConfig.repo.cachixCache;
+  inherit (primaryUser) username;
+  inherit (userConfig.repo) cachixCache;
 in
 {
   # Nix settings
