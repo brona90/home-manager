@@ -188,7 +188,10 @@
             };
           }
           // (if isLinux then {
-            docker-test = import ./lib/docker-test-app.nix { inherit pkgs homeDirectory; };
+            docker-test = import ./lib/docker-test-app.nix {
+              inherit pkgs homeDirectory;
+              imageName = dockerImageName;
+            };
           } else {})
         else {}
       );

@@ -2,7 +2,7 @@
 #
 # Usage: nix run .#docker-test
 
-{ pkgs, homeDirectory, imageName ? "brona90/terminal", imageTag ? "latest" }:
+{ pkgs, homeDirectory, imageName, imageTag ? "latest" }:
 
 {
   type = "app";
