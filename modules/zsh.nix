@@ -31,7 +31,7 @@ in
       zsh = {
         enable = true;
         enableCompletion = true;
-        dotDir = ".config/zsh";
+        dotDir = "${config.xdg.configHome}/zsh";
 
         shellAliases = {
           # Basic
