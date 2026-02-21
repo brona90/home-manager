@@ -2,8 +2,7 @@
 
 let
   cfg = config.my.gpg;
-  inherit (pkgs.stdenv) isLinux isDarwin;
-  isWSL = isLinux && builtins.pathExists /proc/sys/fs/binfmt_misc/WSLInterop;
+  inherit (pkgs.stdenv) isLinux;
 in
 {
   options.my.gpg = {
