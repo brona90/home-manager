@@ -49,8 +49,7 @@ let
 
     echo "Setting up home-manager environment..."
     if [ -d ${activationPackage}/home-files ]; then
-      ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ ~/ 2>/dev/null || \
-        cp -rL ${activationPackage}/home-files/. ~/ 2>/dev/null || true
+      ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ ~/
     fi
 
     export PATH="${homePath}/bin:$PATH"
@@ -112,6 +111,9 @@ pkgs.dockerTools.buildLayeredImage {
       "NIX_PATH=nixpkgs=${pkgs.path}"
       "EDITOR=emacsclient -t"
       "VISUAL=emacsclient -c"
+      # Use C.UTF-8 instead of en_US.UTF-8 (used by home/common.nix) to
+      # avoid bundling glibcLocales (~200MB). C.UTF-8 is built into glibc
+      # and provides full UTF-8 support without locale data files.
       "LANG=C.UTF-8"
       "LC_ALL=C.UTF-8"
       "TERM=xterm-256color"
