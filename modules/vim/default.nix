@@ -7,18 +7,23 @@ let
   victorMonoNerdFont = pkgs.nerd-fonts.victor-mono;
 
   # Pre-fetch lazy.nvim (plugin manager)
+  # NOTE: These are pinned independently of nixpkgs to track upstream releases.
+  # To update: bump rev to the latest tag, set sha256 = "", and rebuild to get
+  # the correct hash from the error message.  Check compatibility with the
+  # LazyVim distro version below before updating.
   lazyNvim = pkgs.fetchFromGitHub {
     owner = "folke";
     repo = "lazy.nvim";
-    rev = "v11.16.2";
+    rev = "v11.16.2"; # https://github.com/folke/lazy.nvim/releases
     sha256 = "sha256-48i6Z6cwccjd5rRRuIyuuFS68J0lAIAEEiSBJ4Vq5vY=";
   };
 
   # Pre-fetch LazyVim distribution
+  # See update instructions above for lazy.nvim.
   lazyVimDistro = pkgs.fetchFromGitHub {
     owner = "LazyVim";
     repo = "LazyVim";
-    rev = "v15.13.0";
+    rev = "v15.13.0"; # https://github.com/LazyVim/LazyVim/releases
     sha256 = "sha256-pm1B4tdHqSV8n+hM78asqw5WNdMfC5fUSiZcjg8ZtAg=";
   };
 
