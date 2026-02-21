@@ -21,7 +21,7 @@ in
 
   config = lib.mkIf (cfg.enable && secretsExist) {
     home = {
-      packages = [ pkgs.sops pkgs.age pkgs.gnupg ];
+      packages = [ pkgs.sops pkgs.age ];
 
       activation = {
         createSshDir = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
@@ -137,15 +137,7 @@ in
       };
     };
 
-    programs.gpg = {
-      enable = true;
-      homedir = "${config.home.homeDirectory}/.gnupg";
-    };
-
     my.zsh.extraInitExtra = ''
-      # GPG needs TTY for pinentry
-      export GPG_TTY=$(tty)
-
       # SOPS editor - use emt which handles daemon startup
       export SOPS_EDITOR="emt"
 

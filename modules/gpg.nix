@@ -48,6 +48,7 @@ in
     programs = {
       gpg = {
         enable = true;
+        homedir = "${config.home.homeDirectory}/.gnupg";
         settings = {
           use-agent = true;
           default-key = cfg.defaultKey;
@@ -93,37 +94,10 @@ in
           gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
         ''
       );
-
-      bash.initExtra = lib.mkAfter (
-        if cfg.forwardToWindows then ''
-          # Forward GPG agent to Windows Gpg4win
-          export GPG_TTY=$(tty)
-          
-          _gpg_wsl_socket="$HOME/.gnupg/S.gpg-agent"
-          _npiperelay="/mnt/c/Users/$(/mnt/c/Windows/System32/cmd.exe /c 'echo %USERNAME%' 2>/dev/null | tr -d '\r')/.npiperelay/npiperelay.exe"
-          
-          if ! pgrep -f "socat.*S.gpg-agent" >/dev/null 2>&1; then
-            rm -f "$_gpg_wsl_socket"
-            mkdir -p "$(dirname "$_gpg_wsl_socket")"
-            
-            if [[ -x "$_npiperelay" ]]; then
-              (setsid socat UNIX-LISTEN:"$_gpg_wsl_socket",fork EXEC:"$_npiperelay -ei -ep -s //./pipe/gpg-agent",nofork &) >/dev/null 2>&1
-            fi
-          fi
-          
-          unset _gpg_wsl_socket _npiperelay
-        '' else ''
-          # GPG TTY configuration
-          export GPG_TTY=$(tty)
-          
-          # Refresh gpg-agent tty
-          gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
-        ''
-      );
     };
 
-    # Only enable local gpg-agent if not forwarding to Windows
-    services.gpg-agent = lib.mkIf (!cfg.forwardToWindows) {
+    # Only enable local gpg-agent on Linux and if not forwarding to Windows
+    services.gpg-agent = lib.mkIf (isLinux && !cfg.forwardToWindows) {
       enable = true;
       inherit (cfg) enableSshSupport;
       pinentry.package = pkgs.pinentry-curses;
