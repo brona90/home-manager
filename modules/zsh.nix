@@ -374,7 +374,7 @@ in
         '';
 
         history = {
-          path = "$HOME/.zsh_history";
+          path = "${config.xdg.stateHome}/zsh/history";
           size = 10000;
           save = 10000;
         };
@@ -416,7 +416,12 @@ in
       };
     };
 
-    # Force overwrite files that may exist from manual configuration
+    # Ensure XDG state directory for zsh history exists
+    home.file.".local/state/zsh/.keep".text = "";
+
+    # Force-overwrite .zshenv to prevent home-manager activation failure
+    # when a stale manually-created .zshenv exists outside HM control.
+    # Safe to remove once all machines have completed the migration to HM.
     home.file.".zshenv".force = true;
   };
 }
