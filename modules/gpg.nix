@@ -66,6 +66,9 @@ in
         );
       };
 
+      # mkAfter (priority 1500) ensures GPG_TTY is set after all other
+      # initContent contributions, including sops.nix helper functions
+      # that depend on GPG being configured.
       zsh.initContent = lib.mkAfter (
         if cfg.forwardToWindows then ''
           # Forward GPG agent to Windows Gpg4win
