@@ -56,7 +56,7 @@ in
           email = cfg.userEmail;
         };
         init.defaultBranch = "main";
-        core.editor = "emacs -nw";
+        core.editor = if config.my.emacs.enable then "emacs -nw" else "vi";
         pull.rebase = false;
         push.autoSetupRemote = true;
         diff.algorithm = "histogram";
