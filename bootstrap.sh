@@ -52,8 +52,10 @@ validate_file() {
 
 # Detect system
 detect_system() {
-  local arch=$(uname -m)
-  local os=$(uname -s)
+  local arch
+  local os
+  arch=$(uname -m)
+  os=$(uname -s)
   
   case "$os" in
     Linux)
@@ -98,13 +100,22 @@ check_nix() {
 get_cachix_cache() {
   if [ -f "$CONFIG_DIR/config.nix" ]; then
     local cache
-    cache=$(grep -oP 'cachixCache\s*=\s*"\K[^"]+' "$CONFIG_DIR/config.nix" 2>/dev/null || echo "")
+    cache=$(sed -n 's/.*cachixCache[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_DIR/config.nix" 2>/dev/null | head -1)
     if [ -n "$cache" ]; then
       echo "$cache"
       return
     fi
   fi
   echo ""
+}
+
+# Read cachix public key from config.nix if available
+get_cachix_public_key() {
+  if [ -f "$CONFIG_DIR/config.nix" ]; then
+    local key
+    key=$(sed -n 's/.*cachixPublicKey[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_DIR/config.nix" 2>/dev/null | head -1)
+    echo "${key:-}"
+  fi
 }
 
 # Configure trusted-users in system nix.conf (requires sudo)
@@ -162,10 +173,21 @@ configure_nix() {
   if [ -n "$cachix_cache" ]; then
     info "Adding custom Cachix cache: $cachix_cache"
     substituters="$substituters https://${cachix_cache}.cachix.org"
-    # Try to get the public key automatically
-    if command -v curl &>/dev/null; then
-      local cache_key
-      cache_key=$(curl -sL "https://${cachix_cache}.cachix.org/api/v1/cache" 2>/dev/null | grep -oP '"publicSigningKeys":\["\K[^"]+' | head -1 || echo "")
+    # Prefer the key from config.nix; fall back to fetching from API
+    local cache_key
+    cache_key=$(get_cachix_public_key)
+    if [ -n "$cache_key" ]; then
+      trusted_keys="$trusted_keys $cache_key"
+      info "Added public key for ${cachix_cache} cache (from config.nix)"
+    elif command -v curl &>/dev/null; then
+      local api_response
+      api_response=$(curl -sL "https://${cachix_cache}.cachix.org/api/v1/cache" 2>/dev/null)
+      # Parse with jq if available, otherwise fall back to sed
+      if command -v jq &>/dev/null; then
+        cache_key=$(echo "$api_response" | jq -r '.publicSigningKeys[0] // empty' 2>/dev/null || echo "")
+      else
+        cache_key=$(echo "$api_response" | sed -n 's/.*"publicSigningKeys":\["\([^"]*\)".*/\1/p' | head -1)
+      fi
       if [ -n "$cache_key" ]; then
         trusted_keys="$trusted_keys ${cachix_cache}.cachix.org-1:$cache_key"
         info "Added public key for ${cachix_cache} cache"

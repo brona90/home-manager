@@ -35,6 +35,8 @@ jobs:
         run: nix run nixpkgs#deadnix -- -f .
       - name: Check Nix formatting
         run: nix run nixpkgs#alejandra -- --check .
+      - name: Shellcheck bootstrap.sh
+        run: nix run nixpkgs#shellcheck -- bootstrap.sh
 
   check:
     name: Flake Check
