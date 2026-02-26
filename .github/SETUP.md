@@ -91,10 +91,11 @@ matrix:
 ```
 lint (statix, deadnix, alejandra --check, shellcheck)
   └─> check (nix flake check)
-        ├─> build-home (push only: x86_64-linux + aarch64-darwin, pushes to Cachix)
-        │     └─> docker-build → docker-test (requires DOCKERHUB_TOKEN)
-        └─> validate-nixos (continue-on-error)
+        └─> build-home (push only: x86_64-linux + aarch64-darwin, pushes to Cachix)
+              └─> docker-build → docker-test (requires DOCKERHUB_TOKEN)
 ```
+
+NixOS and Darwin full system builds are in `validate.yml` (manual trigger).
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
@@ -103,7 +104,8 @@ lint (statix, deadnix, alejandra --check, shellcheck)
 | `build-home` | Merge to master | Builds home configs (x86_64-linux + aarch64-darwin); pushes to Cachix if token set |
 | `docker-build` | After build-home | Builds Docker image; pushes to Docker Hub if token set |
 | `docker-test` | After docker-build | Pulls and smoke-tests the pushed image |
-| `validate-nixos` | After check | Builds NixOS configuration (continue-on-error) |
+
+NixOS and Darwin full system builds are in `.github/workflows/validate.yml` (manual trigger only).
 
 ## Flake Updates
 
