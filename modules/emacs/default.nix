@@ -6,26 +6,32 @@
 }: let
   cfg = config.my.emacs;
 
-  emacsClientWrapper = pkgs.writeShellScriptBin "em" ''
-    if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
-      echo "Starting Emacs daemon..."
-      ${cfg.package}/bin/emacs --daemon
-    fi
+  emacsClientWrapper = pkgs.writeShellApplication {
+    name = "em";
+    text = ''
+      if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
+        echo "Starting Emacs daemon..."
+        ${cfg.package}/bin/emacs --daemon
+      fi
 
-    if [ -t 0 ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+      if [ -t 0 ] && [ -z "''${DISPLAY:-}" ] && [ -z "''${WAYLAND_DISPLAY:-}" ]; then
+        exec ${cfg.package}/bin/emacsclient -t "$@"
+      else
+        exec ${cfg.package}/bin/emacsclient -c "$@"
+      fi
+    '';
+  };
+
+  emacsClientTerminal = pkgs.writeShellApplication {
+    name = "emt";
+    text = ''
+      if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
+        echo "Starting Emacs daemon..."
+        ${cfg.package}/bin/emacs --daemon
+      fi
       exec ${cfg.package}/bin/emacsclient -t "$@"
-    else
-      exec ${cfg.package}/bin/emacsclient -c "$@"
-    fi
-  '';
-
-  emacsClientTerminal = pkgs.writeShellScriptBin "emt" ''
-    if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
-      echo "Starting Emacs daemon..."
-      ${cfg.package}/bin/emacs --daemon
-    fi
-    exec ${cfg.package}/bin/emacsclient -t "$@"
-  '';
+    '';
+  };
 in {
   options.my.emacs = {
     enable = lib.mkEnableOption "Doom Emacs configuration with nix-doom-emacs-unstraightened";
