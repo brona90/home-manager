@@ -33,6 +33,8 @@ jobs:
         run: nix run nixpkgs#statix -- check .
       - name: Run deadnix
         run: nix run nixpkgs#deadnix -- -f .
+      - name: Check Nix formatting
+        run: nix run nixpkgs#alejandra -- --check .
 
   check:
     name: Flake Check
@@ -173,23 +175,30 @@ jobs:
           echo "Pulling image: $IMAGE"
           docker pull "$IMAGE"
           
-          echo "=== Testing tools exist ==="
+          echo "=== Testing tools exist and are executable ==="
           docker run --rm "$IMAGE" zsh -c "
-            which tmux && echo '✓ tmux'
-            which emacs && echo '✓ emacs'
-            which starship && echo '✓ starship'
-            which mise && echo '✓ mise'
-            which lvim && echo '✓ lvim'
-            which fzf && echo '✓ fzf'
-            which rg && echo '✓ ripgrep'
-            which fd && echo '✓ fd'
-            which bat && echo '✓ bat'
-            which btop && echo '✓ btop'
+            set -euo pipefail
+            check() { local tool=\$1; shift; \$tool \"\$@\" >/dev/null 2>&1 && echo \"✓ \$tool\" || { echo \"✗ \$tool FAILED\"; exit 1; }; }
+            check tmux -V
+            check emacs --version
+            check starship --version
+            check mise --version
+            check lvim --version
+            check fzf --version
+            check rg --version
+            check fd --version
+            check bat --version
+            check btop --version
+            check git --version
+            check zsh --version
           "
-          
-          echo "=== Testing shell loads ==="
+
+          echo "=== Testing interactive shell loads ==="
           docker run --rm "$IMAGE" zsh -i -c "echo 'Shell loaded successfully'"
-          
+
+          echo "=== Testing zsh startup time ==="
+          docker run --rm "$IMAGE" zsh -i -c "exit" 2>&1 | grep -v "^$" || true
+
           echo "=== All tests passed ==="
 
   validate-nixos:
