@@ -41,3 +41,4 @@ check_*.sh
 debug_*.sh
 
 CLAUDE.md
+.claude/
