@@ -34,35 +34,39 @@
     ];
   };
 
-  entrypoint = pkgs.writeShellScript "entrypoint.sh" ''
-    export HOME=${homeDirectory}
-    export USER=${username}
+  entrypoint = pkgs.writeShellApplication {
+    name = "entrypoint";
+    text = ''
+      export HOME=${homeDirectory}
+      export USER=${username}
 
-    mkdir -p ~/.cache/oh-my-zsh/completions 2>/dev/null || true
-    mkdir -p ~/.cache/starship 2>/dev/null || true
-    mkdir -p ~/.local/share/nvim/lazy 2>/dev/null || true
-    mkdir -p ~/.local/state/nvim 2>/dev/null || true
-    mkdir -p ~/.config/tmux 2>/dev/null || true
-    mkdir -p ~/.config/nvim 2>/dev/null || true
-    mkdir -p ~/.config/zsh 2>/dev/null || true
-    mkdir -p ~/.zsh/plugins 2>/dev/null || true
-    mkdir -p ~/.tmux/plugins 2>/dev/null || true
+      mkdir -p ~/.cache/oh-my-zsh/completions
+      mkdir -p ~/.cache/starship
+      mkdir -p ~/.local/share/nvim/lazy
+      mkdir -p ~/.local/state/nvim
+      mkdir -p ~/.config/tmux
+      mkdir -p ~/.config/nvim
+      mkdir -p ~/.config/zsh
+      mkdir -p ~/.zsh/plugins
+      mkdir -p ~/.tmux/plugins
 
-    echo "Setting up home-manager environment..."
-    if [ -d ${activationPackage}/home-files ]; then
-      ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ "$HOME"/
-    fi
+      echo "Setting up home-manager environment..."
+      if [ -d ${activationPackage}/home-files ]; then
+        ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ "$HOME"/
+      fi
 
-    export PATH="${homePath}/bin:$PATH"
-    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib:${pkgs.zlib}/lib:$LD_LIBRARY_PATH"
-    export TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins"
+      export PATH="${homePath}/bin:$PATH"
+      export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib:${pkgs.zlib}/lib:''${LD_LIBRARY_PATH:-}"
+      export TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins"
 
-    if [ -f ${homePath}/etc/profile.d/hm-session-vars.sh ]; then
-      source ${homePath}/etc/profile.d/hm-session-vars.sh
-    fi
+      if [ -f ${homePath}/etc/profile.d/hm-session-vars.sh ]; then
+        # shellcheck source=/dev/null
+        source ${homePath}/etc/profile.d/hm-session-vars.sh
+      fi
 
-    exec ${homePath}/bin/zsh
-  '';
+      exec ${homePath}/bin/zsh
+    '';
+  };
 in
   pkgs.dockerTools.buildLayeredImage {
     name = imageName;
@@ -103,7 +107,7 @@ in
     '';
 
     config = {
-      Cmd = ["${entrypoint}"];
+      Cmd = ["${entrypoint}/bin/entrypoint"];
       Env = [
         "HOME=${homeDirectory}"
         "USER=${username}"
