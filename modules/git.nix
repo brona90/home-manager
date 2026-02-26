@@ -1,9 +1,11 @@
-{ config, lib, gitConfig, ... }:
-
-let
-  cfg = config.my.git;
-in
 {
+  config,
+  lib,
+  gitConfig,
+  ...
+}: let
+  cfg = config.my.git;
+in {
   options.my.git = {
     enable = lib.mkEnableOption "Git configuration";
 
@@ -37,7 +39,7 @@ in
 
     extraConfig = lib.mkOption {
       type = lib.types.attrs;
-      default = { };
+      default = {};
       description = "Additional git config";
     };
   };
@@ -50,58 +52,62 @@ in
         inherit (cfg.signing) key signByDefault;
       };
 
-      settings = {
-        user = {
-          name = cfg.userName;
-          email = cfg.userEmail;
-        };
-        init.defaultBranch = "main";
-        core.editor = if config.my.emacs.enable then "emacs -nw" else "vi";
-        pull.rebase = false;
-        push.autoSetupRemote = true;
-        diff.algorithm = "histogram";
-        rerere.enabled = true;
-        color.ui = "auto";
-        branch.sort = "-committerdate";
+      settings =
+        {
+          user = {
+            name = cfg.userName;
+            email = cfg.userEmail;
+          };
+          init.defaultBranch = "main";
+          core.editor =
+            if config.my.emacs.enable
+            then "emacs -nw"
+            else "vi";
+          pull.rebase = false;
+          push.autoSetupRemote = true;
+          diff.algorithm = "histogram";
+          rerere.enabled = true;
+          color.ui = "auto";
+          branch.sort = "-committerdate";
 
-        alias = {
-          st = "status";
-          s = "status -s";
-          ci = "commit";
-          cm = "commit -m";
-          ca = "commit --amend";
-          cam = "commit --amend -m";
-          a = "add";
-          aa = "add -A";
-          ap = "add -p";
-          co = "checkout";
-          cob = "checkout -b";
-          br = "branch";
-          brd = "branch -d";
-          brD = "branch -D";
-          l = "log --oneline --graph --decorate";
-          lg = "log --graph --all --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
-          ll = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
-          le = "log --oneline --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset'";
-          lle = "log --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset'";
-          d = "diff";
-          ds = "diff --staged";
-          dc = "diff --cached";
-          stash-all = "stash save --include-untracked";
-          pf = "push --force-with-lease";
-          pl = "pull";
-          plo = "pull origin";
-          psh = "push";
-          psho = "push origin";
-          rb = "rebase";
-          rbi = "rebase -i";
-          rbc = "rebase --continue";
-          rba = "rebase --abort";
-          unstage = "restore --staged";
-          uncommit = "reset --soft HEAD~1";
-        };
-
-      } // cfg.extraConfig;
+          alias = {
+            st = "status";
+            s = "status -s";
+            ci = "commit";
+            cm = "commit -m";
+            ca = "commit --amend";
+            cam = "commit --amend -m";
+            a = "add";
+            aa = "add -A";
+            ap = "add -p";
+            co = "checkout";
+            cob = "checkout -b";
+            br = "branch";
+            brd = "branch -d";
+            brD = "branch -D";
+            l = "log --oneline --graph --decorate";
+            lg = "log --graph --all --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
+            ll = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
+            le = "log --oneline --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset'";
+            lle = "log --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset'";
+            d = "diff";
+            ds = "diff --staged";
+            dc = "diff --cached";
+            stash-all = "stash save --include-untracked";
+            pf = "push --force-with-lease";
+            pl = "pull";
+            plo = "pull origin";
+            psh = "push";
+            psho = "push origin";
+            rb = "rebase";
+            rbi = "rebase -i";
+            rbc = "rebase --continue";
+            rba = "rebase --abort";
+            unstage = "restore --staged";
+            uncommit = "reset --soft HEAD~1";
+          };
+        }
+        // cfg.extraConfig;
 
       ignores = [
         ".DS_Store"
@@ -122,6 +128,5 @@ in
         "*.class"
       ];
     };
-
   };
 }

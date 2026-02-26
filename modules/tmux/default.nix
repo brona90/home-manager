@@ -1,9 +1,11 @@
-{ config, lib, pkgs, ... }:
-
-let
-  cfg = config.my.tmux;
-in
 {
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
+  cfg = config.my.tmux;
+in {
   options.my.tmux = {
     enable = lib.mkEnableOption "tmux configuration (gpakosz/.tmux)";
 
@@ -14,7 +16,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ pkgs.perl ];
+    home.packages = [pkgs.perl];
 
     programs.tmux = {
       enable = true;
@@ -24,7 +26,7 @@ in
         set -g default-terminal "tmux-256color"
         set -ag terminal-overrides ",xterm-256color:RGB"
         set -ag terminal-overrides ",*256col*:Tc"
-        
+
         # Ensure UTF-8
         set -q -g status-utf8 on
         setw -q -g utf8 on
