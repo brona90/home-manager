@@ -33,6 +33,7 @@ in
         # On Darwin: LaunchAgent is blocked by AMFI/code signing, so this is required
         # On Linux: native sops-nix systemd service handles decryption
         decryptSopsSecrets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          umask 077
           if [ -f "${cfg.ageKeyFile}" ]; then
             export SOPS_AGE_KEY_FILE="${cfg.ageKeyFile}"
             
