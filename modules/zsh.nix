@@ -201,9 +201,9 @@ in {
             fi
 
             # Docker
-            if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+            if command -v docker &>/dev/null && docker info &>/dev/null; then
               echo "''${yellow}🐳 Docker''${nc}"
-              docker system df 2>/dev/null | tail -n +2 | while read line; do
+              docker system df 2>/dev/null | tail -n +2 | while IFS= read -r line; do
                 echo "   $line"
               done
               echo "   Clean: ''${cyan}dca''${nc}"
@@ -351,7 +351,7 @@ in {
             echo ""
 
             # Docker
-            if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+            if command -v docker &>/dev/null && docker info &>/dev/null; then
               echo -n "''${yellow}🐳 Clean Docker?''${nc} (system prune + volumes + builder) [y/N] "
               read -r yn
               if [[ "$yn" =~ ^[Yy]$ ]]; then
