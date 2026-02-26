@@ -46,11 +46,12 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
+            sandbox = false
       - uses: cachix/cachix-action@v16
         with:
           name: nix-community
           extraPullNames: emacs
-      - run: nix flake check 2>&1 | grep -v "could not update mtime"
+      - run: nix flake check
 
   build-home:
     name: Build Home Configurations
@@ -72,7 +73,8 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
-      
+            sandbox = false
+
       # This job PUSHES to cachix (has authToken)
       - uses: cachix/cachix-action@v16
         with:
@@ -88,7 +90,7 @@ jobs:
       - name: Build home configuration
         run: |
           echo "Building homeConfigurations.${{ matrix.config }}"
-          nix build '.#homeConfigurations."${{ matrix.config }}".activationPackage' 2>&1 | grep -v "could not update mtime" || true
+          nix build '.#homeConfigurations."${{ matrix.config }}".activationPackage'
           echo "Build complete - artifacts pushed to cachix automatically"
 
   docker-build:
@@ -107,7 +109,8 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
-      
+            sandbox = false
+
       # Read-only: pull from caches but don't push (Docker images bloat cachix)
       - uses: cachix/cachix-action@v16
         with:
@@ -125,7 +128,7 @@ jobs:
       
       - name: Build Docker image
         run: |
-          nix build .#dockerImage 2>&1 | grep -v "could not update mtime" || true
+          nix build .#dockerImage
           docker load < result
       
       - name: Push to Docker Hub
@@ -201,7 +204,8 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
-      
+            sandbox = false
+
       # Read-only: pull from caches but don't push
       - uses: cachix/cachix-action@v16
         with:
@@ -214,4 +218,4 @@ jobs:
           sudo docker image prune --all --force
       
       - name: Build NixOS configuration
-        run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel 2>&1 | grep -v "could not update mtime" || true
+        run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel
