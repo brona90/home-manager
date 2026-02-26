@@ -2,7 +2,7 @@
 
 let
   cfg = config.my.zsh;
-  cachixCache = userConfig.repo.cachixCache;
+  inherit (userConfig.repo) cachixCache;
 in
 {
   options.my.zsh = {
