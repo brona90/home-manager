@@ -67,7 +67,9 @@ This repo is designed to be easily forked:
 
 3. **Run bootstrap** (it will prompt for your fork URL)
 
-4. **(Optional) Configure CI** - See [.github/SETUP.md](.github/SETUP.md)
+4. **(Optional) Keep personal git identity out of git** — copy `config.local.nix.example` to `config.local.nix` (gitignored) and put your `userName`, `userEmail`, and `signingKey` there instead of `config.nix`.
+
+5. **(Optional) Configure CI** - See [.github/SETUP.md](.github/SETUP.md)
 
 ## Commands
 
