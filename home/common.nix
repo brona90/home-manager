@@ -25,6 +25,7 @@
   # Common packages
   home.packages = with pkgs; [
     tree
+    jq
     bazel_7
     bazel-buildtools
     aspell
