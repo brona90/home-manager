@@ -2,6 +2,14 @@ name: Validate
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'  # Monday 4am UTC — catches merged flake updates from the weekend
+  push:
+    branches: [main, master]
+    paths:
+      - 'hosts/**'    # NixOS host config changes
+      - 'flake.lock'  # Dependency updates that could break system builds
+      - 'flake.nix'   # Flake structure changes
 
 permissions:
   contents: read
