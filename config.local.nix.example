@@ -1,0 +1,9 @@
+# Personal git identity overrides (copy to config.local.nix, which is gitignored)
+# Values here are merged over the git section of config.nix at build time.
+{
+  git = {
+    userName = "Your Name";
+    userEmail = "you@example.com";
+    signingKey = "YOUR_GPG_KEY_ID"; # output of: gpg --list-secret-keys --keyid-format LONG
+  };
+}

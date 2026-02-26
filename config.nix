@@ -26,6 +26,7 @@
       systems = ["x86_64-linux"];
     }
     {
+      # Corporate/AD account username — numeric usernames are valid on macOS
       username = "888973";
       systems = ["aarch64-darwin"];
     }
@@ -36,7 +37,8 @@
     # }
   ];
 
-  # Default git config (can be overridden per-user above)
+  # Default git identity — override in config.local.nix (gitignored) on
+  # personal machines so these values stay out of the public commit history.
   git = {
     userName = "Gregory Foster";
     userEmail = "brona90@gmail.com";

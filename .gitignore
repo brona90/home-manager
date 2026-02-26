@@ -1,3 +1,6 @@
+# Personal overrides (see config.local.nix.example)
+config.local.nix
+
 # Nix build results
 result
 result-*

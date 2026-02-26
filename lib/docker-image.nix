@@ -40,15 +40,15 @@
       export HOME=${homeDirectory}
       export USER=${username}
 
-      mkdir -p ~/.cache/oh-my-zsh/completions
-      mkdir -p ~/.cache/starship
-      mkdir -p ~/.local/share/nvim/lazy
-      mkdir -p ~/.local/state/nvim
-      mkdir -p ~/.config/tmux
-      mkdir -p ~/.config/nvim
-      mkdir -p ~/.config/zsh
-      mkdir -p ~/.zsh/plugins
-      mkdir -p ~/.tmux/plugins
+      mkdir -p "$HOME/.cache/oh-my-zsh/completions"
+      mkdir -p "$HOME/.cache/starship"
+      mkdir -p "$HOME/.local/share/nvim/lazy"
+      mkdir -p "$HOME/.local/state/nvim"
+      mkdir -p "$HOME/.config/tmux"
+      mkdir -p "$HOME/.config/nvim"
+      mkdir -p "$HOME/.config/zsh"
+      mkdir -p "$HOME/.zsh/plugins"
+      mkdir -p "$HOME/.tmux/plugins"
 
       echo "Setting up home-manager environment..."
       if [ -d ${activationPackage}/home-files ]; then
