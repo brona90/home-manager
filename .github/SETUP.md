@@ -21,7 +21,20 @@ Edit the `repo` section with your values:
 }
 ```
 
-### Step 2: Configure Repository Variables (Optional)
+### Step 2: Update `ci.yml` build matrix
+
+The `build-home` job in `.github/workflows/ci.yml` has the original repo's usernames hardcoded. Update the matrix entries to match your `config.nix`:
+
+```yaml
+matrix:
+  include:
+    - config: youruser@x86_64-linux    # must match username@system in config.nix
+      runner: ubuntu-latest
+    - config: youruser@aarch64-darwin  # remove if you don't have a Darwin config
+      runner: macos-14
+```
+
+### Step 4: Configure Repository Variables (Optional)
 
 **Settings → Secrets and variables → Actions → Variables**
 
@@ -30,7 +43,7 @@ Edit the `repo` section with your values:
 | `CACHIX_CACHE` | Your Cachix cache name | `myusername` |
 | `DOCKER_USERNAME` | Your Docker Hub username | `myusername` |
 
-### Step 3: Configure Secrets (Optional)
+### Step 5: Configure Secrets (Optional)
 
 **Settings → Secrets and variables → Actions → Secrets**
 

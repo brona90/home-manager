@@ -313,7 +313,6 @@
   # Formatters
   formatters = with pkgs; [
     stylua
-    nixfmt
     alejandra
     black
     isort
