@@ -351,52 +351,55 @@
   nvimConfigDir = ./nvim-config;
 
   # Wrapper script
-  lazyVimWrapper = pkgs.writeShellScriptBin "lvim" ''
-    export FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf
-    export FONTCONFIG_PATH=${victorMonoNerdFont}/share/fonts
+  lazyVimWrapper = pkgs.writeShellApplication {
+    name = "lvim";
+    text = ''
+        export FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf
+      export FONTCONFIG_PATH=${victorMonoNerdFont}/share/fonts
 
-    # Set SSL certificate path for git
-    export GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
-    export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+      # Set SSL certificate path for git
+      export GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+      export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
 
-    # Use XDG directories for mutable data
-    export XDG_DATA_HOME=''${XDG_DATA_HOME:-$HOME/.local/share}
-    export XDG_STATE_HOME=''${XDG_STATE_HOME:-$HOME/.local/state}
-    export XDG_CACHE_HOME=''${XDG_CACHE_HOME:-$HOME/.cache}
+      # Use XDG directories for mutable data
+      export XDG_DATA_HOME=''${XDG_DATA_HOME:-$HOME/.local/share}
+      export XDG_STATE_HOME=''${XDG_STATE_HOME:-$HOME/.local/state}
+      export XDG_CACHE_HOME=''${XDG_CACHE_HOME:-$HOME/.cache}
 
-    # Ensure directories exist
-    mkdir -p "$XDG_DATA_HOME/nvim/lazy"
-    mkdir -p "$XDG_STATE_HOME/nvim"
-    mkdir -p "$XDG_CACHE_HOME/nvim"
+      # Ensure directories exist
+      mkdir -p "$XDG_DATA_HOME/nvim/lazy"
+      mkdir -p "$XDG_STATE_HOME/nvim"
+      mkdir -p "$XDG_CACHE_HOME/nvim"
 
-    # Add path to dependencies
-    export PATH="${lib.makeBinPath allDeps}:$PATH"
+      # Add path to dependencies
+      export PATH="${lib.makeBinPath allDeps}:$PATH"
 
-    # Set sqlite library path for sqlite.lua
-    export LIBSQLITE="${pkgs.sqlite.out}/lib/libsqlite3${
-      if pkgs.stdenv.isDarwin
-      then ".dylib"
-      else ".so"
-    }"
+      # Set sqlite library path for sqlite.lua
+      export LIBSQLITE="${pkgs.sqlite.out}/lib/libsqlite3${
+        if pkgs.stdenv.isDarwin
+        then ".dylib"
+        else ".so"
+      }"
 
-    # Export treesitter grammars path for init.lua to use
-    export TREESITTER_GRAMMARS="${treesitterGrammars}"
+      # Export treesitter grammars path for init.lua to use
+      export TREESITTER_GRAMMARS="${treesitterGrammars}"
 
-    # Copy pre-fetched plugins (not symlink) so we can add .git markers
-    for plugin in ${pluginsDir}/*; do
-      name=$(basename "$plugin")
-      target="$XDG_DATA_HOME/nvim/lazy/$name"
-      if [ ! -d "$target" ]; then
-        cp -rL "$plugin" "$target"
-        chmod -R u+w "$target"
-        # Create .git marker so lazy.nvim thinks plugin is installed
-        mkdir -p "$target/.git"
-      fi
-    done
+      # Copy pre-fetched plugins (not symlink) so we can add .git markers
+      for plugin in ${pluginsDir}/*; do
+        name=$(basename "$plugin")
+        target="$XDG_DATA_HOME/nvim/lazy/$name"
+        if [ ! -d "$target" ]; then
+          cp -rL "$plugin" "$target"
+          chmod -R u+w "$target"
+          # Create .git marker so lazy.nvim thinks plugin is installed
+          mkdir -p "$target/.git"
+        fi
+      done
 
-    # Run neovim with immutable config
-    exec ${neovimPackage}/bin/nvim -u "${nvimConfigDir}/init.lua" "$@"
-  '';
+      # Run neovim with immutable config
+      exec ${neovimPackage}/bin/nvim -u "${nvimConfigDir}/init.lua" "$@"
+    '';
+  };
 in {
   options.my.vim = {
     enable = lib.mkEnableOption "LazyVim configuration";

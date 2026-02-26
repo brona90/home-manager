@@ -2,6 +2,7 @@
 {
   pkgs,
   userConfig,
+  gitConfig,
   ...
 }: let
   # Get the first user configured for x86_64-linux
@@ -42,7 +43,7 @@ in {
   users.users.${username} = {
     isNormalUser = true;
     home = "/home/${username}";
-    description = "Gregory Foster";
+    description = gitConfig.userName;
     extraGroups = ["wheel"];
     shell = pkgs.zsh;
   };
