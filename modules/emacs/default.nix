@@ -28,7 +28,7 @@
   '';
 in {
   options.my.emacs = {
-    enable = lib.mkEnableOption "Gregory's Doom Emacs configuration";
+    enable = lib.mkEnableOption "Doom Emacs configuration with nix-doom-emacs-unstraightened";
 
     package = lib.mkOption {
       type = lib.types.package;
