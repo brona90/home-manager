@@ -60,7 +60,12 @@ in {
       enable = true;
       inherit (cfg) package;
       defaultEditor = true;
-      startWithUserSession = "graphical";
+      # true = WantedBy default.target (any user session, works in headless WSL).
+      # "graphical" = WantedBy graphical-session.target (display server required).
+      startWithUserSession =
+        if pkgs.stdenv.isLinux
+        then true
+        else "graphical";
     };
 
     home.sessionVariables = lib.mkIf (!cfg.daemon.enable) {

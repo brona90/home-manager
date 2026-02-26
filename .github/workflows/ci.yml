@@ -198,9 +198,6 @@ jobs:
           echo "=== Testing interactive shell loads ==="
           docker run --rm "$IMAGE" zsh -i -c "echo 'Shell loaded successfully'"
 
-          echo "=== Testing zsh startup time ==="
-          docker run --rm "$IMAGE" zsh -i -c "exit" 2>&1 | grep -v "^$" || true
-
           echo "=== All tests passed ==="
 
   validate-nixos:
