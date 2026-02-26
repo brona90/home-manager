@@ -278,8 +278,8 @@ user_exists() {
   fi
   
   # Check if username@system combo exists
-  grep -q "username = \"${username}\"" "$CONFIG_DIR/config.nix" && \
-  grep -q "\"${system}\"" "$CONFIG_DIR/config.nix"
+  grep -qF "username = \"${username}\"" "$CONFIG_DIR/config.nix" && \
+  grep -qF "\"${system}\"" "$CONFIG_DIR/config.nix"
 }
 
 # Add user to config.nix
@@ -407,15 +407,11 @@ activate_home_manager() {
   if check_home_manager; then
     hm_cmd="home-manager switch --flake \".#${config}\" -b backup"
     info "Running: $hm_cmd"
-    if ! home-manager switch --flake ".#${config}" -b backup; then
-      exit_code=$?
-    fi
+    home-manager switch --flake ".#${config}" -b backup || exit_code=$?
   else
     hm_cmd="nix run home-manager -- switch --flake \".#${config}\" -b backup"
     info "Running: $hm_cmd"
-    if ! nix run home-manager -- switch --flake ".#${config}" -b backup; then
-      exit_code=$?
-    fi
+    nix run home-manager -- switch --flake ".#${config}" -b backup || exit_code=$?
   fi
   
   if [ $exit_code -ne 0 ]; then

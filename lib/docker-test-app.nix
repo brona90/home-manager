@@ -27,7 +27,7 @@
       [ -S "''${SSH_AUTH_SOCK:-}" ] && DOCKER_ARGS+=("-v" "$SSH_AUTH_SOCK:/ssh-agent" "-e" "SSH_AUTH_SOCK=/ssh-agent")
 
       echo "Starting container..."
-      docker run "''${DOCKER_ARGS[@]}" ${imageName}:${imageTag}
+      docker run "''${DOCKER_ARGS[@]}" "${imageName}:${imageTag}"
     '';
   }}/bin/docker-test";
 }
