@@ -14,6 +14,9 @@
 
     # Cachix cache name
     cachixCache = "gfoster";
+
+    # Cachix public signing key (find it at https://app.cachix.org → your cache → Settings)
+    cachixPublicKey = "gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw=";
   };
 
   # User configurations
