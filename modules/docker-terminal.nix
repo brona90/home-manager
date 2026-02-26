@@ -8,7 +8,6 @@
   cfg = config.my.dockerTerminal;
   repoConfig = userConfig.repo;
   inherit (config.home) homeDirectory;
-  homeDir = homeDirectory;
 
   terminalScript = pkgs.writeShellApplication {
     name = "terminal";
@@ -71,7 +70,7 @@
           case "$MODE" in
             ephemeral)
               # Tmpfs home - nothing persists
-              DOCKER_ARGS+=("--tmpfs" "${homeDir}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+              DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
               ;;
 
@@ -79,14 +78,14 @@
               # Persistent home directory
               PERSIST_DIR="$HOME/.local/share/docker-terminal"
               mkdir -p "$PERSIST_DIR"
-              DOCKER_ARGS+=("-v" "$PERSIST_DIR:${homeDir}")
+              DOCKER_ARGS+=("-v" "$PERSIST_DIR:${homeDirectory}")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
               echo "Using persistent home: $PERSIST_DIR"
               ;;
 
             workspace)
               # Ephemeral home + mounted workspace
-              DOCKER_ARGS+=("--tmpfs" "${homeDir}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+              DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
               DOCKER_ARGS+=("-v" "$WORKSPACE:/workspace" "-w" "/workspace")
               echo "Workspace: $WORKSPACE -> /workspace"
@@ -95,7 +94,7 @@
 
           # Mount SSH keys (read-only) - all modes
           if [ -d "$HOME/.ssh" ]; then
-            DOCKER_ARGS+=("-v" "$HOME/.ssh:${homeDir}/.ssh:ro")
+            DOCKER_ARGS+=("-v" "$HOME/.ssh:${homeDirectory}/.ssh:ro")
           fi
 
           # Forward SSH agent - all modes
