@@ -1,6 +1,9 @@
-{ config, lib, pkgs, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   cfg = config.my.emacs;
 
   emacsClientWrapper = pkgs.writeShellScriptBin "em" ''
@@ -23,9 +26,7 @@ let
     fi
     exec ${cfg.package}/bin/emacsclient -t "$@"
   '';
-
-in
-{
+in {
   options.my.emacs = {
     enable = lib.mkEnableOption "Gregory's Doom Emacs configuration";
 

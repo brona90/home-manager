@@ -1,10 +1,12 @@
 # Docker test app - runs the built image locally
 #
 # Usage: nix run .#docker-test
-
-{ pkgs, homeDirectory, imageName, imageTag ? "latest" }:
-
 {
+  pkgs,
+  homeDirectory,
+  imageName,
+  imageTag ? "latest",
+}: {
   type = "app";
   meta.description = "Build and test Docker image locally";
   program = "${pkgs.writeShellApplication {

@@ -1,9 +1,10 @@
-{ config, lib, ... }:
-
-let
-  cfg = config.my.btop;
-in
 {
+  config,
+  lib,
+  ...
+}: let
+  cfg = config.my.btop;
+in {
   options.my.btop = {
     enable = lib.mkEnableOption "btop system monitor";
 

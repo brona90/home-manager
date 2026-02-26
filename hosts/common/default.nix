@@ -1,20 +1,22 @@
 # Common NixOS settings shared across all hosts
-{ pkgs, userConfig, ... }:
-
-let
+{
+  pkgs,
+  userConfig,
+  ...
+}: let
   # Get the first user configured for x86_64-linux
-  linuxUsers = builtins.filter
+  linuxUsers =
+    builtins.filter
     (user: builtins.elem "x86_64-linux" user.systems)
     userConfig.users;
   primaryUser = builtins.head linuxUsers;
   inherit (primaryUser) username;
   inherit (userConfig.repo) cachixCache;
-in
-{
+in {
   # Nix settings
   nix.settings = {
-    experimental-features = [ "nix-command" "flakes" ];
-    trusted-users = [ "root" username ];
+    experimental-features = ["nix-command" "flakes"];
+    trusted-users = ["root" username];
     max-jobs = "auto";
     cores = 0;
 
@@ -41,7 +43,7 @@ in
     isNormalUser = true;
     home = "/home/${username}";
     description = "Gregory Foster";
-    extraGroups = [ "wheel" ];
+    extraGroups = ["wheel"];
     shell = pkgs.zsh;
   };
 

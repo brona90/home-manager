@@ -1,22 +1,25 @@
-{ config, lib, pkgs, userConfig, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  userConfig,
+  ...
+}: let
   cfg = config.my.zsh;
   inherit (userConfig.repo) cachixCache;
-in
-{
+in {
   options.my.zsh = {
     enable = lib.mkEnableOption "Gregory's zsh configuration";
 
     extraOhMyZshPlugins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ ];
+      default = [];
       description = "Additional oh-my-zsh plugins to enable";
     };
 
     extraAliases = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
-      default = { };
+      default = {};
       description = "Additional shell aliases";
     };
 
@@ -34,76 +37,78 @@ in
         enableCompletion = true;
         dotDir = "${config.xdg.configHome}/zsh";
 
-        shellAliases = {
-          # Basic
-          df = "df -h";
-          du = "du -h -d 2";
-          ll = "ls -alh --color=auto";
-          ls = "ls --color=auto";
-          ":q" = "exit";
-          less = "less -r";
-          tf = "tail -f";
-          l = "less";
-          lh = "ls -alt | head";
-          screen = "TERM=screen screen";
-          cl = "clear";
-          gz = "tar -zcvf";
-          ka9 = "killall -9";
-          k9 = "kill -9";
+        shellAliases =
+          {
+            # Basic
+            df = "df -h";
+            du = "du -h -d 2";
+            ll = "ls -alh --color=auto";
+            ls = "ls --color=auto";
+            ":q" = "exit";
+            less = "less -r";
+            tf = "tail -f";
+            l = "less";
+            lh = "ls -alt | head";
+            screen = "TERM=screen screen";
+            cl = "clear";
+            gz = "tar -zcvf";
+            ka9 = "killall -9";
+            k9 = "kill -9";
 
-          # Git (g = git)
-          gs = "git status";
-          gco = "git checkout";
-          ga = "git add -A";
-          gm = "git merge";
-          gr = "git remote -v";
-          gl = "git log --graph --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
-          gla = "git log --graph --all --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
-          gf = "git fetch";
-          gd = "git diff";
-          gb = "git branch";
-          gpl = "git pull";
-          gnb = "git checkout -b";
+            # Git (g = git)
+            gs = "git status";
+            gco = "git checkout";
+            ga = "git add -A";
+            gm = "git merge";
+            gr = "git remote -v";
+            gl = "git log --graph --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
+            gla = "git log --graph --all --format='%C(yellow)%h%Creset %s %C(cyan)<%ae>%Creset %C(green)(%cr)%Creset%C(auto)%d%Creset'";
+            gf = "git fetch";
+            gd = "git diff";
+            gb = "git branch";
+            gpl = "git pull";
+            gnb = "git checkout -b";
 
-          # Nix (n = nix)
-          nfu = "nix flake update";
-          nrs = ''sudo nixos-rebuild switch --flake "$HOME/.config/home-manager"'';
-          # Nix cleanup (nc = nix clean/collect)
-          ncg = "nix-collect-garbage";                          # basic garbage collection
-          ncgd = "nix-collect-garbage -d";                      # delete old generations + gc
-          nco = "nix store optimise";                           # deduplicate store
-          nsc = "nix-collect-garbage -d && nix store optimise"; # store clean (full cleanup)
+            # Nix (n = nix)
+            nfu = "nix flake update";
+            nrs = ''sudo nixos-rebuild switch --flake "$HOME/.config/home-manager"'';
+            # Nix cleanup (nc = nix clean/collect)
+            ncg = "nix-collect-garbage"; # basic garbage collection
+            ncgd = "nix-collect-garbage -d"; # delete old generations + gc
+            nco = "nix store optimise"; # deduplicate store
+            nsc = "nix-collect-garbage -d && nix store optimise"; # store clean (full cleanup)
 
-          # Docker (d = docker)
-          dps = "docker ps";
-          dpsa = "docker ps -a";
-          di = "docker images";
-          # Docker cleanup (dc = docker clean)
-          dcp = "docker system prune -f";                       # prune unused
-          dcpa = "docker system prune -af";                     # prune all unused images
-          dcpv = "docker volume prune -f";                      # prune volumes
-          dcpb = "docker builder prune -f";                     # prune build cache
-          dca = "docker system prune -af --volumes && docker builder prune -af";  # clean all
+            # Docker (d = docker)
+            dps = "docker ps";
+            dpsa = "docker ps -a";
+            di = "docker images";
+            # Docker cleanup (dc = docker clean)
+            dcp = "docker system prune -f"; # prune unused
+            dcpa = "docker system prune -af"; # prune all unused images
+            dcpv = "docker volume prune -f"; # prune volumes
+            dcpb = "docker builder prune -f"; # prune build cache
+            dca = "docker system prune -af --volumes && docker builder prune -af"; # clean all
 
-          # Mise (m = mise)
-          mcp = "mise prune -y";                                # prune unused versions
-          mcc = "mise cache clear";                             # clear download cache
-          mca = "mise prune -y && mise cache clear";            # clean all mise
+            # Mise (m = mise)
+            mcp = "mise prune -y"; # prune unused versions
+            mcc = "mise cache clear"; # clear download cache
+            mca = "mise prune -y && mise cache clear"; # clean all mise
 
-          # Neovim/LazyVim (v = vim)
-          vcc = "rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim"; # vim cache clean
+            # Neovim/LazyVim (v = vim)
+            vcc = "rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim"; # vim cache clean
 
-          # General cache
-          ccc = "rm -rf ~/.cache/*";                            # cache clean (careful!)
+            # General cache
+            ccc = "rm -rf ~/.cache/*"; # cache clean (careful!)
 
-          # Editors
-          vim = "lvim";
-          vi = "lvim";
-        } // cfg.extraAliases;
+            # Editors
+            vim = "lvim";
+            vi = "lvim";
+          }
+          // cfg.extraAliases;
 
         oh-my-zsh = {
           enable = true;
-          plugins = [ "git" "z" "direnv" ] ++ cfg.extraOhMyZshPlugins;
+          plugins = ["git" "z" "direnv"] ++ cfg.extraOhMyZshPlugins;
           extraConfig = ''
             zstyle ':omz:update' mode auto
             ENABLE_CORRECTION="true"

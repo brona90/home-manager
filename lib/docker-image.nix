@@ -1,15 +1,14 @@
 # Build a Docker image from a Home Manager configuration
-{ pkgs
-, homeConfiguration
-, username
-, homeDirectory
-, uid ? 1000
-, gid ? 1000
-, imageName ? "home-manager"
-, imageTag ? "latest"
-}:
-
-let
+{
+  pkgs,
+  homeConfiguration,
+  username,
+  homeDirectory,
+  uid ? 1000,
+  gid ? 1000,
+  imageName ? "home-manager",
+  imageTag ? "latest",
+}: let
   inherit (homeConfiguration) activationPackage;
   homePath = "${activationPackage}/home-path";
 
@@ -29,7 +28,7 @@ let
       (pkgs.writeTextDir "etc/nsswitch.conf" ''
         hosts: files dns
       '')
-      (pkgs.runCommand "var-empty" { } ''
+      (pkgs.runCommand "var-empty" {} ''
         mkdir -p $out/var/empty
       '')
     ];
@@ -64,64 +63,63 @@ let
 
     exec ${homePath}/bin/zsh
   '';
-
 in
-pkgs.dockerTools.buildLayeredImage {
-  name = imageName;
-  tag = imageTag;
+  pkgs.dockerTools.buildLayeredImage {
+    name = imageName;
+    tag = imageTag;
 
-  contents = [
-    pkgs.bashInteractive
-    pkgs.coreutils
-    pkgs.findutils
-    pkgs.gnugrep
-    pkgs.gnused
-    pkgs.gawk
-    pkgs.less
-    pkgs.which
-    pkgs.ncurses
-    pkgs.nix
-    pkgs.cacert
-    pkgs.rsync
-    pkgs.gcc
-    pkgs.glibc
-    pkgs.zlib
-    pkgs.stdenv.cc.cc.lib
-    pkgs.iana-etc
-    pkgs.curl
-    pkgs.dnsutils
-    pkgs.iputils
-    customNss
-    homePath
-    activationPackage
-  ];
-
-  extraCommands = ''
-    mkdir -p home/${username}/.config
-    mkdir -p home/${username}/.local
-    mkdir -p home/${username}/.cache
-    mkdir -p tmp
-    chmod 1777 tmp
-  '';
-
-  config = {
-    Cmd = [ "${entrypoint}" ];
-    Env = [
-      "HOME=${homeDirectory}"
-      "USER=${username}"
-      "PATH=${homePath}/bin:/bin"
-      "NIX_PATH=nixpkgs=${pkgs.path}"
-      "EDITOR=emacsclient -t"
-      "VISUAL=emacsclient -c"
-      # Use C.UTF-8 instead of en_US.UTF-8 (used by home/common.nix) to
-      # avoid bundling glibcLocales (~200MB). C.UTF-8 is built into glibc
-      # and provides full UTF-8 support without locale data files.
-      "LANG=C.UTF-8"
-      "LC_ALL=C.UTF-8"
-      "TERM=xterm-256color"
-      "COLORTERM=truecolor"
+    contents = [
+      pkgs.bashInteractive
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.gnugrep
+      pkgs.gnused
+      pkgs.gawk
+      pkgs.less
+      pkgs.which
+      pkgs.ncurses
+      pkgs.nix
+      pkgs.cacert
+      pkgs.rsync
+      pkgs.gcc
+      pkgs.glibc
+      pkgs.zlib
+      pkgs.stdenv.cc.cc.lib
+      pkgs.iana-etc
+      pkgs.curl
+      pkgs.dnsutils
+      pkgs.iputils
+      customNss
+      homePath
+      activationPackage
     ];
-    WorkingDir = homeDirectory;
-    User = username;
-  };
-}
+
+    extraCommands = ''
+      mkdir -p home/${username}/.config
+      mkdir -p home/${username}/.local
+      mkdir -p home/${username}/.cache
+      mkdir -p tmp
+      chmod 1777 tmp
+    '';
+
+    config = {
+      Cmd = ["${entrypoint}"];
+      Env = [
+        "HOME=${homeDirectory}"
+        "USER=${username}"
+        "PATH=${homePath}/bin:/bin"
+        "NIX_PATH=nixpkgs=${pkgs.path}"
+        "EDITOR=emacsclient -t"
+        "VISUAL=emacsclient -c"
+        # Use C.UTF-8 instead of en_US.UTF-8 (used by home/common.nix) to
+        # avoid bundling glibcLocales (~200MB). C.UTF-8 is built into glibc
+        # and provides full UTF-8 support without locale data files.
+        "LANG=C.UTF-8"
+        "LC_ALL=C.UTF-8"
+        "TERM=xterm-256color"
+        "COLORTERM=truecolor"
+      ];
+      WorkingDir = homeDirectory;
+      User = username;
+    };
+  }

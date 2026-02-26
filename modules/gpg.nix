@@ -1,10 +1,13 @@
-{ config, lib, pkgs, gitConfig, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  gitConfig,
+  ...
+}: let
   cfg = config.my.gpg;
   inherit (pkgs.stdenv) isLinux;
-in
-{
+in {
   options.my.gpg = {
     enable = lib.mkEnableOption "GPG configuration with signing support";
 
@@ -35,15 +38,18 @@ in
 
   config = lib.mkIf cfg.enable {
     # Install GPG and optional smart card support
-    home.packages = with pkgs; [
-      gnupg
-      pinentry-curses
-    ] ++ lib.optionals (cfg.enableYubiKey && isLinux && !cfg.forwardToWindows) [
-      pcsclite
-      ccid
-    ] ++ lib.optionals cfg.forwardToWindows [
-      socat
-    ];
+    home.packages = with pkgs;
+      [
+        gnupg
+        pinentry-curses
+      ]
+      ++ lib.optionals (cfg.enableYubiKey && isLinux && !cfg.forwardToWindows) [
+        pcsclite
+        ccid
+      ]
+      ++ lib.optionals cfg.forwardToWindows [
+        socat
+      ];
 
     programs = {
       gpg = {
@@ -56,11 +62,13 @@ in
 
         # scdaemon configuration for local smart cards (not used when forwarding)
         scdaemonSettings = lib.mkIf (cfg.enableYubiKey && !cfg.forwardToWindows) (
-          if isLinux then {
+          if isLinux
+          then {
             pcsc-driver = "${lib.getLib pkgs.pcsclite}/lib/libpcsclite.so.1";
             card-timeout = "5";
             disable-ccid = true;
-          } else {
+          }
+          else {
             disable-ccid = true;
           }
         );
@@ -70,7 +78,8 @@ in
       # initContent contributions, including sops.nix helper functions
       # that depend on GPG being configured.
       zsh.initContent = lib.mkAfter (
-        if cfg.forwardToWindows then ''
+        if cfg.forwardToWindows
+        then ''
           # Forward GPG agent to Windows Gpg4win
           export GPG_TTY=$(tty)
 
@@ -96,10 +105,11 @@ in
           fi
 
           unset _win_user
-        '' else ''
+        ''
+        else ''
           # GPG TTY configuration
           export GPG_TTY=$(tty)
-          
+
           # Refresh gpg-agent tty in case user switches to another tty
           gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
         ''
