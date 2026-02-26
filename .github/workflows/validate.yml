@@ -35,7 +35,7 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
       - name: Build NixOS configuration
-        run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel 2>&1 | grep -v "could not update mtime" || true
+        run: nix build .#nixosConfigurations.nixos.config.system.build.toplevel
 
   darwin:
     name: Darwin (Apple Silicon)
@@ -73,7 +73,7 @@ jobs:
         run: |
           CONFIG="${{ steps.config.outputs.config }}"
           echo "Building: $CONFIG"
-          nix build ".#homeConfigurations.\"$CONFIG\".activationPackage" 2>&1 | grep -v "could not update mtime" || true
+          nix build ".#homeConfigurations.\"$CONFIG\".activationPackage"
       - name: Skip (no Darwin config)
         if: steps.config.outputs.skip == 'true'
         run: echo "::notice::No aarch64-darwin configuration found in flake, skipping"
