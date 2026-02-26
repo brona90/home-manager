@@ -180,8 +180,9 @@ in {
 
             # Nix store
             if [ -d /nix/store ]; then
-              local nix_size=$(du -sh /nix/store 2>/dev/null | cut -f1)
-              local nix_paths=$(ls /nix/store 2>/dev/null | wc -l | tr -d ' ')
+              local nix_size nix_paths
+              nix_size=$(du -sh /nix/store 2>/dev/null | cut -f1)
+              nix_paths=$(ls /nix/store 2>/dev/null | wc -l | tr -d ' ')
               echo "''${blue}❄  Nix Store''${nc}"
               echo "   Size:  ''${bold}$nix_size''${nc}"
               echo "   Paths: $nix_paths"
@@ -191,7 +192,8 @@ in {
 
             # Home Manager generations
             if [ -d ~/.local/state/nix/profiles ]; then
-              local hm_gens=$(ls ~/.local/state/nix/profiles/home-manager-*-link 2>/dev/null | wc -l | tr -d ' ')
+              local hm_gens
+              hm_gens=$(ls ~/.local/state/nix/profiles/home-manager-*-link 2>/dev/null | wc -l | tr -d ' ')
               echo "''${green}🏠 Home Manager''${nc}"
               echo "   Generations: $hm_gens"
               echo "   Clean: ''${cyan}ncgd''${nc} (deletes old generations)"
@@ -210,18 +212,20 @@ in {
 
             # Mise (runtime versions)
             if [ -d ~/.local/share/mise ]; then
-              local mise_install_size=$(du -sh ~/.local/share/mise/installs 2>/dev/null | cut -f1 || echo "0")
-              local mise_cache_size=$(du -sh ~/.local/share/mise/cache 2>/dev/null | cut -f1 || echo "0")
-              local mise_runtimes=$(ls ~/.local/share/mise/installs 2>/dev/null | wc -l | tr -d ' ')
+              local mise_install_size mise_cache_size mise_runtimes
+              mise_install_size=$(du -sh ~/.local/share/mise/installs 2>/dev/null | cut -f1 || echo "0")
+              mise_cache_size=$(du -sh ~/.local/share/mise/cache 2>/dev/null | cut -f1 || echo "0")
+              mise_runtimes=$(ls ~/.local/share/mise/installs 2>/dev/null | wc -l | tr -d ' ')
               echo "''${red}🔧 Mise''${nc}"
               echo "   Installs: ''${bold}$mise_install_size''${nc} ($mise_runtimes runtimes)"
               echo "   Cache:    $mise_cache_size"
               if [ -d ~/.local/share/mise/installs ]; then
                 for rt in ~/.local/share/mise/installs/*/; do
                   if [ -d "$rt" ]; then
-                    local rt_name=$(basename "$rt")
-                    local rt_vers=$(ls "$rt" 2>/dev/null | wc -l | tr -d ' ')
-                    local rt_size=$(du -sh "$rt" 2>/dev/null | cut -f1)
+                    local rt_name rt_vers rt_size
+                    rt_name=$(basename "$rt")
+                    rt_vers=$(ls "$rt" 2>/dev/null | wc -l | tr -d ' ')
+                    rt_size=$(du -sh "$rt" 2>/dev/null | cut -f1)
                     echo "   - $rt_name: $rt_vers versions ($rt_size)"
                   fi
                 done
@@ -232,7 +236,8 @@ in {
 
             # Doom Emacs
             if [ -d ~/.local/share/nix-doom ]; then
-              local doom_size=$(du -sh ~/.local/share/nix-doom 2>/dev/null | cut -f1)
+              local doom_size
+              doom_size=$(du -sh ~/.local/share/nix-doom 2>/dev/null | cut -f1)
               echo "''${magenta}👿 Doom Emacs''${nc}"
               echo "   Size: ''${bold}$doom_size''${nc}"
               echo ""
@@ -241,9 +246,10 @@ in {
             # Neovim/LazyVim
             local nvim_total=0
             if [ -d ~/.local/share/nvim ] || [ -d ~/.local/state/nvim ] || [ -d ~/.cache/nvim ]; then
-              local nvim_data=$(du -sh ~/.local/share/nvim 2>/dev/null | cut -f1 || echo "0")
-              local nvim_state=$(du -sh ~/.local/state/nvim 2>/dev/null | cut -f1 || echo "0")
-              local nvim_cache=$(du -sh ~/.cache/nvim 2>/dev/null | cut -f1 || echo "0")
+              local nvim_data nvim_state nvim_cache
+              nvim_data=$(du -sh ~/.local/share/nvim 2>/dev/null | cut -f1 || echo "0")
+              nvim_state=$(du -sh ~/.local/state/nvim 2>/dev/null | cut -f1 || echo "0")
+              nvim_cache=$(du -sh ~/.cache/nvim 2>/dev/null | cut -f1 || echo "0")
               echo "''${green}📝 Neovim/LazyVim''${nc}"
               echo "   Data:  $nvim_data"
               echo "   State: $nvim_state"
@@ -274,9 +280,18 @@ in {
                   local cache_size
                   cache_size=$(echo "$cache_info" | jq -r '.size // empty' 2>/dev/null || echo "")
                   if [ -n "$cache_size" ]; then
-                    # Convert bytes to human readable
+                    # Convert bytes to human-readable (numfmt is GNU-only; awk is portable)
                     local human_size
-                    human_size=$(numfmt --to=iec-i --suffix=B "$cache_size" 2>/dev/null || echo "$cache_size bytes")
+                    if command -v numfmt &>/dev/null; then
+                      human_size=$(numfmt --to=iec-i --suffix=B "$cache_size" 2>/dev/null || echo "''${cache_size}B")
+                    else
+                      human_size=$(awk -v b="$cache_size" 'BEGIN{
+                        if(b<1024) printf "%dB",b
+                        else if(b<1048576) printf "%.1fKiB",b/1024
+                        else if(b<1073741824) printf "%.1fMiB",b/1048576
+                        else printf "%.1fGiB",b/1073741824
+                      }')
+                    fi
                     echo "   Size: ''${bold}$human_size''${nc}"
                   fi
                 fi
@@ -288,7 +303,8 @@ in {
 
             # General cache
             if [ -d ~/.cache ]; then
-              local cache_size=$(du -sh ~/.cache 2>/dev/null | cut -f1)
+              local cache_size
+              cache_size=$(du -sh ~/.cache 2>/dev/null | cut -f1)
               echo "''${cyan}💾 General Cache (~/.cache)''${nc}"
               echo "   Size: ''${bold}$cache_size''${nc}"
               echo "   Clean: ''${cyan}ccc''${nc} (careful!)"
