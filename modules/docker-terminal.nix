@@ -98,7 +98,7 @@ HELP
     fi
 
     # Run the container
-    exec docker run "${DOCKER_ARGS[@]}" "$IMAGE"
+    exec docker run "''${DOCKER_ARGS[@]}" "$IMAGE"
   '';
 
 in
