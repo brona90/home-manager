@@ -114,8 +114,8 @@ in
         "USER=${username}"
         "PATH=${homePath}/bin:/bin"
         "NIX_PATH=nixpkgs=${pkgs.path}"
-        "EDITOR=emacsclient -t"
-        "VISUAL=emacsclient -c"
+        "EDITOR=emacsclient -t --alternate-editor 'emacs -nw'"
+        "VISUAL=emacsclient -c --alternate-editor 'emacs'"
         # Use C.UTF-8 instead of en_US.UTF-8 (used by home/common.nix) to
         # avoid bundling glibcLocales (~200MB). C.UTF-8 is built into glibc
         # and provides full UTF-8 support without locale data files.
