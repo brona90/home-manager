@@ -54,7 +54,7 @@ jobs:
       - uses: cachix/cachix-action@v16
         with:
           name: nix-community
-          extraPullNames: emacs
+          extraPullNames: emacs,${{ env.CACHIX_CACHE }}
       - run: nix flake check
 
   build-home:
