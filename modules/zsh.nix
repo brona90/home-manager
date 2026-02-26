@@ -9,7 +9,7 @@
   inherit (userConfig.repo) cachixCache;
 in {
   options.my.zsh = {
-    enable = lib.mkEnableOption "Gregory's zsh configuration";
+    enable = lib.mkEnableOption "zsh configuration with oh-my-zsh, starship, and mise";
 
     extraOhMyZshPlugins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
