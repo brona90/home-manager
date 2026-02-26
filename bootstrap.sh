@@ -189,7 +189,8 @@ configure_nix() {
         cache_key=$(echo "$api_response" | sed -n 's/.*"publicSigningKeys":\["\([^"]*\)".*/\1/p' | head -1)
       fi
       if [ -n "$cache_key" ]; then
-        trusted_keys="$trusted_keys ${cachix_cache}.cachix.org-1:$cache_key"
+        # API returns the full key name (e.g. "cachename.cachix.org-1:base64="); use as-is
+        trusted_keys="$trusted_keys $cache_key"
         info "Added public key for ${cachix_cache} cache"
       else
         warn "Could not fetch public key for ${cachix_cache}"
