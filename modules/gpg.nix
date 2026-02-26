@@ -57,7 +57,7 @@ in
         # scdaemon configuration for local smart cards (not used when forwarding)
         scdaemonSettings = lib.mkIf (cfg.enableYubiKey && !cfg.forwardToWindows) (
           if isLinux then {
-            pcsc-driver = "/usr/lib/x86_64-linux-gnu/libpcsclite.so.1";
+            pcsc-driver = "${lib.getLib pkgs.pcsclite}/lib/libpcsclite.so.1";
             card-timeout = "5";
             disable-ccid = true;
           } else {
