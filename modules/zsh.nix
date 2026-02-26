@@ -266,7 +266,7 @@ in {
                 echo "   Auth: ''${yellow}Not authenticated''${nc} (run ''${cyan}cachix-auth''${nc})"
               fi
               # Check if cache is configured in nix.conf
-              if grep -q "${cachixCache}.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
+              if grep -qF "${cachixCache}.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
                 echo "   Substituter: ''${green}Configured''${nc}"
               else
                 echo "   Substituter: ''${yellow}Not configured''${nc} (run ''${cyan}cachix use ${cachixCache}''${nc})"

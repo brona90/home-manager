@@ -158,7 +158,7 @@ configure_nix() {
   cachix_cache=$(get_cachix_cache)
   
   # Check if already configured
-  if [ -f "$NIX_CONF" ] && grep -q "nix-community.cachix.org" "$NIX_CONF"; then
+  if [ -f "$NIX_CONF" ] && grep -qF "nix-community.cachix.org" "$NIX_CONF"; then
     info "Nix already configured with caches"
     return
   fi
