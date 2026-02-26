@@ -25,6 +25,7 @@
     [
       tree
       jq
+      bat # syntax-highlighted cat
       bazel_7
       bazel-buildtools
       aspell

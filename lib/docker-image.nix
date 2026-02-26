@@ -102,7 +102,7 @@ in
       mkdir -p home/${username}/.config
       mkdir -p home/${username}/.local
       mkdir -p home/${username}/.cache
-      chown -R ${toString uid}:${toString gid} home/${username}
+      chmod -R a+rwX home/${username}
       mkdir -p tmp
       chmod 1777 tmp
     '';
