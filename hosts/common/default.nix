@@ -1,5 +1,6 @@
 # Common NixOS settings shared across all hosts
 {
+  lib,
   pkgs,
   userConfig,
   gitConfig,
@@ -23,23 +24,20 @@ in {
     max-jobs = "auto";
     cores = 0;
 
-    substituters = [
-      "https://cache.nixos.org"
-      "https://nix-community.cachix.org"
-      "https://emacs.cachix.org"
-      "https://${cachixCache}.cachix.org"
-    ];
+    substituters =
+      [
+        "https://cache.nixos.org"
+        "https://nix-community.cachix.org"
+        "https://emacs.cachix.org"
+      ]
+      ++ lib.optional (cachixCache != "") "https://${cachixCache}.cachix.org";
     trusted-public-keys =
       [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
         "emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY="
       ]
-      ++ (
-        if cachixPublicKey != ""
-        then [cachixPublicKey]
-        else []
-      );
+      ++ lib.optional (cachixPublicKey != "") cachixPublicKey;
 
     connect-timeout = 5;
     keep-outputs = true;
