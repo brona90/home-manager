@@ -33,8 +33,22 @@
     sops-nix,
     ...
   }: let
-    # Read user configuration
-    userConfig = import ./config.nix;
+    # Read user configuration.
+    # config.local.nix (gitignored) can override any key — typically used for
+    # git identity (userName, userEmail, signingKey) on personal machines so
+    # those values don't have to live in the committed config.nix.
+    # See config.local.nix.example for the format.
+    userConfig = let
+      base = import ./config.nix;
+      local =
+        if builtins.pathExists ./config.local.nix
+        then import ./config.local.nix
+        else {};
+    in
+      base
+      // {
+        git = (base.git or {}) // (local.git or {});
+      };
     repoConfig = userConfig.repo;
     gitConfig = userConfig.git;
 
