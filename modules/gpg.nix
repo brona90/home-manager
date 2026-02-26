@@ -55,10 +55,13 @@ in {
       gpg = {
         enable = true;
         homedir = "${config.home.homeDirectory}/.gnupg";
-        settings = {
-          use-agent = true;
-          default-key = cfg.defaultKey;
-        };
+        settings =
+          {
+            use-agent = true;
+          }
+          // lib.optionalAttrs (cfg.defaultKey != "") {
+            default-key = cfg.defaultKey;
+          };
 
         # scdaemon configuration for local smart cards (not used when forwarding)
         scdaemonSettings = lib.mkIf (cfg.enableYubiKey && !cfg.forwardToWindows) (
