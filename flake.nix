@@ -236,6 +236,52 @@
             }
             else {}
           )
+          // {
+            update-vim-plugins = {
+              type = "app";
+              meta.description = "Fetch latest lazy.nvim + LazyVim versions and hashes for modules/vim/default.nix";
+              program = "${pkgs.writeShellApplication {
+                name = "update-vim-plugins";
+                runtimeInputs = [pkgs.curl pkgs.jq pkgs.nix-prefetch-github];
+                text = ''
+                  fetch_latest_tag() {
+                    local owner="$1" repo="$2"
+                    curl -sL "https://api.github.com/repos/$owner/$repo/releases/latest" \
+                      | jq -r '.tag_name'
+                  }
+
+                  echo "Fetching latest versions..."
+                  lazy_tag=$(fetch_latest_tag folke lazy.nvim)
+                  lazyvim_tag=$(fetch_latest_tag LazyVim LazyVim)
+
+                  echo "  lazy.nvim : $lazy_tag"
+                  echo "  LazyVim   : $lazyvim_tag"
+                  echo ""
+                  echo "Computing hashes (this may take a moment)..."
+
+                  lazy_sha=$(nix-prefetch-github folke lazy.nvim --rev "$lazy_tag" --json | jq -r '.hash')
+                  lazyvim_sha=$(nix-prefetch-github LazyVim LazyVim --rev "$lazyvim_tag" --json | jq -r '.hash')
+
+                  echo ""
+                  echo "Update modules/vim/default.nix with:"
+                  echo ""
+                  echo "  lazyNvim = pkgs.fetchFromGitHub {"
+                  echo "    owner = \"folke\";"
+                  echo "    repo = \"lazy.nvim\";"
+                  echo "    rev = \"$lazy_tag\"; # https://github.com/folke/lazy.nvim/releases"
+                  echo "    sha256 = \"$lazy_sha\";"
+                  echo "  };"
+                  echo ""
+                  echo "  lazyVimDistro = pkgs.fetchFromGitHub {"
+                  echo "    owner = \"LazyVim\";"
+                  echo "    repo = \"LazyVim\";"
+                  echo "    rev = \"$lazyvim_tag\"; # https://github.com/LazyVim/LazyVim/releases"
+                  echo "    sha256 = \"$lazyvim_sha\";"
+                  echo "  };"
+                '';
+              }}/bin/update-vim-plugins";
+            };
+          }
         else {}
     );
   };
