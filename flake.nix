@@ -40,10 +40,14 @@
           isDarwin = nixpkgs.lib.hasInfix "darwin" system;
           # Overlay to stub out lilypond on Darwin (fails to build with newer clang)
           lilypondOverlay = _: prev: nixpkgs.lib.optionalAttrs isDarwin {
+            # lilypond fails to build on Darwin with newer clang; stub it out so
+            # transitive dependents (e.g. Doom Emacs) can still build. The stub
+            # exits 1 so any accidental runtime invocation fails loudly.
             lilypond = prev.runCommand "lilypond-stub" {} ''
               mkdir -p $out/bin
               echo '#!/bin/sh' > $out/bin/lilypond
-              echo 'echo "lilypond stub - install via brew on macOS"' >> $out/bin/lilypond
+              echo 'echo "lilypond is not available on macOS in this configuration" >&2' >> $out/bin/lilypond
+              echo 'exit 1' >> $out/bin/lilypond
               chmod +x $out/bin/lilypond
             '';
           };
