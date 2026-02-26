@@ -3,6 +3,8 @@
 , homeConfiguration
 , username
 , homeDirectory
+, uid ? 1000
+, gid ? 1000
 , imageName ? "home-manager"
 , imageTag ? "latest"
 }:
@@ -17,12 +19,12 @@ let
       (pkgs.writeTextDir "etc/passwd" ''
         root:x:0:0:root:/root:/bin/bash
         nobody:x:65534:65534:Nobody:/nonexistent:/usr/sbin/nologin
-        ${username}:x:1000:1000::${homeDirectory}:${homePath}/bin/zsh
+        ${username}:x:${toString uid}:${toString gid}::${homeDirectory}:${homePath}/bin/zsh
       '')
       (pkgs.writeTextDir "etc/group" ''
         root:x:0:
         nobody:x:65534:
-        ${username}:x:1000:
+        ${username}:x:${toString gid}:
       '')
       (pkgs.writeTextDir "etc/nsswitch.conf" ''
         hosts: files dns
