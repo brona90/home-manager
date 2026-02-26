@@ -59,46 +59,46 @@ HELP
     done
     
     # Base Docker args
-    DOCKER_ARGS="-it --rm --network host"
-    
+    DOCKER_ARGS=("-it" "--rm" "--network" "host")
+
     # Configure based on mode
     case "$MODE" in
       ephemeral)
         # Tmpfs home - nothing persists
-        DOCKER_ARGS="$DOCKER_ARGS --tmpfs ${homeDir}:exec,uid=$(id -u),gid=$(id -g),mode=0755"
-        DOCKER_ARGS="$DOCKER_ARGS --tmpfs /tmp:exec,mode=1777"
+        DOCKER_ARGS+=("--tmpfs" "${homeDir}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+        DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
         ;;
-        
+
       persistent)
         # Persistent home directory
         PERSIST_DIR="$HOME/.local/share/docker-terminal"
         mkdir -p "$PERSIST_DIR"
-        DOCKER_ARGS="$DOCKER_ARGS -v $PERSIST_DIR:${homeDir}"
-        DOCKER_ARGS="$DOCKER_ARGS --tmpfs /tmp:exec,mode=1777"
+        DOCKER_ARGS+=("-v" "$PERSIST_DIR:${homeDir}")
+        DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
         echo "Using persistent home: $PERSIST_DIR"
         ;;
-        
+
       workspace)
         # Ephemeral home + mounted workspace
-        DOCKER_ARGS="$DOCKER_ARGS --tmpfs ${homeDir}:exec,uid=$(id -u),gid=$(id -g),mode=0755"
-        DOCKER_ARGS="$DOCKER_ARGS --tmpfs /tmp:exec,mode=1777"
-        DOCKER_ARGS="$DOCKER_ARGS -v $WORKSPACE:/workspace -w /workspace"
+        DOCKER_ARGS+=("--tmpfs" "${homeDir}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+        DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
+        DOCKER_ARGS+=("-v" "$WORKSPACE:/workspace" "-w" "/workspace")
         echo "Workspace: $WORKSPACE -> /workspace"
         ;;
     esac
-    
+
     # Mount SSH keys (read-only) - all modes
     if [ -d "$HOME/.ssh" ]; then
-      DOCKER_ARGS="$DOCKER_ARGS -v $HOME/.ssh:${homeDir}/.ssh:ro"
+      DOCKER_ARGS+=("-v" "$HOME/.ssh:${homeDir}/.ssh:ro")
     fi
-    
+
     # Forward SSH agent - all modes
     if [ -n "$SSH_AUTH_SOCK" ]; then
-      DOCKER_ARGS="$DOCKER_ARGS -v $SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent"
+      DOCKER_ARGS+=("-v" "$SSH_AUTH_SOCK:/ssh-agent" "-e" "SSH_AUTH_SOCK=/ssh-agent")
     fi
-    
+
     # Run the container
-    exec docker run $DOCKER_ARGS "$IMAGE"
+    exec docker run "${DOCKER_ARGS[@]}" "$IMAGE"
   '';
 
 in
