@@ -267,7 +267,7 @@ in
                 cache_info=$(curl -s "https://app.cachix.org/api/v1/cache/${cachixCache}" 2>/dev/null)
                 if [ -n "$cache_info" ]; then
                   local cache_size
-                  cache_size=$(echo "$cache_info" | grep -oP '"size":\s*\K[0-9]+' 2>/dev/null || echo "")
+                  cache_size=$(echo "$cache_info" | jq -r '.size // empty' 2>/dev/null || echo "")
                   if [ -n "$cache_size" ]; then
                     # Convert bytes to human readable
                     local human_size
