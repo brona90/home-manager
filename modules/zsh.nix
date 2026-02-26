@@ -1,7 +1,8 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, userConfig, ... }:
 
 let
   cfg = config.my.zsh;
+  cachixCache = userConfig.repo.cachixCache;
 in
 {
   options.my.zsh = {
@@ -255,15 +256,15 @@ in
                 echo "   Auth: ''${yellow}Not authenticated''${nc} (run ''${cyan}cachix-auth''${nc})"
               fi
               # Check if cache is configured in nix.conf
-              if grep -q "gfoster.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
+              if grep -q "${cachixCache}.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
                 echo "   Substituter: ''${green}Configured''${nc}"
               else
-                echo "   Substituter: ''${yellow}Not configured''${nc} (run ''${cyan}cachix use gfoster''${nc})"
+                echo "   Substituter: ''${yellow}Not configured''${nc} (run ''${cyan}cachix use ${cachixCache}''${nc})"
               fi
               # Try to get cache size from API (requires auth)
               if [ -f ~/.config/cachix/cachix.dhall ]; then
                 local cache_info
-                cache_info=$(curl -s "https://app.cachix.org/api/v1/cache/gfoster" 2>/dev/null)
+                cache_info=$(curl -s "https://app.cachix.org/api/v1/cache/${cachixCache}" 2>/dev/null)
                 if [ -n "$cache_info" ]; then
                   local cache_size
                   cache_size=$(echo "$cache_info" | grep -oP '"size":\s*\K[0-9]+' 2>/dev/null || echo "")
@@ -275,8 +276,8 @@ in
                   fi
                 fi
               fi
-              echo "   Push: ''${cyan}cachix push gfoster ./result''${nc}"
-              echo "   Clean: Set retention at ''${cyan}https://app.cachix.org/cache/gfoster''${nc} (Settings tab)"
+              echo "   Push: ''${cyan}cachix push ${cachixCache} ./result''${nc}"
+              echo "   Clean: Set retention at ''${cyan}https://app.cachix.org/cache/${cachixCache}''${nc} (Settings tab)"
               echo ""
             fi
 
