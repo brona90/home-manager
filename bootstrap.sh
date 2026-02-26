@@ -157,10 +157,12 @@ configure_nix() {
   local cachix_cache
   cachix_cache=$(get_cachix_cache)
   
-  # Check if already configured
+  # Check if already configured (also verify personal cache is present if needed)
   if [ -f "$NIX_CONF" ] && grep -qF "nix-community.cachix.org" "$NIX_CONF"; then
-    info "Nix already configured with caches"
-    return
+    if [ -z "$cachix_cache" ] || grep -qF "${cachix_cache}.cachix.org" "$NIX_CONF"; then
+      info "Nix already configured with caches"
+      return
+    fi
   fi
   
   info "Configuring Nix with flakes and caches..."
@@ -333,9 +335,9 @@ setup_sops() {
   fi
   
   prompt "Do you want to set up sops secrets? (y/n)"
-  read -r setup_sops
-  
-  if [[ "$setup_sops" != "y" ]]; then
+  read -r do_setup_sops
+
+  if [[ "$do_setup_sops" != "y" ]]; then
     warn "Skipping sops setup. Secrets will not be available."
     warn "Run 'age-keygen -o $age_key' later to set up."
     return

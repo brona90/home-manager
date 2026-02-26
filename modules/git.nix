@@ -45,6 +45,13 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = lib.mkIf cfg.signing.enable [
+      {
+        assertion = config.my.gpg.enable;
+        message = "my.git.signing.enable = true requires my.gpg.enable = true";
+      }
+    ];
+
     programs.git = {
       enable = true;
 
