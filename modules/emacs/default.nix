@@ -11,7 +11,9 @@
     text = ''
       if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
         echo "Starting Emacs daemon..."
-        ${cfg.package}/bin/emacs --daemon
+        # || true: daemon start may fail if another instance just raced us here;
+        # emacsclient below will connect to whichever daemon won.
+        ${cfg.package}/bin/emacs --daemon || true
       fi
 
       if [ -t 0 ] && [ -z "''${DISPLAY:-}" ] && [ -z "''${WAYLAND_DISPLAY:-}" ]; then
@@ -27,7 +29,7 @@
     text = ''
       if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
         echo "Starting Emacs daemon..."
-        ${cfg.package}/bin/emacs --daemon
+        ${cfg.package}/bin/emacs --daemon || true
       fi
       exec ${cfg.package}/bin/emacsclient -t "$@"
     '';
