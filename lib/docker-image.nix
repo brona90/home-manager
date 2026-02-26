@@ -51,7 +51,7 @@ let
 
     echo "Setting up home-manager environment..."
     if [ -d ${activationPackage}/home-files ]; then
-      ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ ~/
+      ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ "$HOME"/
     fi
 
     export PATH="${homePath}/bin:$PATH"
