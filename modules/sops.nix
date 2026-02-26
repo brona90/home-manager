@@ -17,6 +17,12 @@ in
       default = "${config.home.homeDirectory}/.config/sops/age/keys.txt";
       description = "Path to age private key";
     };
+
+    sshKeyName = lib.mkOption {
+      type = lib.types.str;
+      default = "id_rsa";
+      description = "Base name of the SSH key in secrets.yaml (e.g. id_ed25519). The SOPS YAML must have ssh.<sshKeyName> and ssh.<sshKeyName>_pub entries.";
+    };
   };
 
   config = lib.mkIf (cfg.enable && secretsExist) {
@@ -34,49 +40,56 @@ in
         # On Linux: native sops-nix systemd service handles decryption
         decryptSopsSecrets = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           umask 077
+          trap 'rm -f \
+            "${secretsDir}/github_token.tmp" \
+            "${secretsDir}/dockerhub_token.tmp" \
+            "${secretsDir}/cachix_token.tmp" \
+            "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" \
+            "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" \
+            "${secretsDir}/gpg_private_key.tmp" \
+            "${secretsDir}/gpg_public_key.tmp"' EXIT
           if [ -f "${cfg.ageKeyFile}" ]; then
             export SOPS_AGE_KEY_FILE="${cfg.ageKeyFile}"
-            
-            # Create secrets directory  
+
+            # Create secrets directory
             mkdir -p "${secretsDir}"
             chmod 700 "${secretsDir}"
-            
+
             # Decrypt github_token
             if ${pkgs.sops}/bin/sops -d --extract '["github_token"]' "${secretsFile}" > "${secretsDir}/github_token.tmp" 2>/dev/null; then
               chmod 0400 "${secretsDir}/github_token.tmp"
               mv -f "${secretsDir}/github_token.tmp" "${secretsDir}/github_token"
             fi
-            
+
             # Decrypt dockerhub_token
             if ${pkgs.sops}/bin/sops -d --extract '["dockerhub_token"]' "${secretsFile}" > "${secretsDir}/dockerhub_token.tmp" 2>/dev/null; then
               chmod 0400 "${secretsDir}/dockerhub_token.tmp"
               mv -f "${secretsDir}/dockerhub_token.tmp" "${secretsDir}/dockerhub_token"
             fi
-            
+
             # Decrypt cachix_token
             if ${pkgs.sops}/bin/sops -d --extract '["cachix_token"]' "${secretsFile}" > "${secretsDir}/cachix_token.tmp" 2>/dev/null; then
               chmod 0400 "${secretsDir}/cachix_token.tmp"
               mv -f "${secretsDir}/cachix_token.tmp" "${secretsDir}/cachix_token"
             fi
-            
+
             # Decrypt SSH keys - write directly, not via symlink
-            if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["id_rsa"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/id_rsa.tmp" 2>/dev/null; then
-              chmod 0600 "${config.home.homeDirectory}/.ssh/id_rsa.tmp"
-              mv -f "${config.home.homeDirectory}/.ssh/id_rsa.tmp" "${config.home.homeDirectory}/.ssh/id_rsa"
+            if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["${cfg.sshKeyName}"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" 2>/dev/null; then
+              chmod 0600 "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp"
+              mv -f "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}"
             fi
-            
-            if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["id_rsa_pub"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/id_rsa.pub.tmp" 2>/dev/null; then
-              chmod 0644 "${config.home.homeDirectory}/.ssh/id_rsa.pub.tmp"
-              mv -f "${config.home.homeDirectory}/.ssh/id_rsa.pub.tmp" "${config.home.homeDirectory}/.ssh/id_rsa.pub"
+
+            if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["${cfg.sshKeyName}_pub"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" 2>/dev/null; then
+              chmod 0644 "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp"
+              mv -f "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub"
             fi
-            
+
             # Decrypt GPG keys
-            mkdir -p "${secretsDir}"
             if ${pkgs.sops}/bin/sops -d --extract '["gpg"]["private_key"]' "${secretsFile}" > "${secretsDir}/gpg_private_key.tmp" 2>/dev/null; then
               chmod 0600 "${secretsDir}/gpg_private_key.tmp"
               mv -f "${secretsDir}/gpg_private_key.tmp" "${secretsDir}/gpg_private_key"
             fi
-            
+
             if ${pkgs.sops}/bin/sops -d --extract '["gpg"]["public_key"]' "${secretsFile}" > "${secretsDir}/gpg_public_key.tmp" 2>/dev/null; then
               chmod 0644 "${secretsDir}/gpg_public_key.tmp"
               mv -f "${secretsDir}/gpg_public_key.tmp" "${secretsDir}/gpg_public_key"
@@ -119,12 +132,12 @@ in
         cachix_token = {
           path = "${secretsDir}/cachix_token";
         };
-        "ssh/id_rsa" = {
-          path = "${config.home.homeDirectory}/.ssh/id_rsa";
+        "ssh/${cfg.sshKeyName}" = {
+          path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}";
           mode = "0600";
         };
-        "ssh/id_rsa_pub" = {
-          path = "${config.home.homeDirectory}/.ssh/id_rsa.pub";
+        "ssh/${cfg.sshKeyName}_pub" = {
+          path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub";
           mode = "0644";
         };
         "gpg/private_key" = {
@@ -153,10 +166,8 @@ in
       
       # Authenticate cachix using stored token
       cachix-auth() {
-        local token
-        token=$(cat "$CACHIX_TOKEN_FILE" 2>/dev/null)
-        if [ -n "$token" ]; then
-          echo "$token" | cachix authtoken --stdin
+        if [ -s "$CACHIX_TOKEN_FILE" ]; then
+          cachix authtoken --stdin < "$CACHIX_TOKEN_FILE"
           echo "Cachix authenticated"
         else
           echo "Cachix token not available"
