@@ -51,7 +51,8 @@ This repo is designed to be easily forked:
        owner = "your-github-username";
        name = "home-manager";
        dockerHubUser = "your-dockerhub-username";  # or same as owner
-       cachixCache = "your-cachix-cache";          # optional, or remove
+       cachixCache = "your-cachix-cache";          # optional
+       cachixPublicKey = "your-cache.cachix.org-1:..."; # from app.cachix.org → Settings
      };
      users = [
        { username = "yourusername"; systems = [ "x86_64-linux" ]; }

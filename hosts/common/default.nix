@@ -12,7 +12,9 @@
     userConfig.users;
   primaryUser = builtins.head linuxUsers;
   inherit (primaryUser) username;
-  inherit (userConfig.repo) cachixCache cachixPublicKey;
+  inherit (userConfig.repo) cachixCache;
+  # cachixPublicKey is optional — if omitted, run `cachix use <cache>` manually
+  cachixPublicKey = userConfig.repo.cachixPublicKey or "";
 in {
   # Nix settings
   nix.settings = {
@@ -27,12 +29,17 @@ in {
       "https://emacs.cachix.org"
       "https://${cachixCache}.cachix.org"
     ];
-    trusted-public-keys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-      "emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY="
-      cachixPublicKey
-    ];
+    trusted-public-keys =
+      [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+        "emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY="
+      ]
+      ++ (
+        if cachixPublicKey != ""
+        then [cachixPublicKey]
+        else []
+      );
 
     connect-timeout = 5;
     keep-outputs = true;
