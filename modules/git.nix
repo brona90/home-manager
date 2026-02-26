@@ -61,7 +61,7 @@ in {
           init.defaultBranch = "main";
           core.editor =
             if config.my.emacs.enable
-            then "emacs -nw"
+            then "emacsclient -t --alternate-editor 'emacs -nw'"
             else "vi";
           pull.rebase = false;
           push.autoSetupRemote = true;
