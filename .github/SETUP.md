@@ -105,7 +105,7 @@ NixOS and Darwin full system builds are in `validate.yml` (manual trigger).
 | `docker-build` | After build-home | Builds Docker image; pushes to Docker Hub if token set |
 | `docker-test` | After docker-build | Pulls and smoke-tests the pushed image |
 
-NixOS and Darwin full system builds are in `.github/workflows/validate.yml` (manual trigger only).
+NixOS and Darwin full system builds are in `.github/workflows/validate.yml` (manual, weekly, or on `hosts/**`/`flake.lock`/`flake.nix` changes).
 
 ## Flake Updates
 
