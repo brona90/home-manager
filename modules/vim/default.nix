@@ -203,14 +203,10 @@ in
 
     # Create nvim config directory structure
     xdg.configFile = {
-      "nvim/init.lua".source = "${nvimConfigDir}/init.lua";
-      "nvim/init.lua".force = true;
-      "nvim/lua/config/options.lua".source = "${nvimConfigDir}/lua/config/options.lua";
-      "nvim/lua/config/options.lua".force = true;
-      "nvim/lua/plugins/theme.lua".source = "${nvimConfigDir}/lua/plugins/theme.lua";
-      "nvim/lua/plugins/theme.lua".force = true;
-      "nvim/lua/plugins/treesitter.lua".source = "${nvimConfigDir}/lua/plugins/treesitter.lua";
-      "nvim/lua/plugins/treesitter.lua".force = true;
+      "nvim/init.lua"                      = { source = "${nvimConfigDir}/init.lua";                                force = true; };
+      "nvim/lua/config/options.lua"        = { source = "${nvimConfigDir}/lua/config/options.lua";        force = true; };
+      "nvim/lua/plugins/theme.lua"         = { source = "${nvimConfigDir}/lua/plugins/theme.lua";         force = true; };
+      "nvim/lua/plugins/treesitter.lua"    = { source = "${nvimConfigDir}/lua/plugins/treesitter.lua";    force = true; };
     };
   };
 }
