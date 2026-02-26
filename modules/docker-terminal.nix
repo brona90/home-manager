@@ -6,7 +6,9 @@ let
   inherit (config.home) homeDirectory;
   homeDir = homeDirectory;
   
-  terminalScript = pkgs.writeShellScriptBin "terminal" ''
+  terminalScript = pkgs.writeShellApplication {
+    name = "terminal";
+    text = ''
     IMAGE="''${DOCKER_TERMINAL_IMAGE:-${repoConfig.dockerHubUser}/terminal:latest}"
     MODE="ephemeral"
     WORKSPACE=""
@@ -93,13 +95,14 @@ HELP
     fi
 
     # Forward SSH agent - all modes
-    if [ -n "$SSH_AUTH_SOCK" ]; then
+    if [ -S "''${SSH_AUTH_SOCK:-}" ]; then
       DOCKER_ARGS+=("-v" "$SSH_AUTH_SOCK:/ssh-agent" "-e" "SSH_AUTH_SOCK=/ssh-agent")
     fi
 
     # Run the container
     exec docker run "''${DOCKER_ARGS[@]}" "$IMAGE"
   '';
+  };
 
 in
 {
