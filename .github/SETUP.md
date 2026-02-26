@@ -14,7 +14,8 @@ Edit the `repo` section with your values:
     owner = "your-github-username";
     name = "home-manager";
     dockerHubUser = "your-dockerhub-username";
-    cachixCache = "your-cachix-cache";  # or remove if not using Cachix
+    cachixCache = "your-cachix-cache";          # or remove if not using Cachix
+    cachixPublicKey = "your-cache.cachix.org-1:base64pubkey=";  # optional; run `cachix use <cache>` to find it
   };
   # ...
 }
@@ -75,19 +76,21 @@ Edit the `repo` section with your values:
 ## CI Pipeline
 
 ```
-lint (statix, deadnix)
+lint (statix, deadnix, alejandra --check, shellcheck)
   └─> check (nix flake check)
-        ├─> docker-build → docker-test (if DOCKERHUB_TOKEN set)
-        └─> validate-nixos
+        ├─> build-home (push only: x86_64-linux + aarch64-darwin, pushes to Cachix)
+        │     └─> docker-build → docker-test (requires DOCKERHUB_TOKEN)
+        └─> validate-nixos (continue-on-error)
 ```
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `lint` | All pushes/PRs | Static analysis with statix and deadnix |
-| `check` | After lint | Validates flake structure |
-| `docker-build` | Merge to main/master | Builds Docker image, pushes if credentials available |
-| `docker-test` | After docker-build | Tests the pushed image |
-| `validate-nixos` | After check | Builds NixOS configuration |
+| `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck |
+| `check` | After lint | Validates flake structure with `nix flake check` |
+| `build-home` | Merge to master | Builds home configs (x86_64-linux + aarch64-darwin); pushes to Cachix if token set |
+| `docker-build` | After build-home | Builds Docker image; pushes to Docker Hub if token set |
+| `docker-test` | After docker-build | Pulls and smoke-tests the pushed image |
+| `validate-nixos` | After check | Builds NixOS configuration (continue-on-error) |
 
 ## Flake Updates
 
