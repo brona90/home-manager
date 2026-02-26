@@ -354,7 +354,7 @@
   lazyVimWrapper = pkgs.writeShellApplication {
     name = "lvim";
     text = ''
-        export FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf
+      export FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf
       export FONTCONFIG_PATH=${victorMonoNerdFont}/share/fonts
 
       # Set SSL certificate path for git
