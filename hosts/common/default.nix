@@ -12,7 +12,7 @@
     userConfig.users;
   primaryUser = builtins.head linuxUsers;
   inherit (primaryUser) username;
-  inherit (userConfig.repo) cachixCache;
+  inherit (userConfig.repo) cachixCache cachixPublicKey;
 in {
   # Nix settings
   nix.settings = {
@@ -31,7 +31,7 @@ in {
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
       "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
       "emacs.cachix.org-1:b1SMJNLY/mZF6GxQE+eDBeps7WnkT0Po55TAyzwOxTY="
-      "gfoster.cachix.org-1:O73e1PtN7sjaB5xDnBO/UMJSfheJjqlt6l6howghGvw="
+      cachixPublicKey
     ];
 
     connect-timeout = 5;
