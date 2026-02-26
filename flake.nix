@@ -217,10 +217,13 @@
             default = {
               type = "app";
               meta.description = "Activate home-manager configuration";
-              program = toString (pkgs.writeShellScript "activate-home" ''
-                echo "Activating home-manager configuration for ${system}..."
-                home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup
-              '');
+              program = "${pkgs.writeShellApplication {
+                name = "activate-home";
+                text = ''
+                  echo "Activating home-manager configuration for ${system}..."
+                  home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup
+                '';
+              }}/bin/activate-home";
             };
           }
           // (
