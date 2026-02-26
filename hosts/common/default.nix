@@ -11,7 +11,10 @@
     builtins.filter
     (user: builtins.elem "x86_64-linux" user.systems)
     userConfig.users;
-  primaryUser = builtins.head linuxUsers;
+  primaryUser =
+    if linuxUsers == []
+    then builtins.throw "No x86_64-linux user found in config.nix — add one to the users list"
+    else builtins.head linuxUsers;
   inherit (primaryUser) username;
   inherit (userConfig.repo) cachixCache;
   # cachixPublicKey is optional — if omitted, run `cachix use <cache>` manually

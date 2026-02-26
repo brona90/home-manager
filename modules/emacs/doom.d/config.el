@@ -33,10 +33,8 @@
         :modes LilyPond-mode)
       (add-to-list 'flycheck-checkers 'lilypond))))
 
-;; Some functionality uses this to identify you, e.g. GPG configuration, email
-;; clients, file templates and snippets. It is optional.
-(setq user-full-name "Gregory Foster"
-      user-mail-address "brona90@gmail.com")
+;; user-full-name / user-mail-address are intentionally omitted here —
+;; they are already set in ~/.gitconfig by the home-manager git module.
 
 (setq doom-font (font-spec :family "VictorMono Nerd Font" :size 18))
 

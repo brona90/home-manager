@@ -81,7 +81,8 @@ in {
         if cfg.forwardToWindows
         then ''
           # Forward GPG agent to Windows Gpg4win
-          export GPG_TTY=$(tty)
+          GPG_TTY=$(tty)
+          export GPG_TTY
 
           if [[ -x "/mnt/c/Windows/System32/cmd.exe" ]]; then
             _win_user=$(/mnt/c/Windows/System32/cmd.exe /c 'echo %USERNAME%' 2>/dev/null | tr -d '\r')
@@ -108,7 +109,8 @@ in {
         ''
         else ''
           # GPG TTY configuration
-          export GPG_TTY=$(tty)
+          GPG_TTY=$(tty)
+          export GPG_TTY
 
           # Refresh gpg-agent tty in case user switches to another tty
           gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1

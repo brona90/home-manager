@@ -45,7 +45,7 @@ in {
             ll = "ls -alh --color=auto";
             ls = "ls --color=auto";
             ":q" = "exit";
-            less = "less -r";
+            less = "less -R";
             tf = "tail -f";
             l = "less";
             lh = "ls -alt | head";
@@ -244,7 +244,6 @@ in {
             fi
 
             # Neovim/LazyVim
-            local nvim_total=0
             if [ -d ~/.local/share/nvim ] || [ -d ~/.local/state/nvim ] || [ -d ~/.cache/nvim ]; then
               local nvim_data nvim_state nvim_cache
               nvim_data=$(du -sh ~/.local/share/nvim 2>/dev/null | cut -f1 || echo "0")

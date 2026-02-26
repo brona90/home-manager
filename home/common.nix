@@ -1,5 +1,9 @@
 # Common home-manager configuration shared across all systems
-{pkgs, ...}: {
+{
+  lib,
+  pkgs,
+  ...
+}: {
   programs.home-manager.enable = true;
   xdg.enable = true;
 
@@ -32,13 +36,6 @@
       aspellDicts.en
       cachix # Nix binary cache
     ]
-    ++ (
-      if pkgs.stdenv.isDarwin
-      then [
-        # Skip lilypond on macOS - it has build errors on aarch64-darwin
-      ]
-      else [
-        lilypond # Music engraving for Doom Emacs
-      ]
-    );
+    # Skip lilypond on macOS - it has build errors on aarch64-darwin
+    ++ lib.optionals (!pkgs.stdenv.isDarwin) [lilypond];
 }
