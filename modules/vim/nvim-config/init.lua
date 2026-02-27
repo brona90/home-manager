@@ -6,6 +6,10 @@ vim.opt.rtp:prepend(lazypath)
 local grammars_path = os.getenv("TREESITTER_GRAMMARS")
 if grammars_path then
   vim.opt.runtimepath:append(grammars_path)
+else
+  vim.schedule(function()
+    vim.notify("TREESITTER_GRAMMARS not set — use 'lvim' wrapper, not 'nvim' directly", vim.log.levels.WARN)
+  end)
 end
 
 -- Load config options first

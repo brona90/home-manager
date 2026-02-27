@@ -244,7 +244,7 @@ setup_config() {
       read -r REPO_URL
       
       # Validate URL format
-      if [[ ! "$REPO_URL" =~ ^https?://|^git@ ]]; then
+      if [[ ! "$REPO_URL" =~ ^(https?://|git@) ]]; then
         fatal "Invalid repository URL: $REPO_URL"
       fi
     fi

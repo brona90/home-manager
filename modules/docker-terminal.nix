@@ -76,7 +76,7 @@
 
             persistent)
               # Persistent home directory
-              PERSIST_DIR="$HOME/.local/share/docker-terminal"
+              PERSIST_DIR="''${XDG_DATA_HOME:-$HOME/.local/share}/docker-terminal"
               mkdir -p "$PERSIST_DIR"
               DOCKER_ARGS+=("-v" "$PERSIST_DIR:${homeDirectory}")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
