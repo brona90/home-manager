@@ -51,24 +51,24 @@
       mkdir -p "$HOME/.tmux/plugins"
 
       echo "Setting up home-manager environment..."
-      if [ -d ${activationPackage}/home-files ]; then
-        ${pkgs.rsync}/bin/rsync -rL ${activationPackage}/home-files/ "$HOME"/
+      if [ -d "${activationPackage}/home-files" ]; then
+        "${pkgs.rsync}/bin/rsync" -rL "${activationPackage}/home-files/" "$HOME"/
       fi
 
       export PATH="${homePath}/bin:$PATH"
       export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib:${pkgs.zlib}/lib:''${LD_LIBRARY_PATH:-}"
       export TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins"
 
-      if [ -f ${homePath}/etc/profile.d/hm-session-vars.sh ]; then
+      if [ -f "${homePath}/etc/profile.d/hm-session-vars.sh" ]; then
         # hm-session-vars.sh uses $__HM_SESS_VARS_SOURCED without a default,
         # which trips set -u.  Disable nounset for the source, then restore.
         set +u
         # shellcheck source=/dev/null
-        source ${homePath}/etc/profile.d/hm-session-vars.sh
+        source "${homePath}/etc/profile.d/hm-session-vars.sh"
         set -u
       fi
 
-      exec ${homePath}/bin/zsh
+      exec "${homePath}/bin/zsh"
     '';
   };
 in
