@@ -259,9 +259,14 @@
                 runtimeInputs = [pkgs.curl pkgs.jq pkgs.nix-prefetch-github];
                 text = ''
                   fetch_latest_tag() {
-                    local owner="$1" repo="$2"
-                    curl -sL "https://api.github.com/repos/$owner/$repo/releases/latest" \
-                      | jq -r '.tag_name'
+                    local owner="$1" repo="$2" tag
+                    tag=$(curl -sL "https://api.github.com/repos/$owner/$repo/releases/latest" \
+                      | jq -r '.tag_name')
+                    if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+                      echo "error: failed to fetch release tag for $owner/$repo (got: '$tag')" >&2
+                      return 1
+                    fi
+                    echo "$tag"
                   }
 
                   echo "Fetching latest versions..."

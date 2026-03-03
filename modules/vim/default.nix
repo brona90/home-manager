@@ -319,12 +319,12 @@
     nodePackages.prettier
     gofumpt
     shfmt
-    taplo
+    # taplo intentionally omitted — already in lspServers (taplo-lsp)
   ];
 
   # Linters
   linters = with pkgs; [
-    ruff
+    # ruff intentionally omitted — already in lspServers
     pylint
     nodePackages.eslint
     shellcheck
