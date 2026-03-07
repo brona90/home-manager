@@ -6,19 +6,20 @@
     ls = "ls -G"; # macOS ls uses -G for color
   };
 
-  # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
-  # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
-  # symlinked into ~/Library/Fonts/ so macOS can discover them.
-  home.file."Library/Fonts/victor-mono-nerd-font" = {
-    source = "${pkgs.nerd-fonts.victor-mono}/share/fonts";
-    recursive = true;
-  };
-  home.file."Library/Fonts/nerd-symbols-font" = {
-    source = "${pkgs.nerd-fonts.symbols-only}/share/fonts";
-    recursive = true;
-  };
+  home = {
+    # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
+    # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
+    # symlinked into ~/Library/Fonts/ so macOS can discover them.
+    file."Library/Fonts/victor-mono-nerd-font" = {
+      source = "${pkgs.nerd-fonts.victor-mono}/share/fonts";
+      recursive = true;
+    };
+    file."Library/Fonts/nerd-symbols-font" = {
+      source = "${pkgs.nerd-fonts.symbols-only}/share/fonts";
+      recursive = true;
+    };
 
-  home.activation.homebrew = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    activation.homebrew = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     # Install Homebrew if not present
     if ! command -v brew &>/dev/null \
         && [[ ! -x /opt/homebrew/bin/brew ]] \
@@ -45,4 +46,5 @@
         discord slack microsoft-teams signal chrome-remote-desktop-host
     fi
   '';
+  };
 }
