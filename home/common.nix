@@ -66,8 +66,9 @@ in {
         aspellDicts.en
         cachix # Nix binary cache
         claude-code # Anthropic Claude CLI
+        texlive.combined.scheme-medium
       ]
-      # Skip lilypond on macOS - installed via Homebrew cask on Darwin (darwin.nix)
+      # Skip lilypond on macOS - installed via Homebrew formula on Darwin (darwin.nix)
       ++ lib.optionals (!pkgs.stdenv.isDarwin) [lilypond];
     # calibre: GUI app — installed via Homebrew cask on macOS (darwin.nix);
     # Nix build broken on Linux (qtbase6-setup-hook missing qmake)
