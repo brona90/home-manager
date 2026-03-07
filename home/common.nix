@@ -66,9 +66,10 @@ in {
         aspellDicts.en
         cachix # Nix binary cache
         claude-code # Anthropic Claude CLI
-        calibre # E-book management
       ]
       # Skip lilypond on macOS - it has build errors on aarch64-darwin
       ++ lib.optionals (!pkgs.stdenv.isDarwin) [lilypond];
+    # calibre: GUI app — installed via Homebrew cask on macOS (darwin.nix);
+    # Nix build broken on Linux (qtbase6-setup-hook missing qmake)
   };
 }
