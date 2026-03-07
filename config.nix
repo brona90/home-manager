@@ -23,7 +23,7 @@
   users = [
     {
       username = "gfoster";
-      systems = ["x86_64-linux" "x86_64-darwin"];
+      systems = ["x86_64-linux" "x86_64-darwin" "aarch64-darwin"];
     }
     {
       # Corporate/AD account username — numeric usernames are valid on macOS
