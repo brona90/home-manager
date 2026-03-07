@@ -46,8 +46,9 @@
 
       if [[ -n "$_brew" ]]; then
         $DRY_RUN_CMD "$_brew" install --cask \
-          google-chrome clipy rectangle iterm2 claude calibre lilypond \
+          google-chrome clipy rectangle iterm2 claude calibre \
           discord slack microsoft-teams signal chrome-remote-desktop-host
+        $DRY_RUN_CMD "$_brew" install lilypond
       fi
     '';
   };
