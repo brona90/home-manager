@@ -66,6 +66,7 @@ in {
         aspellDicts.en
         cachix # Nix binary cache
         claude-code # Anthropic Claude CLI
+        calibre # E-book management
       ]
       # Skip lilypond on macOS - it has build errors on aarch64-darwin
       ++ lib.optionals (!pkgs.stdenv.isDarwin) [lilypond];
