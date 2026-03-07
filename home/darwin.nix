@@ -40,7 +40,9 @@
     fi
 
     if [[ -n "$_brew" ]]; then
-      $DRY_RUN_CMD "$_brew" install --cask google-chrome clipy rectangle iterm2 claude
+      $DRY_RUN_CMD "$_brew" install --cask \
+        google-chrome clipy rectangle iterm2 claude \
+        discord slack microsoft-teams signal chrome-remote-desktop-host
     fi
   '';
 }
