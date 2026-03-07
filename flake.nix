@@ -55,28 +55,11 @@
     allSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
     forAllSystems = nixpkgs.lib.genAttrs allSystems;
 
-    pkgsFor = system: let
-      isDarwin = nixpkgs.lib.hasInfix "darwin" system;
-      # Overlay to stub out lilypond on Darwin (fails to build with newer clang)
-      lilypondOverlay = _: prev:
-        nixpkgs.lib.optionalAttrs isDarwin {
-          # lilypond fails to build on Darwin with newer clang; stub it out so
-          # transitive dependents (e.g. Doom Emacs) can still build. The stub
-          # exits 1 so any accidental runtime invocation fails loudly.
-          lilypond = prev.runCommand "lilypond-stub" {} ''
-            mkdir -p $out/bin
-            echo '#!/bin/sh' > $out/bin/lilypond
-            echo 'echo "lilypond is not available on macOS in this configuration" >&2' >> $out/bin/lilypond
-            echo 'exit 1' >> $out/bin/lilypond
-            chmod +x $out/bin/lilypond
-          '';
-        };
-    in
+    pkgsFor = system:
       import nixpkgs {
         inherit system;
         config.allowUnfree = true;
         overlays = [
-          lilypondOverlay
           doom-emacs.overlays.default
         ];
       };
