@@ -142,7 +142,9 @@ configure_trusted_user() {
   
   # Restart nix-daemon to pick up changes
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    sudo pkill nix-daemon || true
+    # launchd manages nix-daemon on macOS; pkill alone doesn't re-read nix.conf
+    sudo launchctl kickstart -k system/org.nixos.nix-daemon 2>/dev/null \
+      || sudo pkill nix-daemon || true
   else
     sudo systemctl restart nix-daemon 2>/dev/null || sudo pkill nix-daemon || true
   fi
@@ -205,9 +207,9 @@ configure_nix() {
   fi
   
   cat > "$NIX_CONF" << EOF
-experimental-features = nix-command flakes
-substituters = $substituters
-trusted-public-keys = $trusted_keys
+extra-experimental-features = nix-command flakes
+extra-substituters = $substituters
+extra-trusted-public-keys = $trusted_keys
 max-jobs = auto
 cores = 0
 connect-timeout = 5
