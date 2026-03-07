@@ -7,12 +7,16 @@
   };
 
   # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
-  # On Darwin, fonts in home.packages are NOT automatically visible to macOS apps;
-  # fonts.fontDirectories symlinks them into ~/Library/Fonts/HomeManager/.
-  fonts.fontDirectories = [
-    pkgs.nerd-fonts.victor-mono # VictorMono Nerd Font (doom-font in config.el)
-    pkgs.nerd-fonts.symbols-only # Symbols Nerd Font Mono (nerd-icons in config.el)
-  ];
+  # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
+  # symlinked into ~/Library/Fonts/ so macOS can discover them.
+  home.file."Library/Fonts/victor-mono-nerd-font" = {
+    source = "${pkgs.nerd-fonts.victor-mono}/share/fonts";
+    recursive = true;
+  };
+  home.file."Library/Fonts/nerd-symbols-font" = {
+    source = "${pkgs.nerd-fonts.symbols-only}/share/fonts";
+    recursive = true;
+  };
 
   home.activation.homebrew = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     # Install Homebrew if not present
