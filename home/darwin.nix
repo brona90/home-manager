@@ -15,10 +15,28 @@
   ];
 
   home.activation.homebrew = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if ! command -v brew &>/dev/null; then
-      echo "warning: brew not found; skipping Homebrew package installation" >&2
+    # Install Homebrew if not present
+    if ! command -v brew &>/dev/null \
+        && [[ ! -x /opt/homebrew/bin/brew ]] \
+        && [[ ! -x /usr/local/bin/brew ]]; then
+      $DRY_RUN_CMD NONINTERACTIVE=1 /bin/bash -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+
+    # Resolve brew path (may not be on PATH yet in a fresh install)
+    if command -v brew &>/dev/null; then
+      _brew=brew
+    elif [[ -x /opt/homebrew/bin/brew ]]; then
+      _brew=/opt/homebrew/bin/brew
+    elif [[ -x /usr/local/bin/brew ]]; then
+      _brew=/usr/local/bin/brew
     else
-      $DRY_RUN_CMD brew install --cask google-chrome
+      echo "warning: brew not found after installation attempt; skipping cask installs" >&2
+      _brew=""
+    fi
+
+    if [[ -n "$_brew" ]]; then
+      $DRY_RUN_CMD "$_brew" install --cask google-chrome
     fi
   '';
 }
