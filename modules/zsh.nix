@@ -71,7 +71,7 @@ in {
 
             # Nix (n = nix)
             nfu = "nix flake update";
-            nrs = ''sudo nixos-rebuild switch --flake "$HOME/.config/home-manager"'';
+            nrs = ''sudo /run/current-system/sw/bin/nixos-rebuild switch --flake "$HOME/.config/home-manager"'';
             # Nix cleanup (nc = nix clean/collect)
             ncg = "nix-collect-garbage"; # basic garbage collection
             ncgd = "nix-collect-garbage -d"; # delete old generations + gc
