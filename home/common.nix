@@ -26,6 +26,8 @@ in {
   # Manage ~/.config/nix/nix.conf declaratively.
   # Use extra-* variants so settings append to the system list and work
   # for non-root users even before trusted-users is configured.
+  nix.package = pkgs.nix;
+
   nix.settings = {
     extra-experimental-features = ["nix-command" "flakes"];
     extra-substituters =
