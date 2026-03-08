@@ -107,11 +107,11 @@ in {
 
       # Install/update only when the plist has changed
       if ! diff -q "$_src" "$_dest" &>/dev/null; then
-        $DRY_RUN_CMD sudo /bin/launchctl bootout "system/$_label" 2>/dev/null || true
-        $DRY_RUN_CMD sudo /bin/cp -f "$_src" "$_dest"
-        $DRY_RUN_CMD sudo /bin/chmod 644 "$_dest"
-        $DRY_RUN_CMD sudo /usr/sbin/chown root:wheel "$_dest"
-        $DRY_RUN_CMD sudo /bin/launchctl bootstrap system "$_dest"
+        $DRY_RUN_CMD /usr/bin/sudo /bin/launchctl bootout "system/$_label" 2>/dev/null || true
+        $DRY_RUN_CMD /usr/bin/sudo /bin/cp -f "$_src" "$_dest"
+        $DRY_RUN_CMD /usr/bin/sudo /bin/chmod 644 "$_dest"
+        $DRY_RUN_CMD /usr/bin/sudo /usr/sbin/chown root:wheel "$_dest"
+        $DRY_RUN_CMD /usr/bin/sudo /bin/launchctl bootstrap system "$_dest"
       fi
     '';
   };
