@@ -61,7 +61,6 @@ in {
     services.emacs = lib.mkIf cfg.daemon.enable {
       enable = true;
       inherit (cfg) package;
-      defaultEditor = true;
       # true = WantedBy default.target (any user session, works in headless WSL).
       # "graphical" = WantedBy graphical-session.target (display server required).
       startWithUserSession =
@@ -70,9 +69,15 @@ in {
         else "graphical";
     };
 
-    home.sessionVariables = lib.mkIf (!cfg.daemon.enable) {
-      EDITOR = "emacs -nw";
-      VISUAL = "emacs";
+    home.sessionVariables = {
+      EDITOR =
+        if cfg.daemon.enable
+        then "emacsclient -t --alternate-editor 'emacs -nw'"
+        else "emacs -nw";
+      VISUAL =
+        if cfg.daemon.enable
+        then "emacsclient -c --alternate-editor emacs"
+        else "emacs";
     };
   };
 }
