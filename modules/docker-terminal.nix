@@ -25,7 +25,7 @@
                 ;;
               -w|--workspace)
                 MODE="workspace"
-                WORKSPACE="''${2:-$PWD}"
+                WORKSPACE="$(cd "''${2:-$PWD}" && pwd)"
                 shift 2
                 ;;
               -h|--help)
