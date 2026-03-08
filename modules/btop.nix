@@ -26,6 +26,7 @@ in {
       };
     };
 
+    # force = true: btop rewrites its config on exit; without this HM link management fails
     xdg.configFile."btop/btop.conf".force = true;
   };
 }
