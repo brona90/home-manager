@@ -101,7 +101,7 @@
           ++ (
             if isLinux
             then [./home/linux.nix]
-            else [./home/darwin.nix]
+            else [./home/darwin.nix ./modules/zscaler-bypass.nix]
           )
           ++ [
             {
@@ -111,6 +111,8 @@
               };
 
               my = {
+                # Zscaler bypass routes only on corporate machines (user 888973)
+                zscalerBypass.enable = username == "888973";
                 tmux = {
                   enable = true;
                   configDir = ./modules/tmux/tmux-config;
