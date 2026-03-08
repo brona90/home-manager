@@ -35,12 +35,59 @@
         ips=$(/usr/bin/dig +short A "$host" 2>/dev/null) || return 0
         while IFS= read -r ip; do
           [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
-          /sbin/route -q add -host "$ip" "$GATEWAY" 2>/dev/null \
-            && echo "  $host -> $ip"
+          # Use if/then — avoids set -e triggering on && when route already exists
+          if /sbin/route -q add -host "$ip" "$GATEWAY" 2>/dev/null; then
+            echo "  $host -> $ip (added)"
+          else
+            echo "  $host -> $ip (already present)"
+          fi
         done <<< "$ips"
       }
 
       ${lib.concatMapStringsSep "\n      " (h: "bypass ${lib.escapeShellArg h}") cfg.hosts}
+    '';
+  };
+
+  statusScript = pkgs.writeShellApplication {
+    name = "zscaler-status";
+    text = ''
+      echo "=== Zscaler ==="
+      if /usr/bin/pgrep -x ZscalerTunnel > /dev/null 2>&1; then
+        echo "ZscalerTunnel: ACTIVE (pid $(/usr/bin/pgrep -x ZscalerTunnel))"
+      else
+        echo "ZscalerTunnel: not running"
+      fi
+
+      echo ""
+      echo "=== Bypass daemon ==="
+      if [[ -f /Library/LaunchDaemons/com.home-manager.zscaler-bypass.plist ]]; then
+        echo "Plist:  installed"
+      else
+        echo "Plist:  NOT installed — run hms"
+      fi
+      echo "Logs:   sudo tail /var/log/zscaler-bypass.log"
+
+      echo ""
+      echo "=== Host routing ==="
+      check_host() {
+        local host=$1 ip iface status
+        ip=$(/usr/bin/dig +short A "$host" 2>/dev/null \
+          | /usr/bin/grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+        if [[ -z "$ip" ]]; then
+          printf "  %-45s (DNS failed)\n" "$host"
+          return
+        fi
+        iface=$(/sbin/route get "$ip" 2>/dev/null \
+          | /usr/bin/awk '/interface:/{print $2}')
+        if [[ "$iface" == en* ]]; then
+          status="BYPASSED ($iface)"
+        else
+          status="via Zscaler ($iface)"
+        fi
+        printf "  %-45s %-16s %s\n" "$host" "$ip" "$status"
+      }
+
+      ${lib.concatMapStringsSep "\n      " (h: "check_host ${lib.escapeShellArg h}") cfg.hosts}
     '';
   };
 
@@ -97,8 +144,7 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    # Make the script available in $PATH for manual invocation
-    home.packages = [bypassScript];
+    home.packages = [bypassScript statusScript];
 
     home.activation.zscalerBypass = lib.hm.dag.entryAfter ["writeBoundary"] ''
       _label="${daemonLabel}"
