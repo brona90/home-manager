@@ -28,8 +28,8 @@
       if ! command -v brew &>/dev/null \
           && [[ ! -x /opt/homebrew/bin/brew ]] \
           && [[ ! -x /usr/local/bin/brew ]]; then
-        $DRY_RUN_CMD NONINTERACTIVE=1 /bin/bash -c \
-          "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        $DRY_RUN_CMD /bin/bash -eu -c \
+          'NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
       fi
 
       # Resolve brew path (may not be on PATH yet in a fresh install)
@@ -46,8 +46,17 @@
 
       if [[ -n "$_brew" ]]; then
         $DRY_RUN_CMD "$_brew" install --cask \
-          google-chrome clipy rectangle iterm2 claude calibre \
-          discord slack microsoft-teams signal chrome-remote-desktop-host
+          calibre \
+          chrome-remote-desktop-host \
+          clipy \
+          claude \
+          discord \
+          google-chrome \
+          iterm2 \
+          microsoft-teams \
+          rectangle \
+          signal \
+          slack
         $DRY_RUN_CMD "$_brew" install lilypond
       fi
     '';
