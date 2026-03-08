@@ -13,8 +13,8 @@
   bypassScript = pkgs.writeShellApplication {
     name = "zscaler-bypass";
     text = ''
-      # Only act when Zscaler tunnel is active (gateway 100.64.0.1 via utun*)
-      if ! /usr/sbin/netstat -rn 2>/dev/null | /usr/bin/grep -q "100\.64\.0\.1.*utun"; then
+      # Only act when Zscaler tunnel process is running
+      if ! /usr/bin/pgrep -x ZscalerTunnel > /dev/null 2>&1; then
         echo "Zscaler not active, nothing to do"
         exit 0
       fi
