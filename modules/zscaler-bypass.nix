@@ -19,9 +19,10 @@
         exit 0
       fi
 
-      # Dynamically find the physical gateway (first default route via en*)
+      # Dynamically find the physical gateway (first default route via en*).
+      # || true: awk exits early, causing netstat SIGPIPE; pipefail would abort without it.
       GATEWAY=$(/usr/sbin/netstat -rn \
-        | /usr/bin/awk '/^default[[:space:]].*en[0-9]/{print $2; exit}')
+        | /usr/bin/awk '/^default[[:space:]].*en[0-9]/{print $2; exit}') || true
       if [[ -z "$GATEWAY" ]]; then
         echo "ERROR: no physical gateway found on en*" >&2
         exit 1
@@ -65,8 +66,6 @@
       else
         echo "Plist:  NOT installed — run hms"
       fi
-      echo "Logs:   sudo tail /var/log/zscaler-bypass.log"
-
       echo ""
       echo "=== Host routing ==="
       check_host() {
@@ -78,7 +77,7 @@
           return
         fi
         iface=$(/sbin/route get "$ip" 2>/dev/null \
-          | /usr/bin/awk '/interface:/{print $2}')
+          | /usr/bin/awk '/interface:/{print $2}') || true
         if [[ "$iface" == en* ]]; then
           status="BYPASSED ($iface)"
         else
@@ -110,10 +109,6 @@
       <array>
         <string>/private/var/run/resolv.conf</string>
       </array>
-      <key>StandardOutPath</key>
-      <string>/var/log/zscaler-bypass.log</string>
-      <key>StandardErrorPath</key>
-      <string>/var/log/zscaler-bypass.log</string>
     </dict>
     </plist>
   '';
