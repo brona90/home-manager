@@ -38,7 +38,7 @@ in {
     };
 
     extraConfig = lib.mkOption {
-      type = lib.types.attrs;
+      type = lib.types.attrsOf lib.types.anything;
       default = {};
       description = "Additional git config";
     };
