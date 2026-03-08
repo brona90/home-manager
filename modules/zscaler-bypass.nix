@@ -46,6 +46,18 @@
       }
 
       ${lib.concatMapStringsSep "\n      " (h: "bypass ${lib.escapeShellArg h}") cfg.hosts}
+
+      # Subnet routes — stable CIDR ranges that don't need DNS resolution
+      bypass_net() {
+        local net=$1
+        if /sbin/route -q add -net "$net" "$GATEWAY" 2>/dev/null; then
+          echo "  $net (added)"
+        else
+          echo "  $net (already present)"
+        fi
+      }
+
+      ${lib.concatMapStringsSep "\n      " (n: "bypass_net ${lib.escapeShellArg n}") cfg.subnets}
     '';
   };
 
@@ -87,6 +99,25 @@
       }
 
       ${lib.concatMapStringsSep "\n      " (h: "check_host ${lib.escapeShellArg h}") cfg.hosts}
+
+      echo ""
+      echo "=== Subnet routes ==="
+      check_net() {
+        local net=$1 iface status
+        # Pick a representative IP from the subnet (first host address)
+        local sample
+        sample=$(echo "$net" | /usr/bin/awk -F'[./]' '{print $1"."$2"."$3"."$4+1}')
+        iface=$(/sbin/route get "$sample" 2>/dev/null \
+          | /usr/bin/awk '/interface:/{print $2}') || true
+        if [[ "$iface" == en* ]]; then
+          status="BYPASSED ($iface)"
+        else
+          status="via Zscaler ($iface)"
+        fi
+        printf "  %-45s %s\n" "$net" "$status"
+      }
+
+      ${lib.concatMapStringsSep "\n      " (n: "check_net ${lib.escapeShellArg n}") cfg.subnets}
     '';
   };
 
@@ -122,11 +153,9 @@ in {
         "cache.nixos.org"
         "nix-community.cachix.org"
         "gfoster.cachix.org"
-        "github.com"
-        "api.github.com"
+        # github.com / api.github.com / codeload.github.com covered by subnets (140.82.112.0/20)
         "objects.githubusercontent.com"
         "raw.githubusercontent.com"
-        "codeload.github.com"
         "registry.npmjs.org"
         "crates.io"
         "static.crates.io"
@@ -135,6 +164,15 @@ in {
         "files.pythonhosted.org"
       ];
       description = "Hostnames whose resolved IPs get direct /32 routes bypassing Zscaler";
+    };
+
+    subnets = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        # GitHub's IP range — github.com/api.github.com/codeload rotate within this /20
+        "140.82.112.0/20"
+      ];
+      description = "CIDR subnets to bypass Zscaler for via direct network routes";
     };
   };
 
