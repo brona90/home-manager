@@ -8,6 +8,7 @@
 
   my.zsh.extraAliases = {
     ls = "ls -G"; # macOS ls uses -G for color
+    zscaler-stop = "sudo launchctl bootout system/com.zscaler.tray; sudo launchctl bootout system/com.zscaler.zfd; sudo launchctl bootout system/com.zscaler.tunnel";
   };
 
   home = {
