@@ -64,6 +64,7 @@ in {
         bazel-buildtools
         aspell
         aspellDicts.en
+        eza # modern ls replacement (exa fork)
         cachix # Nix binary cache
         claude-code # Anthropic Claude CLI
         texlive.combined.scheme-medium
