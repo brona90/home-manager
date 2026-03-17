@@ -54,6 +54,7 @@ in {
     home.packages = [
       cfg.package
       pkgs.ispell
+      pkgs.typescript-language-server
       emacsClientWrapper
       emacsClientTerminal
     ];
