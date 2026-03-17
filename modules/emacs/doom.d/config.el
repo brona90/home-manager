@@ -36,6 +36,8 @@
 ;; user-full-name / user-mail-address are intentionally omitted here —
 ;; they are already set in ~/.gitconfig by the home-manager git module.
 
+(setq ispell-program-name "aspell")
+
 (setq doom-font (font-spec :family "VictorMono Nerd Font" :size 18))
 
 ;; For nerd-icons symbols specifically
