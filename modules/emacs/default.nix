@@ -56,6 +56,7 @@ in {
       pkgs.ispell
       pkgs.typescript-language-server
       pkgs.pyright
+      pkgs.gopls
       emacsClientWrapper
       emacsClientTerminal
     ];
