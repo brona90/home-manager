@@ -55,6 +55,7 @@ in {
       cfg.package
       pkgs.ispell
       pkgs.typescript-language-server
+      pkgs.pyright
       emacsClientWrapper
       emacsClientTerminal
     ];
