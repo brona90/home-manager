@@ -38,6 +38,14 @@
 
 (setq ispell-program-name "aspell")
 
+;; Java LSP: point lsp-java at the Nix-provided jdtls so it doesn't auto-download
+(after! lsp-java
+  (when-let* ((jdtls-bin (executable-find "jdtls"))
+              (pkg-root (expand-file-name "../" (file-name-directory (file-truename jdtls-bin))))
+              (install-dir (expand-file-name "share/java/jdtls/" pkg-root)))
+    (when (file-directory-p install-dir)
+      (setq lsp-java-server-install-dir install-dir))))
+
 (setq doom-font (font-spec :family "VictorMono Nerd Font" :size 18))
 
 ;; For nerd-icons symbols specifically
