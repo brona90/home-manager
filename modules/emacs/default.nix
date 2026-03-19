@@ -58,6 +58,7 @@ in {
       pkgs.pyright
       pkgs.gopls
       pkgs.haskell-language-server
+      pkgs.jdt-language-server
       emacsClientWrapper
       emacsClientTerminal
     ];
