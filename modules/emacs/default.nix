@@ -59,6 +59,7 @@ in {
       pkgs.gopls
       pkgs.haskell-language-server
       pkgs.jdt-language-server
+      pkgs.sbcl
       emacsClientWrapper
       emacsClientTerminal
     ];
