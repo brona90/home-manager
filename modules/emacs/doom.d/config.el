@@ -38,6 +38,9 @@
 
 (setq ispell-program-name "aspell")
 
+;; Common Lisp: use sbcl as the inferior lisp for SLIME
+(setq inferior-lisp-program "sbcl")
+
 ;; Java LSP: point lsp-java at the Nix-provided jdtls so it doesn't auto-download
 (after! lsp-java
   (when-let* ((jdtls-bin (executable-find "jdtls"))
