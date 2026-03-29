@@ -13,10 +13,10 @@
 
   nixpkgs.config = {
     problems.handlers = {
-      nss_wrapper.broken = "warn";  # or "ignore" if you want zero output
+      nss_wrapper.broken = "warn"; # or "ignore" if you want zero output
     };
   };
-  
+
   home = {
     # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
     # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
