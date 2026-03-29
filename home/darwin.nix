@@ -11,6 +11,12 @@
     zscaler-stop = "sudo launchctl bootout system/com.zscaler.tray; sudo launchctl bootout system/com.zscaler.zfd; sudo launchctl bootout system/com.zscaler.tunnel";
   };
 
+  nixpkgs.config = {
+    problems.handlers = {
+      nss_wrapper.broken = "warn";  # or "ignore" if you want zero output
+    };
+  };
+  
   home = {
     # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
     # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
