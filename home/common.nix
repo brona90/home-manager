@@ -9,6 +9,12 @@
   cachixCache = userConfig.repo.cachixCache or "";
   cachixPublicKey = userConfig.repo.cachixPublicKey or "";
 in {
+  nixpkgs.config.allowUnfreePredicate = pkg:
+    builtins.elem (lib.getName pkg) [
+      "claude-code"
+      # Add more unfree packages here later if needed
+    ];
+
   programs.home-manager.enable = true;
   xdg.enable = true;
 
