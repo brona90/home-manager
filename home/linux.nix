@@ -4,6 +4,7 @@
     gsettings-desktop-schemas
     glib
     dconf
+    claude-code # Anthropic Claude CLI
   ];
 
   my.zsh.extraInitExtra = ''
