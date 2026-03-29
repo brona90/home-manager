@@ -434,6 +434,11 @@ in {
       direnv = {
         enable = true;
         nix-direnv.enable = true;
+        stdlib = ''
+          use_mise() {
+            eval "$(mise direnv)" 
+          }
+        '';
       };
     };
 
