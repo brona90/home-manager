@@ -41,7 +41,7 @@ in {
     home.packages = with pkgs;
       [
         gnupg
-        pinentry-curses
+        pinentry-emacs
       ]
       ++ lib.optionals (cfg.enableYubiKey && isLinux && !cfg.forwardToWindows) [
         pcsclite
@@ -129,11 +129,15 @@ in {
     services.gpg-agent = lib.mkIf (isLinux && !cfg.forwardToWindows) {
       enable = true;
       inherit (cfg) enableSshSupport;
-      pinentry.package = pkgs.pinentry-curses;
+      pinentry.package = pkgs.pinentry-emacs;
       defaultCacheTtl = 3600;
       defaultCacheTtlSsh = 3600;
       maxCacheTtl = 86400;
       maxCacheTtlSsh = 86400;
+      extraConfig = ''
+        allow-emacs-pinentry
+        allow-loopback-pinentry
+      '';
     };
   };
 }
