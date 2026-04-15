@@ -7,6 +7,7 @@
 (package! nix-mode)              ; Nix language support
 (package! forge)                 ; GitHub/GitLab integration for magit
 (package! claude-code :recipe (:host github :repo "stevemolitor/claude-code.el"))
+(package! pinentry)              ; GPG passphrase prompts routed to Emacs
 
 ;;; Productivity
 (package! org-roam)              ; Zettelkasten note-taking

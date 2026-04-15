@@ -247,6 +247,10 @@
        :desc "Diff watcher off"   "W" #'claude-diff-stop
        :desc "Review pending"     "d" #'claude-diff-review-pending))
 
+;; Route GPG passphrase prompts (gpg-agent / pinentry-emacs) into the minibuffer
+(use-package! pinentry
+  :config (pinentry-start))
+
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
