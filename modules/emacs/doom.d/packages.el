@@ -6,6 +6,7 @@
 (package! ob-nix)
 (package! nix-mode)              ; Nix language support
 (package! forge)                 ; GitHub/GitLab integration for magit
+(package! claude-code :recipe (:host github :repo "stevemolitor/claude-code.el"))
 
 ;;; Productivity
 (package! org-roam)              ; Zettelkasten note-taking

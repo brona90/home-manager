@@ -70,6 +70,16 @@
 ;; `load-theme' function. This is the default:
 (setq doom-theme 'doom-gruvbox)
 
+;; Claude Code: AI-assisted coding via Claude CLI in vterm
+(use-package! claude-code
+  :init
+  (map! :leader
+        (:prefix ("l" . "claude")
+         :desc "Start Claude"   "l" #'claude-code-run
+         :desc "Send region"    "r" #'claude-code-send-region
+         :desc "Switch buffer"  "b" #'claude-code-switch-to-buffer
+         :desc "Menu"           "m" #'claude-code-transient)))
+
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
