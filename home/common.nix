@@ -21,6 +21,7 @@ in {
     vim.enable = true;
     sops.enable = true;
     dockerTerminal.enable = true;
+    emacsMcp.enable = true;
   };
 
   # Manage ~/.config/nix/nix.conf declaratively.

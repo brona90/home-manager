@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "emacs": {
+      "type": "stdio",
+      "command": "emacs-mcp-server",
+      "env": {}
+    }
+  }
+}

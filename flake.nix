@@ -96,6 +96,7 @@
             ./modules/tmux/default.nix
             ./modules/sops.nix
             ./modules/docker-terminal.nix
+            ./modules/emacs-mcp.nix
             ./home/common.nix
           ]
           ++ (
