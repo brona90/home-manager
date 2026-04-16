@@ -88,164 +88,19 @@
     :select nil
     :quit nil
     :ttl nil
-    :modeline t))
-
-;; ──────────────────────────────────────────────────────────────────
-;; Claude Code 3-way diff: git HEAD vs your working copy vs Claude's edit
-;; ──────────────────────────────────────────────────────────────────
-(defvar claude-diff--snapshots (make-hash-table :test #'equal)
-  "Hash table mapping absolute file paths to their pre-edit content.")
-
-(defvar claude-diff--watchers nil
-  "List of active file-notify descriptors.")
-
-(defvar claude-diff--active nil
-  "Non-nil when Claude Code file watching is active.")
-
-(defvar claude-diff--pending-diffs (make-hash-table :test #'equal)
-  "Files with pending diffs waiting for review.")
-
-(defun claude-diff--git-root ()
-  "Return the git repository root for the current project."
-  (string-trim (shell-command-to-string "git rev-parse --show-toplevel")))
-
-(defun claude-diff--git-head-content (file)
-  "Return the content of FILE at git HEAD, or nil if untracked."
-  (let* ((root (claude-diff--git-root))
-         (rel (file-relative-name file root))
-         (out (with-temp-buffer
-                (let ((exit-code (call-process "git" nil t nil "show" (concat "HEAD:" rel))))
-                  (when (zerop exit-code)
-                    (buffer-string))))))
-    out))
-
-(defun claude-diff--snapshot-file (file)
-  "Save the current content of FILE into the snapshot table."
-  (when (and (file-exists-p file) (not (file-directory-p file)))
-    (with-temp-buffer
-      (insert-file-contents file)
-      (puthash file (buffer-string) claude-diff--snapshots))))
-
-(defun claude-diff--snapshot-tracked-files ()
-  "Snapshot all git-tracked files in the current project."
-  (let* ((root (claude-diff--git-root))
-         (files (split-string
-                 (shell-command-to-string "git ls-files --full-name") "\n" t)))
-    (dolist (rel files)
-      (claude-diff--snapshot-file (expand-file-name rel root)))))
-
-(defun claude-diff--make-temp-buffer (name content)
-  "Create a temporary buffer named NAME with CONTENT."
-  (let ((buf (generate-new-buffer name)))
-    (with-current-buffer buf
-      (insert (or content ""))
-      (set-buffer-modified-p nil)
-      (setq buffer-read-only t))
-    buf))
-
-(defun claude-diff--review-file (file)
-  "Show 3-way ediff for FILE: git HEAD vs pre-edit snapshot vs Claude's version."
-  (let* ((head-content (claude-diff--git-head-content file))
-         (snap-content (gethash file claude-diff--snapshots))
-         (basename (file-name-nondirectory file))
-         (buf-head (claude-diff--make-temp-buffer
-                    (format "*HEAD: %s*" basename)
-                    head-content))
-         (buf-snap (claude-diff--make-temp-buffer
-                    (format "*pre-edit: %s*" basename)
-                    snap-content))
-         (buf-claude (find-file-noselect file t)))
-    ;; Revert to pick up Claude's disk changes
-    (with-current-buffer buf-claude
-      (revert-buffer t t t))
-    (if (and head-content snap-content)
-        (ediff-buffers3 buf-head buf-snap buf-claude)
-      ;; Fall back to 2-way if no HEAD or no snapshot
-      (ediff-buffers (or buf-snap buf-head) buf-claude))))
-
-(defun claude-diff--on-file-change (_event-or-file)
-  "Handle a file change event from file-notify or direct call."
-  (let* ((file (if (stringp _event-or-file)
-                   _event-or-file
-                 ;; file-notify event: (DESCRIPTOR ACTION FILE [FILE1])
-                 (nth 2 _event-or-file)))
-         (action (if (stringp _event-or-file) 'changed (nth 1 _event-or-file))))
-    (when (and file
-               claude-diff--active
-               (memq action '(changed created))
-               (file-exists-p file)
-               (not (file-directory-p file))
-               ;; Only trigger for files we snapshotted
-               (gethash file claude-diff--snapshots)
-               ;; Skip if content is actually the same
-               (not (string= (gethash file claude-diff--snapshots)
-                              (with-temp-buffer
-                                (insert-file-contents file)
-                                (buffer-string)))))
-      (puthash file t claude-diff--pending-diffs)
-      (message "Claude edited %s — review with SPC l d" (file-name-nondirectory file))
-      ;; Auto-pop the diff
-      (claude-diff--review-file file)
-      ;; Update snapshot to the new content so we don't re-trigger
-      (claude-diff--snapshot-file file))))
-
-(defun claude-diff--watch-directory (dir)
-  "Set up recursive file watching on DIR."
-  (when (file-directory-p dir)
-    ;; Watch the directory itself
-    (condition-case nil
-        (push (file-notify-add-watch dir '(change) #'claude-diff--on-file-change)
-              claude-diff--watchers)
-      (error nil))
-    ;; Watch subdirectories (non-hidden, skip .git)
-    (dolist (entry (directory-files dir t))
-      (when (and (file-directory-p entry)
-                 (not (string-match-p "/\\." (file-name-nondirectory entry))))
-        (claude-diff--watch-directory entry)))))
-
-(defun claude-diff-start ()
-  "Start watching for Claude Code file edits. Snapshots all tracked files."
-  (interactive)
-  (claude-diff-stop)
-  (claude-diff--snapshot-tracked-files)
-  (claude-diff--watch-directory (claude-diff--git-root))
-  (setq claude-diff--active t)
-  (message "Claude diff watcher active — monitoring %d files"
-           (hash-table-count claude-diff--snapshots)))
-
-(defun claude-diff-stop ()
-  "Stop watching for file edits and clean up."
-  (interactive)
-  (dolist (w claude-diff--watchers)
-    (ignore-errors (file-notify-rm-watch w)))
-  (setq claude-diff--watchers nil
-        claude-diff--active nil)
-  (clrhash claude-diff--snapshots)
-  (clrhash claude-diff--pending-diffs)
-  (message "Claude diff watcher stopped."))
-
-(defun claude-diff-review-pending ()
-  "Review all pending Claude edits one by one."
-  (interactive)
-  (let ((files (hash-table-keys claude-diff--pending-diffs)))
-    (if (null files)
-        (message "No pending Claude diffs to review.")
-      (dolist (file files)
-        (claude-diff--review-file file)
-        (remhash file claude-diff--pending-diffs)))))
-
-;; Auto-start watcher when Claude Code launches
-(advice-add 'claude-code-run :after
-            (lambda (&rest _)
-              (unless claude-diff--active
-                (claude-diff-start))))
-
-;; Keybindings under the existing SPC l prefix
-(map! :leader
-      (:prefix ("l" . "claude")
-       :desc "Diff watcher on"    "w" #'claude-diff-start
-       :desc "Diff watcher off"   "W" #'claude-diff-stop
-       :desc "Review pending"     "d" #'claude-diff-review-pending))
+    :modeline t)
+  ;; Load 2-way diff review (claude-diff.el)
+  (load! "claude-diff")
+  ;; Diff review keybindings under the same SPC l prefix
+  (map! :leader
+        (:prefix "l"
+         :desc "Approve changes"    "a" #'claude-diff-approve
+         :desc "Deny changes"       "x" #'claude-diff-deny
+         :desc "Dismiss diff"       "D" #'claude-diff-dismiss
+         :desc "Next change"        "n" #'claude-diff-next-change
+         :desc "Prev change"        "p" #'claude-diff-prev-change
+         :desc "Scroll diff up"     "j" #'claude-diff-scroll-up
+         :desc "Scroll diff down"   "k" #'claude-diff-scroll-down)))
 
 ;; Route GPG passphrase prompts (gpg-agent / pinentry-emacs) into the minibuffer
 (use-package! pinentry

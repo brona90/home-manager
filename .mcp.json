@@ -2,8 +2,7 @@
   "mcpServers": {
     "emacs": {
       "type": "stdio",
-      "command": "emacs-mcp-server",
-      "env": {}
+      "command": "/home/gfoster/.nix-profile/bin/emacs-mcp-server"
     }
   }
 }

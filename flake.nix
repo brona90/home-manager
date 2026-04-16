@@ -97,6 +97,7 @@
             ./modules/sops.nix
             ./modules/docker-terminal.nix
             ./modules/emacs-mcp.nix
+            ./modules/claude-code.nix
             ./home/common.nix
           ]
           ++ (

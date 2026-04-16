@@ -9,6 +9,8 @@ Tools provided:
   emacs_show_diff   — trigger 3-way ediff (HEAD vs pre-edit vs current)
   emacs_open_file   — visit a file, optionally at a line
   emacs_notify      — display a message in the minibuffer
+
+Requires: Emacs daemon running with emacsclient accessible on $PATH.
 """
 
 import json
@@ -214,11 +216,14 @@ def _handle_emacs_show_diff(arguments: dict) -> dict:
     abs_path = os.path.abspath(file_path)
     escaped = _elisp_escape(abs_path)
 
-    # Ensure the diff watcher is active (snapshots exist), then review.
-    elisp = f"""(progn
-  (unless claude-diff--active (claude-diff-start))
-  (claude-diff--review-file "{escaped}")
-  (format "Opened ediff for %s" "{escaped}"))"""
+    # For manual invocation, diff HEAD vs disk
+    elisp = f"""(let* ((before (with-temp-buffer
+                          (let ((default-directory (string-trim (shell-command-to-string "git rev-parse --show-toplevel"))))
+                            (call-process "git" nil t nil "show" (concat "HEAD:" (file-relative-name "{escaped}" default-directory)))
+                            (buffer-string))))
+                 (after (with-temp-buffer (insert-file-contents "{escaped}") (buffer-string))))
+              (claude-diff-show "{escaped}" before after)
+              "Opened diff for {escaped}")"""
 
     output, ok = _run_elisp(elisp)
     return {
