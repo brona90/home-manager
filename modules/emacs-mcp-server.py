@@ -117,34 +117,21 @@ def _log(msg: str) -> None:
 
 
 def _read_message() -> dict | None:
-    """Read one Content-Length–framed JSON-RPC message from stdin."""
-    # Read headers until blank line
-    content_length = None
+    """Read one newline-delimited JSON-RPC message from stdin."""
     while True:
         line = sys.stdin.readline()
         if not line:
             return None  # EOF
         line = line.strip()
         if not line:
-            break
-        if line.lower().startswith("content-length:"):
-            content_length = int(line.split(":", 1)[1].strip())
-
-    if content_length is None:
-        return None
-
-    body = sys.stdin.read(content_length)
-    if not body:
-        return None
-    return json.loads(body)
+            continue  # skip blank lines
+        return json.loads(line)
 
 
 def _send_message(msg: dict) -> None:
-    """Write one Content-Length–framed JSON-RPC message to stdout."""
-    body = json.dumps(msg)
-    header = f"Content-Length: {len(body)}\r\n\r\n"
-    sys.stdout.write(header)
-    sys.stdout.write(body)
+    """Write one newline-delimited JSON-RPC message to stdout."""
+    sys.stdout.write(json.dumps(msg))
+    sys.stdout.write("\n")
     sys.stdout.flush()
 
 
