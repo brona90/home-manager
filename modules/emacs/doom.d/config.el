@@ -3,6 +3,8 @@
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
 
+(require 'cl-lib)
+
 ;; LilyPond mode setup - load from system installation
 (when-let ((lily-bin (executable-find "lilypond")))
   (let* ((lily-dir (file-name-directory lily-bin))
@@ -80,6 +82,12 @@
          :desc "Switch buffer"  "b" #'claude-code-switch-to-buffer
          :desc "Menu"           "m" #'claude-code-transient))
   :config
+  ;; claude-code-run and friends call projectile-project-root, which returns
+  ;; nil from non-project buffers (*scratch*, etc.), causing "stringp, nil".
+  ;; Advise normalize-project-root (the single choke-point in claude-code-core)
+  ;; to fall back to default-directory.
+  (define-advice claude-code-normalize-project-root (:filter-return (root) fallback-dir)
+    (or root (directory-file-name default-directory)))
   ;; Open Claude Code in bottom third of the frame.
   ;; Doom's popup manager overrides display-buffer-alist, so use set-popup-rule!
   (set-popup-rule! "^\\*claude:"
@@ -102,9 +110,40 @@
          :desc "Scroll diff up"     "j" #'claude-diff-scroll-up
          :desc "Scroll diff down"   "k" #'claude-diff-scroll-down)))
 
-;; Route GPG passphrase prompts (gpg-agent / pinentry-emacs) into the minibuffer
-(use-package! pinentry
-  :config (pinentry-start))
+;; ─── GPG pinentry (pinentry-emacs-frame custom Assuan wrapper) ─────
+;; Direct epg/epa callers prompt in the minibuffer of the frame that
+;; initiated the call.  gpg-agent has allow-loopback-pinentry enabled
+;; in modules/gpg.nix, so no pinentry binary is involved here.
+(setq epg-pinentry-mode 'loopback)
+
+;; Emacs half of the pinentry-emacs-frame wrapper.  Frame selection is
+;; explicit and does NOT raise / re-focus — `with-selected-frame' only
+;; rebinds `selected-frame' inside its body, so `read-passwd' renders
+;; on the correct minibuffer without stealing OS focus.
+(defun my/pinentry--pick-frame ()
+  "Choose the MRU focused frame without switching focus."
+  (or (and (fboundp 'frame-focus-state)
+           (cl-find-if (lambda (f) (eq (frame-focus-state f) t))
+                       (frame-list)))
+      (and (fboundp 'get-mru-frame) (get-mru-frame t))
+      (selected-frame)))
+
+(defun my/pinentry-read-pin (desc prompt err)
+  "Prompt for a GPG passphrase.  Return a string, or :cancel on C-g."
+  (let ((frame (my/pinentry--pick-frame))
+        (full  (concat (and (> (length err) 0)  (concat err "\n"))
+                       (and (> (length desc) 0) (concat desc "\n"))
+                       (or prompt "Passphrase: "))))
+    (condition-case _
+        (with-selected-frame frame (or (read-passwd full) :cancel))
+      (quit :cancel))))
+
+(defun my/pinentry-yes-or-no-p (desc)
+  "CONFIRM handler for pinentry-emacs-frame.  Return t or nil."
+  (let ((frame (my/pinentry--pick-frame)))
+    (condition-case _
+        (with-selected-frame frame (yes-or-no-p (concat desc " ")))
+      (quit nil))))
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
