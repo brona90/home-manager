@@ -34,6 +34,9 @@
 (defvar claude-diff--current-file nil
   "The file path currently being diffed.")
 
+(defvar claude-diff--scroll-timer nil
+  "Timer for deferred scroll-to-first-change.")
+
 (defvar claude-diff--previous-buffer nil
   "Buffer that was displayed before the diff view.")
 
@@ -125,6 +128,10 @@
 
 (defun claude-diff--reset ()
   "Reset to a clean window layout: one main window + vterm popup."
+  ;; Cancel any pending scroll timer
+  (when claude-diff--scroll-timer
+    (cancel-timer claude-diff--scroll-timer)
+    (setq claude-diff--scroll-timer nil))
   (let ((restore-buf (and claude-diff--previous-buffer
                           (buffer-live-p claude-diff--previous-buffer)
                           claude-diff--previous-buffer))
@@ -138,18 +145,17 @@
         (when-let ((win (get-buffer-window buf)))
           (ignore-errors (delete-window win)))
         (kill-buffer buf)))
-    ;; Ensure exactly one main window with the restore buffer
+    ;; Ensure exactly one main window.  Only restore a buffer if we saved one
+    ;; before opening the diff — never fall back to *scratch*, which pops a
+    ;; surprise buffer at dismiss time.  When there is no restore-buf, leave
+    ;; whatever buffer is already in the main window alone.
     (let ((main-wins (seq-filter (lambda (w) (not (+popup-window-p w))) (window-list))))
-      (if main-wins
-          (progn
-            (set-window-buffer (car main-wins) (or restore-buf (get-buffer-create "*scratch*")))
-            (select-window (car main-wins))
-            (dolist (w (cdr main-wins))
-              (ignore-errors (delete-window w))))
-        ;; No main window — close popups and start fresh
-        (ignore-errors (+popup/close-all))
-        (delete-other-windows)
-        (switch-to-buffer (or restore-buf (get-buffer-create "*scratch*")))))
+      (when main-wins
+        (when restore-buf
+          (set-window-buffer (car main-wins) restore-buf))
+        (select-window (car main-wins))
+        (dolist (w (cdr main-wins))
+          (ignore-errors (delete-window w)))))
     ;; Re-display the vterm as a popup and focus it
     (when claude-buf
       (unless (get-buffer-window claude-buf)
@@ -170,33 +176,49 @@
          (tool-input (alist-get 'tool_input data))
          (file-path (alist-get 'file_path tool-input)))
     (when (and file-path (file-exists-p file-path))
-      (let* ((before (with-temp-buffer
-                       (insert-file-contents file-path)
-                       (buffer-string)))
-             (after (cond
-                     ((string= tool-name "Edit")
-                      (let ((old-str (alist-get 'old_string tool-input))
-                            (new-str (alist-get 'new_string tool-input))
-                            (replace-all (alist-get 'replace_all tool-input)))
-                        (if replace-all
-                            (let ((result before)
-                                  (start 0))
+      (let* ((disk (with-temp-buffer
+                     (insert-file-contents file-path)
+                     (buffer-string)))
+             (old-str (alist-get 'old_string tool-input))
+             (new-str (alist-get 'new_string tool-input))
+             (replace-all (alist-get 'replace_all tool-input))
+             ;; Determine before/after regardless of whether the edit
+             ;; has already been applied to disk
+             (before nil)
+             (after nil))
+        (cond
+         ((string= tool-name "Edit")
+          (cond
+           ;; Edit not yet applied — old_string found in disk
+           ((cl-search old-str disk)
+            (setq before disk)
+            (setq after (if replace-all
+                            (let ((result disk) (start 0))
                               (while (setq start (cl-search old-str result :start2 start))
                                 (setq result (concat (substring result 0 start)
                                                      new-str
                                                      (substring result (+ start (length old-str)))))
                                 (setq start (+ start (length new-str))))
                               result)
-                          (let ((pos (cl-search old-str before)))
-                            (if pos
-                                (concat (substring before 0 pos)
-                                        new-str
-                                        (substring before (+ pos (length old-str))))
-                              before)))))
-                     ((string= tool-name "Write")
-                      (alist-get 'content tool-input))
-                     (t before))))
-        (when (not (string= before after))
+                          (let ((pos (cl-search old-str disk)))
+                            (concat (substring disk 0 pos)
+                                    new-str
+                                    (substring disk (+ pos (length old-str))))))))
+           ;; Edit already applied — new_string found in disk, reverse it
+           ((cl-search new-str disk)
+            (setq after disk)
+            (setq before (let ((pos (cl-search new-str disk)))
+                           (concat (substring disk 0 pos)
+                                   old-str
+                                   (substring disk (+ pos (length new-str)))))))))
+         ((string= tool-name "Write")
+          (let ((content (alist-get 'content tool-input)))
+            (if (string= disk content)
+                ;; Write already applied — no before available
+                nil
+              (setq before disk
+                    after content)))))
+        (when (and before after (not (string= before after)))
           (claude-diff-show file-path before after))))))
 
 ;; ── Display ──────────────────────────────────────────────────────────
@@ -251,10 +273,12 @@
                            (window-list))))
       (select-window vterm-win))
     ;; Scroll to first change after windows are visible
-    (run-with-timer 0.05 nil
+    (setq claude-diff--scroll-timer (run-with-timer 0.05 nil
       (lambda (ab)
-        (when-let ((win (get-buffer-window ab)))
-          (let* ((ov (with-current-buffer ab
+        (when (and (buffer-live-p ab)
+                   (get-buffer-window ab))
+          (let* ((win (get-buffer-window ab))
+                 (ov (with-current-buffer ab
                        (cl-find-if (lambda (o) (overlay-get o 'claude-diff))
                                    (overlays-in (point-min) (point-max)))))
                  (pos (and ov (overlay-start ov)))
@@ -263,7 +287,7 @@
             (when start
               (set-window-point win pos)
               (claude-diff--sync-windows start)))))
-      after-buf)))
+      after-buf))))
 
 ;; ── Navigation ───────────────────────────────────────────────────────
 
@@ -351,6 +375,48 @@
           (with-current-buffer buf (revert-buffer t t t)))
         (message "Reverted %s to HEAD" (file-name-nondirectory claude-diff--current-file)))))
   (claude-diff-dismiss))
+
+;; ── File watcher trigger ──────────────────────────────────────────────
+;; The PermissionRequest hook writes JSON to this file.
+;; Emacs watches it and triggers the diff display.
+
+(defvar claude-diff--hook-dir
+  (expand-file-name "claude-diff" (or (getenv "XDG_RUNTIME_DIR") "/tmp"))
+  "Directory watched for Claude Code hook JSON files.")
+
+(defvar claude-diff--hook-file
+  (expand-file-name "input.json" claude-diff--hook-dir)
+  "File written by the Claude Code PermissionRequest hook.")
+
+(defvar claude-diff--file-watcher nil
+  "File-notify descriptor for the hook JSON file.")
+
+(defun claude-diff--on-hook-file-change (event)
+  "Handle changes to the hook JSON file."
+  (let ((action (nth 1 event)))
+    (when (memq action '(changed created))
+      (ignore-errors
+        (claude-diff-from-hook claude-diff--hook-file)))))
+
+(defun claude-diff-watch-start ()
+  "Start watching for Claude Code hook JSON file changes."
+  (interactive)
+  (claude-diff-watch-stop)
+  ;; Create dedicated directory so we only see our own events (not all of /tmp)
+  (make-directory claude-diff--hook-dir t)
+  (setq claude-diff--file-watcher
+        (file-notify-add-watch claude-diff--hook-dir '(change) #'claude-diff--on-hook-file-change))
+  (message "Claude diff watcher active on %s" claude-diff--hook-dir))
+
+(defun claude-diff-watch-stop ()
+  "Stop watching for hook file changes."
+  (interactive)
+  (when claude-diff--file-watcher
+    (ignore-errors (file-notify-rm-watch claude-diff--file-watcher))
+    (setq claude-diff--file-watcher nil)))
+
+;; Auto-start watcher
+(claude-diff-watch-start)
 
 (provide 'claude-diff)
 ;;; claude-diff.el ends here
