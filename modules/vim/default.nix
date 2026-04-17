@@ -293,12 +293,12 @@
       nil
       pyright
       ruff
-      nodePackages.typescript-language-server
-      nodePackages.vscode-langservers-extracted
+      typescript-language-server
+      vscode-langservers-extracted
       gopls
       delve
       rust-analyzer
-      nodePackages.bash-language-server
+      bash-language-server
       yaml-language-server
       taplo
       dockerfile-language-server
@@ -316,7 +316,7 @@
     alejandra
     black
     isort
-    nodePackages.prettier
+    prettier
     gofumpt
     shfmt
     # taplo intentionally omitted — already in lspServers (taplo-lsp)
@@ -326,7 +326,7 @@
   linters = with pkgs; [
     # ruff intentionally omitted — already in lspServers
     pylint
-    nodePackages.eslint
+    eslint
     shellcheck
     markdownlint-cli
     yamllint
