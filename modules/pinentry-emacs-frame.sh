@@ -11,7 +11,8 @@ desc=""; prompt=""; errmsg=""; title=""; ok="OK"; cancel="Cancel"
 notok=""; keyinfo=""; repeat=""; repeat_err=""
 
 pct_decode() {
-    local s=$1 out="" i=0 n=${#s} c
+    local s="${1:-}" out="" i=0 c n
+    n=${#s}
     while (( i < n )); do
         c=${s:i:1}
         if [[ $c == "%" && $((i+2)) -lt $n ]]; then
@@ -24,7 +25,7 @@ pct_decode() {
     printf '%b' "$out"
 }
 pct_encode() {
-    local s=$1 out="" i c
+    local s="${1:-}" out="" i c
     for (( i=0; i<${#s}; i++ )); do
         c=${s:i:1}
         case $c in
@@ -37,7 +38,7 @@ pct_encode() {
     printf '%s' "$out"
 }
 elisp_escape() {
-    local s=$1
+    local s="${1:-}"
     s=${s//\\/\\\\}
     s=${s//\"/\\\"}
     printf '"%s"' "$s"
