@@ -7,6 +7,8 @@
     claude-code # Anthropic Claude CLI
   ];
 
+  my.gpg.forwardToWindows = true;
+
   my.zsh.extraInitExtra = ''
     # Only set GSETTINGS_SCHEMA_DIR when a display server is present
     if [[ -n "''${DISPLAY:-}''${WAYLAND_DISPLAY:-}" ]]; then

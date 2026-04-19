@@ -7,7 +7,6 @@
 }: let
   cfg = config.my.gpg;
   inherit (pkgs.stdenv) isLinux;
-  pinentryEmacsFrame = pkgs.callPackage ./pinentry-emacs-frame.nix {};
 in {
   options.my.gpg = {
     enable = lib.mkEnableOption "GPG configuration with signing support";
@@ -42,11 +41,7 @@ in {
     home.packages = with pkgs;
       [
         gnupg
-        # pinentryEmacsFrame provides bin/pinentry; its Assuan fallback embeds
-        # pkgs.pinentry-tty via the Nix store path substitution in
-        # modules/pinentry-emacs-frame.nix, so pinentry-tty is NOT added here
-        # (it would collide on bin/pinentry in buildEnv).
-        pinentryEmacsFrame
+        pinentry-tty
       ]
       ++ lib.optionals (cfg.enableYubiKey && isLinux && !cfg.forwardToWindows) [
         pcsclite
@@ -130,11 +125,12 @@ in {
       );
     };
 
-    # Only enable local gpg-agent on Linux and if not forwarding to Windows
-    services.gpg-agent = lib.mkIf (isLinux && !cfg.forwardToWindows) {
+    # Enable local gpg-agent on Linux (needed for both local signing and
+    # the forwardToWindows path — the agent manages pinentry either way)
+    services.gpg-agent = lib.mkIf isLinux {
       enable = true;
       inherit (cfg) enableSshSupport;
-      pinentry.package = pinentryEmacsFrame;
+      pinentry.package = pkgs.pinentry-qt;
       defaultCacheTtl = 28800;
       defaultCacheTtlSsh = 28800;
       maxCacheTtl = 86400;

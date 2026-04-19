@@ -4,13 +4,12 @@
     runtimeInputs = [pkgs.coreutils];
     # Assuan state variables (cancel, notok, keyinfo, repeat, repeat_err, title)
     # are parsed from the protocol but not all consumed by this wrapper.
-    excludeShellChecks = ["SC2034" "SC2318"];
+    excludeShellChecks = ["SC2034" "SC2318" "SC2015"];
     text =
       builtins.replaceStrings
-      ["@emacsclient@" "@pinentry_tty@"]
+      ["@emacsclient@"]
       [
         "${pkgs.emacs}/bin/emacsclient"
-        "${pkgs.pinentry-tty}/bin/pinentry-tty"
       ]
       (builtins.readFile ./pinentry-emacs-frame.sh);
   };
