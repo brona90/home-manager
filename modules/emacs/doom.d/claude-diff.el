@@ -37,8 +37,11 @@
 (defvar claude-diff--scroll-timer nil
   "Timer for deferred scroll-to-first-change.")
 
-(defvar claude-diff--previous-buffer nil
-  "Buffer that was displayed before the diff view.")
+(defvar claude-diff--saved-wconf nil
+  "Window configuration saved before showing the diff view.")
+
+(defvar claude-diff--auto-dismiss-timer nil
+  "Timer that auto-dismisses the diff if PostToolUse never fires (e.g. user denied).")
 
 ;; ── Diff highlighting ────────────────────────────────────────────────
 
@@ -127,43 +130,25 @@
           (set-window-start bw start)))))))
 
 (defun claude-diff--reset ()
-  "Reset to a clean window layout: one main window + vterm popup."
-  ;; Cancel any pending scroll timer
+  "Restore the window layout that was active before the diff was shown."
+  ;; Cancel timers
   (when claude-diff--scroll-timer
     (cancel-timer claude-diff--scroll-timer)
     (setq claude-diff--scroll-timer nil))
-  (let ((restore-buf (and claude-diff--previous-buffer
-                          (buffer-live-p claude-diff--previous-buffer)
-                          claude-diff--previous-buffer))
-        (claude-buf (seq-find (lambda (b)
-                                (string-prefix-p "*claude:" (buffer-name b)))
-                              (buffer-list))))
-    ;; Close diff windows and kill diff buffers
-    (dolist (buf (buffer-list))
-      (when (or (string-prefix-p "*Before: " (buffer-name buf))
-                (string-prefix-p "*After: " (buffer-name buf)))
-        (when-let ((win (get-buffer-window buf)))
-          (ignore-errors (delete-window win)))
-        (kill-buffer buf)))
-    ;; Ensure exactly one main window.  Only restore a buffer if we saved one
-    ;; before opening the diff — never fall back to *scratch*, which pops a
-    ;; surprise buffer at dismiss time.  When there is no restore-buf, leave
-    ;; whatever buffer is already in the main window alone.
-    (let ((main-wins (seq-filter (lambda (w) (not (+popup-window-p w))) (window-list))))
-      (when main-wins
-        (when restore-buf
-          (set-window-buffer (car main-wins) restore-buf))
-        (select-window (car main-wins))
-        (dolist (w (cdr main-wins))
-          (ignore-errors (delete-window w)))))
-    ;; Re-display the vterm as a popup and focus it
-    (when claude-buf
-      (unless (get-buffer-window claude-buf)
-        (display-buffer claude-buf))
-      (when-let ((vterm-win (get-buffer-window claude-buf)))
-        (select-window vterm-win)))
-    (setq claude-diff--current-file nil
-          claude-diff--previous-buffer nil)))
+  (when claude-diff--auto-dismiss-timer
+    (cancel-timer claude-diff--auto-dismiss-timer)
+    (setq claude-diff--auto-dismiss-timer nil))
+  ;; Kill diff buffers (Before/After)
+  (dolist (buf (buffer-list))
+    (when (or (string-prefix-p "*Before: " (buffer-name buf))
+              (string-prefix-p "*After: " (buffer-name buf)))
+      (kill-buffer buf)))
+  ;; Restore the saved window configuration — this brings back all splits,
+  ;; buffers, and window sizes exactly as they were before the diff.
+  (when claude-diff--saved-wconf
+    (ignore-errors (set-window-configuration claude-diff--saved-wconf)))
+  (setq claude-diff--current-file nil
+        claude-diff--saved-wconf nil))
 
 ;; ── Hook entry point ─────────────────────────────────────────────────
 
@@ -225,12 +210,15 @@
 
 (defun claude-diff-show (file before-content after-content)
   "Show 2-way diff for FILE with BEFORE-CONTENT and AFTER-CONTENT."
-  ;; Save current main window buffer before resetting
-  (let ((main-win (seq-find (lambda (w) (not (+popup-window-p w))) (window-list))))
-    (when main-win
-      (setq claude-diff--previous-buffer (window-buffer main-win))))
-  ;; Reset to clean state
-  (claude-diff--reset)
+  ;; Save the full window configuration so reset can restore all splits/buffers.
+  ;; Only save if we don't already have one (avoid overwriting with diff layout).
+  (unless claude-diff--saved-wconf
+    (setq claude-diff--saved-wconf (current-window-configuration)))
+  ;; Kill any existing diff buffers from a prior review
+  (dolist (buf (buffer-list))
+    (when (or (string-prefix-p "*Before: " (buffer-name buf))
+              (string-prefix-p "*After: " (buffer-name buf)))
+      (kill-buffer buf)))
   (let* ((file (expand-file-name file))
          (_ (setq claude-diff--current-file file))
          (basename (file-name-nondirectory file))
@@ -260,21 +248,26 @@
     (dolist (buf (list before-buf after-buf))
       (with-current-buffer buf
         (add-hook 'window-scroll-functions #'claude-diff--on-scroll nil t)))
-    ;; Display side-by-side in the main window area
-    (let ((main-win (seq-find (lambda (w) (not (+popup-window-p w)))
-                              (window-list))))
-      (set-window-buffer main-win before-buf)
-      (let ((right-win (split-window main-win nil 'right)))
-        (set-window-buffer right-win after-buf)))
-    ;; Return focus to the vterm
-    (when-let ((vterm-win (seq-find
-                           (lambda (w)
-                             (string-prefix-p "*claude:" (buffer-name (window-buffer w))))
-                           (window-list))))
-      (select-window vterm-win))
-    ;; Scroll to first change after windows are visible
-    (setq claude-diff--scroll-timer (run-with-timer 0.05 nil
-      (lambda (ab)
+    ;; Take over the full frame: diff side-by-side in the top 2/3,
+    ;; vterm popup in the bottom 1/3.  The saved wconf restores
+    ;; everything on dismiss.
+    (let ((claude-buf (seq-find (lambda (b)
+                                  (string-prefix-p "*claude:" (buffer-name b)))
+                                (buffer-list))))
+      (delete-other-windows)
+      (let* ((root (selected-window))
+             (vterm-height (/ (frame-height) 3))
+             (bottom-win (split-window root (- vterm-height) 'below))
+             (right-win  (split-window root nil 'right)))
+        (set-window-buffer root before-buf)
+        (set-window-buffer right-win after-buf)
+        ;; Show vterm in the bottom third
+        (when claude-buf
+          (set-window-buffer bottom-win claude-buf)
+          (select-window bottom-win))))
+    ;; Scroll to first change after windows settle
+    (setq claude-diff--scroll-timer (run-with-timer 0.15 nil
+      (lambda (ab bb)
         (when (and (buffer-live-p ab)
                    (get-buffer-window ab))
           (let* ((win (get-buffer-window ab))
@@ -286,8 +279,17 @@
                                    (save-excursion (goto-char pos) (forward-line -3) (point))))))
             (when start
               (set-window-point win pos)
-              (claude-diff--sync-windows start)))))
-      after-buf))))
+              (claude-diff--sync-windows start)
+              ;; Also scroll the before buffer to match
+              (when-let ((bw (get-buffer-window bb)))
+                (set-window-start bw start))))))
+      after-buf before-buf))
+    ;; Auto-dismiss after 15s if PostToolUse never fires (user denied the edit).
+    ;; The PostToolUse dismiss hook cancels this timer via claude-diff--reset.
+    (when claude-diff--auto-dismiss-timer
+      (cancel-timer claude-diff--auto-dismiss-timer))
+    (setq claude-diff--auto-dismiss-timer
+          (run-with-timer 15 nil #'claude-diff-dismiss))))
 
 ;; ── Navigation ───────────────────────────────────────────────────────
 
