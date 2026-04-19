@@ -54,7 +54,35 @@
         else
           color="$GREEN"
         fi
-        out+=" $(printf "''${color}ctx:%d%%''${RESET}" "$used_int")"
+        out+=" $(printf "🧠 ''${color}ctx:%d%%''${RESET}" "$used_int")"
+      fi
+
+      # 5-hour rate limit
+      five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+      if [ -n "$five_pct" ]; then
+        five_int=$(printf '%.0f' "$five_pct")
+        if [ "$five_int" -ge 80 ]; then
+          color="$RED"
+        elif [ "$five_int" -ge 50 ]; then
+          color="$YELLOW"
+        else
+          color="$GREEN"
+        fi
+        out+=" $(printf "⚡ ''${color}5h:%d%%''${RESET}" "$five_int")"
+      fi
+
+      # 7-day rate limit
+      week_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+      if [ -n "$week_pct" ]; then
+        week_int=$(printf '%.0f' "$week_pct")
+        if [ "$week_int" -ge 80 ]; then
+          color="$RED"
+        elif [ "$week_int" -ge 50 ]; then
+          color="$YELLOW"
+        else
+          color="$GREEN"
+        fi
+        out+=" $(printf "📅 ''${color}7d:%d%%''${RESET}" "$week_int")"
       fi
 
       printf "%b\n" "$out"
@@ -90,7 +118,7 @@
           hooks = [
             {
               type = "command";
-              command = "d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && cat > \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
+              command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && cat > \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
               timeout = 10;
             }
           ];
@@ -102,7 +130,7 @@
           hooks = [
             {
               type = "command";
-              command = "emacsclient --eval '(claude-diff-dismiss)'";
+              command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; emacsclient --eval '(claude-diff-dismiss)'";
               timeout = 5;
             }
           ];
