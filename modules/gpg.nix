@@ -83,34 +83,45 @@ in {
       zsh.initContent = lib.mkAfter (
         if cfg.forwardToWindows
         then ''
-          # Forward GPG agent to Windows Gpg4win
+          # Forward GPG agent to Windows Gpg4win via Assuan TCP+nonce relay.
+          # Modern Gpg4win (2.4+) uses Assuan sockets (port+nonce in a file),
+          # not named pipes.  socat bridges the WSL Unix socket to Windows.
           if [[ -t 1 ]]; then
             GPG_TTY=$(tty)
             export GPG_TTY
           fi
 
+          _gpg_wsl_socket="$(gpgconf --list-dirs agent-socket)"
+
           if [[ -x "/mnt/c/Windows/System32/cmd.exe" ]]; then
             _win_user=$(/mnt/c/Windows/System32/cmd.exe /c 'echo %USERNAME%' 2>/dev/null | tr -d '\r')
           fi
 
-          if [[ -n "$_win_user" ]]; then
-            _gpg_wsl_socket="$HOME/.gnupg/S.gpg-agent"
-            _npiperelay="/mnt/c/Users/$_win_user/.npiperelay/npiperelay.exe"
+          if [[ -n "''${_win_user:-}" ]]; then
+            _win_sock="/mnt/c/Users/$_win_user/AppData/Local/gnupg/S.gpg-agent"
 
-            # Start relay if not running
-            if ! pgrep -f "socat.*S.gpg-agent" >/dev/null 2>&1; then
+            # Start relay if not already running
+            if ! pgrep -f "socat.*UNIX-LISTEN.*S.gpg-agent" >/dev/null 2>&1; then
               rm -f "$_gpg_wsl_socket"
               mkdir -p "$(dirname "$_gpg_wsl_socket")"
 
-              if [[ -x "$_npiperelay" ]]; then
-                (setsid socat UNIX-LISTEN:"$_gpg_wsl_socket",fork EXEC:"$_npiperelay -ei -ep -s //./pipe/gpg-agent",nofork &) >/dev/null 2>&1
+              if [[ -f "$_win_sock" ]]; then
+                _port=$(head -1 "$_win_sock" | tr -d '\r\n')
+                _nonce_file=$(mktemp)
+                # Extract 16-byte nonce (everything after the first line)
+                tail -c +$(( ''${#_port} + 2 )) "$_win_sock" | head -c 16 > "$_nonce_file"
+
+                # Relay: pipe nonce + client data into a second socat that
+                # connects to the Windows agent's TCP port.
+                (setsid socat UNIX-LISTEN:"$_gpg_wsl_socket",fork,unlink-early \
+                  "SYSTEM:(cat '$_nonce_file'; cat) | socat - TCP\\:127.0.0.1\\:$_port" &) >/dev/null 2>&1
               fi
             fi
 
-            unset _gpg_wsl_socket _npiperelay
+            unset _win_sock _port _nonce_file
           fi
 
-          unset _win_user
+          unset _win_user _gpg_wsl_socket
         ''
         else ''
           # GPG TTY configuration
@@ -125,9 +136,18 @@ in {
       );
     };
 
-    # Enable local gpg-agent on Linux (needed for both local signing and
-    # the forwardToWindows path — the agent manages pinentry either way)
-    services.gpg-agent = lib.mkIf isLinux {
+    # Mask system-provided gpg-agent socket units when forwarding so
+    # they don't intercept connections meant for the Windows relay.
+    systemd.user.sockets = lib.mkIf (isLinux && cfg.forwardToWindows) {
+      gpg-agent = lib.mkForce {};
+      gpg-agent-extra = lib.mkForce {};
+      gpg-agent-ssh = lib.mkForce {};
+      gpg-agent-browser = lib.mkForce {};
+    };
+
+    # Disable local gpg-agent when forwarding to Windows (the Windows
+    # agent handles signing + YubiKey; the relay replaces the socket)
+    services.gpg-agent = lib.mkIf (isLinux && !cfg.forwardToWindows) {
       enable = true;
       inherit (cfg) enableSshSupport;
       pinentry.package = pkgs.pinentry-qt;
