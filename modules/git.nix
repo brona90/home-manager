@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   gitConfig,
   ...
 }: let
@@ -59,8 +60,19 @@ in {
         inherit (cfg.signing) key signByDefault;
       };
 
-      settings =
+      settings = let
+        # Wrapper adds --pinentry-mode=loopback inside Emacs so Magit
+        # signing uses the minibuffer instead of spawning pinentry-tty
+        gpgEmacs = pkgs.writeShellScript "gpg-emacs" ''
+          if [ -n "''${INSIDE_EMACS:-}" ]; then
+            exec ${pkgs.gnupg}/bin/gpg --pinentry-mode loopback "$@"
+          else
+            exec ${pkgs.gnupg}/bin/gpg "$@"
+          fi
+        '';
+      in
         {
+          gpg.program = "${gpgEmacs}";
           user = {
             name = cfg.userName;
             email = cfg.userEmail;
