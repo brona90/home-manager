@@ -28,12 +28,83 @@
     (after! flycheck
       (flycheck-define-checker lilypond
         "A LilyPond syntax checker."
-        :command ("lilypond" "-dno-print-pages" "-o" temporary-file-name source)
+        :command ("lilypond"
+                  (eval my/lilypond-extra-args)
+                  "-dno-print-pages" "-o" temporary-file-name source)
         :error-patterns
         ((error line-start (file-name) ":" line ":" column ": error: " (message) line-end)
-         (warning line-start (file-name) ":" line ":" column ": warning: " (message) line-end))
+         (warning line-start (file-name) ":" line ":" column ": warning: " (message) line-end)
+         (error line-start "fatal error: " (message) line-end))
         :modes LilyPond-mode)
       (add-to-list 'flycheck-checkers 'lilypond))))
+
+;; ── LilyPond: auto-build on save + refresh open PDF buffers ────────
+;; Generic for any .ly file. Project-specific flags (e.g. --include
+;; for custom fonts) can be set per-directory in .dir-locals.el:
+;;
+;;   ((LilyPond-mode . ((my/lilypond-extra-args . ("--include" "/path")))))
+
+(defcustom my/lilypond-extra-args nil
+  "Extra arguments passed to `lilypond' when auto-building on save."
+  :type '(repeat string)
+  :group 'lilypond
+  :safe #'listp)
+
+(defvar my/lilypond--processes (make-hash-table :test 'equal)
+  "Hash of source-path → running lilypond process.")
+
+(defun my/lilypond--refresh-pdfs (dir base)
+  "Revert open PDF buffers under DIR whose filename starts with BASE.
+Matches `<base>.pdf`, `<base>-C.pdf`, `<base>-Bb.pdf`, etc."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and buffer-file-name
+                 (string-match-p "\\.pdf\\'" buffer-file-name)
+                 (file-in-directory-p buffer-file-name dir)
+                 (string-prefix-p base
+                                  (file-name-nondirectory buffer-file-name)))
+        (ignore-errors (revert-buffer t t t))))))
+
+(defun my/lilypond-build-on-save ()
+  "Asynchronously rebuild the just-saved .ly file, then refresh any
+open PDF buffers it produces."
+  (when (and buffer-file-name
+             (string-match-p "\\.ly\\'" buffer-file-name))
+    (let* ((src  buffer-file-name)
+           (dir  (file-name-directory src))
+           (base (file-name-base src))
+           (buf  (get-buffer-create (format " *lilypond: %s*" base)))
+           (old  (gethash src my/lilypond--processes))
+           (default-directory dir))
+      (when (and old (process-live-p old))
+        (ignore-errors (kill-process old)))
+      (with-current-buffer buf
+        (let ((inhibit-read-only t)) (erase-buffer)))
+      (let ((proc (apply #'start-process
+                         (format "lilypond-%s" base)
+                         buf "lilypond"
+                         (append my/lilypond-extra-args
+                                 (list "-o" base src)))))
+        (puthash src proc my/lilypond--processes)
+        (set-process-query-on-exit-flag proc nil)
+        (message "LilyPond: building %s…" (file-name-nondirectory src))
+        (set-process-sentinel
+         proc
+         (lambda (p _event)
+           (when (memq (process-status p) '(exit signal))
+             (remhash src my/lilypond--processes)
+             (if (zerop (process-exit-status p))
+                 (progn
+                   (message "LilyPond: %s built"
+                            (file-name-nondirectory src))
+                   (my/lilypond--refresh-pdfs dir base))
+               (message "LilyPond: %s FAILED — see %s"
+                        (file-name-nondirectory src) (buffer-name buf))
+               (display-buffer buf)))))))))
+
+(add-hook 'LilyPond-mode-hook
+          (lambda ()
+            (add-hook 'after-save-hook #'my/lilypond-build-on-save nil t)))
 
 ;; user-full-name / user-mail-address are intentionally omitted here —
 ;; they are already set in ~/.gitconfig by the home-manager git module.
