@@ -9,7 +9,6 @@
   inherit (pkgs.stdenv) isLinux;
 
   bridgeScript = builtins.readFile ./scripts/gpg-win-bridge.py;
-
 in {
   options.my.gpg = {
     enable = lib.mkEnableOption "GPG configuration with signing support";
@@ -42,20 +41,21 @@ in {
   config = lib.mkIf cfg.enable (lib.mkMerge [
     # --- Common config (all platforms) ---
     {
-      home.packages = with pkgs; [
-        gnupg
-        pinentry-tty
-      ]
-      ++ lib.optionals (cfg.enableYubiKey && isLinux && !cfg.forwardToWindows) [
-        pcsclite
-        ccid
-      ];
+      home.packages = with pkgs;
+        [
+          gnupg
+          pinentry-tty
+        ]
+        ++ lib.optionals (cfg.enableYubiKey && isLinux && !cfg.forwardToWindows) [
+          pcsclite
+          ccid
+        ];
 
       programs.gpg = {
         enable = true;
         homedir = "${config.home.homeDirectory}/.gnupg";
         settings =
-          { use-agent = true; }
+          {use-agent = true;}
           // lib.optionalAttrs (cfg.defaultKey != "") {
             default-key = cfg.defaultKey;
           };
@@ -67,7 +67,7 @@ in {
             card-timeout = "5";
             disable-ccid = true;
           }
-          else { disable-ccid = true; }
+          else {disable-ccid = true;}
         );
       };
     }
@@ -126,34 +126,45 @@ in {
         }
       '';
 
-      home.file.".local/bin/gpg_touch.ps1".text = ''
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
-        $f = New-Object System.Windows.Forms.Form
-        $f.Text = 'GPG Signing'
-        $f.Size = New-Object System.Drawing.Size(300, 100)
-        $f.StartPosition = 'CenterScreen'
-        $f.TopMost = $true
-        $f.FormBorderStyle = 'FixedSingle'
-        $f.MaximizeBox = $false
-        $f.MinimizeBox = $false
-        $l = New-Object System.Windows.Forms.Label
-        $l.Text = 'Touch your YubiKey to sign'
-        $l.AutoSize = $true
-        $l.Location = New-Object System.Drawing.Point(30, 35)
-        $f.Controls.Add($l)
-        $f.ShowDialog() | Out-Null
-      '';
-
-      home.file.".local/bin/gpg-win-bridge" = {
-        text = bridgeScript;
-        executable = true;
+      home = {
+        file = {
+          ".local/bin/gpg_touch.ps1".text = ''
+            Add-Type -AssemblyName System.Windows.Forms
+            Add-Type -AssemblyName System.Drawing
+            $f = New-Object System.Windows.Forms.Form
+            $f.Text = 'GPG Signing'
+            $f.Size = New-Object System.Drawing.Size(300, 100)
+            $f.StartPosition = 'CenterScreen'
+            $f.TopMost = $true
+            $f.FormBorderStyle = 'FixedSingle'
+            $f.MaximizeBox = $false
+            $f.MinimizeBox = $false
+            $l = New-Object System.Windows.Forms.Label
+            $l.Text = 'Touch your YubiKey to sign'
+            $l.AutoSize = $true
+            $l.Location = New-Object System.Drawing.Point(30, 35)
+            $f.Controls.Add($l)
+            $f.ShowDialog() | Out-Null
+          '';
+          ".local/bin/gpg-win-bridge" = {
+            text = bridgeScript;
+            executable = true;
+          };
+        };
+        activation.maskGpgAgentUnits = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          for unit in gpg-agent.socket gpg-agent-extra.socket gpg-agent-ssh.socket gpg-agent-browser.socket gpg-agent.service; do
+            mkdir -p "$HOME/.config/systemd/user"
+            ln -sf /dev/null "$HOME/.config/systemd/user/$unit"
+          done
+          $DRY_RUN_CMD systemctl --user daemon-reload 2>/dev/null || true
+          $DRY_RUN_CMD systemctl --user enable --now gpg-win-bridge.service 2>/dev/null || true
+        '';
       };
 
       systemd.user.services.gpg-win-bridge = {
         Unit = {
           Description = "GPG agent bridge to Windows Gpg4win";
-          After = [ "default.target" ];
+          After = ["default.target"];
         };
         Service = {
           Type = "simple";
@@ -161,17 +172,8 @@ in {
           Restart = "on-failure";
           RestartSec = "2s";
         };
-        Install.WantedBy = [ "default.target" ];
+        Install.WantedBy = ["default.target"];
       };
-
-      home.activation.maskGpgAgentUnits = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        for unit in gpg-agent.socket gpg-agent-extra.socket gpg-agent-ssh.socket gpg-agent-browser.socket gpg-agent.service; do
-          mkdir -p "$HOME/.config/systemd/user"
-          ln -sf /dev/null "$HOME/.config/systemd/user/$unit"
-        done
-        $DRY_RUN_CMD systemctl --user daemon-reload 2>/dev/null || true
-        $DRY_RUN_CMD systemctl --user enable --now gpg-win-bridge.service 2>/dev/null || true
-      '';
     })
   ]);
 }
