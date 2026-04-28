@@ -9,7 +9,7 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 | [Doom Emacs](https://github.com/doomemacs/doomemacs) | Emacs distribution with sensible defaults via [nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened) |
 | [LazyVim](https://www.lazyvim.org/) | Neovim setup with lazy.nvim plugin manager |
 | [oh-my-tmux](https://github.com/gpakosz/.tmux) | tmux configuration with powerline-style status bar |
-| [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `direnv`, `zsh-syntax-highlighting`, `zsh-history-substring-search` |
+| [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `zsh-fast-syntax-highlighting`, `zsh-history-substring-search` |
 | [Starship](https://starship.rs/) | Fast, customizable shell prompt |
 | [mise](https://mise.jdx.dev/) | Polyglot runtime manager (node, python, go, etc.) |
 | [btop](https://github.com/aristocratos/btop) | Resource monitor with TUI |
