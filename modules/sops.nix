@@ -108,7 +108,16 @@ in {
             GPG_PRIVATE_KEY="${secretsDir}/gpg_private_key"
             if [ -f "$GPG_PRIVATE_KEY" ]; then
               export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
-              ${pkgs.gnupg}/bin/gpg --batch --import "$GPG_PRIVATE_KEY" 2>/dev/null || true
+              timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$GPG_PRIVATE_KEY" 2>/dev/null || true
+            fi
+          '';
+        }
+        // lib.optionalAttrs (!isDarwin) {
+          importGpgKey = lib.hm.dag.entryAfter ["sops-nix"] ''
+            GPG_PRIVATE_KEY="${config.sops.secrets."gpg/private_key".path}"
+            if [ -f "$GPG_PRIVATE_KEY" ]; then
+              export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
+              timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$GPG_PRIVATE_KEY" 2>/dev/null || true
             fi
           '';
         };
