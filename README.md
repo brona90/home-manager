@@ -143,6 +143,12 @@ This repo is designed to be easily forked:
 | `gf`    | git fetch |
 | `gb`    | git branch |
 
+### GPG / YubiKey (WSL)
+
+| Command | Description |
+|---------|-------------|
+| `gpg-restart` | Reset the Windows Gpg4win bridge and bridge service (use after reinserting YubiKey) |
+
 ### Secrets
 
 | Command | Description |
@@ -166,8 +172,11 @@ This repo is designed to be easily forked:
 ├── modules/               # Reusable Home Manager modules
 │   ├── zsh.nix            # Shell config with oh-my-zsh
 │   ├── git.nix            # Git + GPG signing
+│   ├── gpg.nix            # GPG agent + YubiKey bridge (forwardToWindows)
 │   ├── btop.nix           # System monitor
 │   ├── sops.nix           # Secrets management
+│   ├── scripts/
+│   │   └── gpg-win-bridge.py  # WSL→Gpg4win Assuan proxy
 │   ├── emacs/             # Doom Emacs
 │   ├── vim/               # LazyVim
 │   └── tmux/              # oh-my-tmux
@@ -503,13 +512,45 @@ echo "test" | gpg --clearsign
 git log --show-signature -1
 ```
 
+### WSL + YubiKey (forwardToWindows)
+
+If you use a YubiKey for signing in WSL and don't want to use `usbipd` to pass the USB device through, enable the Windows Gpg4win bridge:
+
+```nix
+my.gpg = {
+  enable = true;
+  forwardToWindows = true;
+};
+```
+
+**Requirements:**
+- [Gpg4win](https://www.gpg4win.org/) installed on Windows with your key imported
+- YubiKey inserted in a Windows USB port (not passed through to WSL)
+
+**How it works:** A Python bridge (`gpg-win-bridge`) runs as a systemd user service. It owns the WSL `gpg-agent` socket and proxies Assuan protocol traffic to the Windows Gpg4win agent over TCP. Card detection uses `SCD SERIALNO` — when the YubiKey is absent the bridge falls back to a local software key (prompts for passphrase in the terminal or Emacs minibuffer).
+
+**Signing flow:**
+- Card present → Windows PIN dialog + YubiKey touch → signed
+- Card absent → passphrase prompt (loopback pinentry) → signed
+
+```bash
+# Reset the bridge after reinserting the YubiKey
+gpg-restart
+
+# Watch bridge logs
+journalctl --user -u gpg-win-bridge -f
+```
+
 ### Troubleshooting GPG
 
 If signing fails:
 
 ```bash
-# Restart gpg-agent
+# Restart gpg-agent (standard setup)
 gpgconf --kill all
+
+# Reset the Windows bridge (forwardToWindows setup)
+gpg-restart
 
 # Set TTY (should be automatic after hms)
 export GPG_TTY=$(tty)
