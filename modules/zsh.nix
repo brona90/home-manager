@@ -399,11 +399,6 @@ in {
           size = 10000;
           save = 10000;
         };
-
-        envExtra = ''
-          path=( ''${path:#/mnt/c/[Uu]sers/*} )
-          path=( ''${path:#/mnt/c/[Pp]rogram*} )
-        '';
       };
 
       starship = {
