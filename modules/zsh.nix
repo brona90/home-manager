@@ -108,7 +108,7 @@ in {
 
         oh-my-zsh = {
           enable = true;
-          plugins = ["git" "z" "direnv"] ++ cfg.extraOhMyZshPlugins;
+          plugins = ["git" "z"] ++ cfg.extraOhMyZshPlugins;
           extraConfig = ''
             zstyle ':omz:update' mode auto
             ENABLE_CORRECTION="true"
@@ -118,9 +118,9 @@ in {
 
         plugins = [
           {
-            name = "zsh-syntax-highlighting";
-            src = pkgs.zsh-syntax-highlighting;
-            file = "share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh";
+            name = "zsh-fast-syntax-highlighting";
+            src = pkgs.zsh-fast-syntax-highlighting;
+            file = "share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh";
           }
           {
             name = "zsh-history-substring-search";
@@ -399,11 +399,18 @@ in {
           size = 10000;
           save = 10000;
         };
+
+        envExtra = ''
+          path=( ''${path:#/mnt/c/[Uu]sers/*} )
+          path=( ''${path:#/mnt/c/[Pp]rogram*} )
+        '';
       };
 
       starship = {
         enable = true;
         settings = {
+          command_timeout = 500;
+          scan_timeout = 10000;
           add_newline = true;
           character = {
             success_symbol = "[>](bold green)";
