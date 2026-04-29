@@ -245,6 +245,23 @@
             else {}
           )
           // {
+            tmux-experimental = let
+              helperPkg = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+              helperBin = "${helperPkg}/bin/tmux-helper";
+              confText = import ./modules/tmux/conf-experimental.nix {inherit helperBin;};
+              conf = pkgs.writeText "tmux-experimental.conf" confText;
+            in {
+              type = "app";
+              meta.description = "Experimental tmux server using tmux-helper (parallel to gpakosz daily driver)";
+              program = "${pkgs.writeShellApplication {
+                name = "tmux-experimental";
+                runtimeInputs = [pkgs.tmux];
+                text = ''
+                  exec tmux -L experimental -f ${conf} new-session
+                '';
+              }}/bin/tmux-experimental";
+            };
+
             update-vim-plugins = {
               type = "app";
               meta.description = "Fetch latest lazy.nvim + LazyVim versions and hashes for modules/vim/default.nix";
@@ -312,6 +329,9 @@
         } ''
           export HOME=$TMPDIR
           export GOCACHE=$TMPDIR/go-build
+          # Match package.nix: helper is built CGO_ENABLED=0, so vet (which
+          # otherwise resolves runtime/cgo and demands gcc) must match.
+          export CGO_ENABLED=0
           cp -r ${./modules/tmux-helper/src} src
           chmod -R u+w src
           cd src

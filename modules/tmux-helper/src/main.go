@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"tmux-helper/cmds"
 )
 
 // version is set at build time via -ldflags -X main.version=...
@@ -20,7 +22,7 @@ type subcommandFunc func(args []string) error
 // Subsequent phases replace stub entries with real implementations in cmds/*.go.
 var subcommands = map[string]subcommandFunc{
 	"version":         cmdVersion,
-	"status":          cmdStub,
+	"status":          cmds.Status,
 	"clipboard":       cmdStub,
 	"maximize-pane":   cmdStub,
 	"toggle-mouse":    cmdStub,
