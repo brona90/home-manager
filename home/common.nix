@@ -68,7 +68,6 @@ in {
         # Node intentionally NOT here -- modules/vim/default.nix already
         # provides nodejs_22 for LazyVim language servers; adding nodejs_20
         # collides on corepack/yarn.js between buildEnv paths.
-        python312 # was: mise global python@3.12
         gh # was: mise global gh@latest
         google-cloud-sdk # was: mise global gcloud@latest
         jq
