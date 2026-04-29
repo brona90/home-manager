@@ -336,7 +336,7 @@
   debuggers = with pkgs; [python3Packages.debugpy delve];
 
   # Additional tools
-  additionalTools = with pkgs; [lazygit delta tree nodejs_22 python3];
+  additionalTools = with pkgs; [lazygit delta tree]; # nodejs_22 + python3 now in home/common.nix
 
   allDeps = coreDeps ++ lspServers ++ formatters ++ linters ++ debuggers ++ additionalTools ++ [pkgs.tree-sitter];
 
