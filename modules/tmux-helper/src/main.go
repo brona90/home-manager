@@ -23,7 +23,7 @@ type subcommandFunc func(args []string) error
 var subcommands = map[string]subcommandFunc{
 	"version":         cmdVersion,
 	"status":          cmds.Status,
-	"clipboard":       cmdStub,
+	"clipboard":       cmds.Clipboard,
 	"maximize-pane":   cmdStub,
 	"toggle-mouse":    cmdStub,
 	"reload":          cmdStub,
