@@ -94,6 +94,7 @@
             ./modules/vim/default.nix
             ./modules/emacs/default.nix
             ./modules/tmux/default.nix
+            ./modules/tmux-helper/default.nix
             ./modules/sops.nix
             ./modules/docker-terminal.nix
             ./modules/emacs-mcp.nix
@@ -122,6 +123,7 @@
                   enable = true;
                   configDir = ./modules/tmux/tmux-config;
                 };
+                tmuxHelper.enable = true;
                 emacs = {
                   enable = true;
                   package = pkgs.emacsWithDoom {
@@ -192,6 +194,7 @@
         in
           {
             default = homeConfigs.${configKey}.activationPackage;
+            tmux-helper = pkgs.callPackage ./modules/tmux-helper/package.nix {};
           }
           // (
             if isLinux
@@ -293,6 +296,29 @@
             };
           }
         else {}
+    );
+
+    checks = forAllSystems (
+      system: let
+        pkgs = pkgsFor system;
+      in {
+        tmux-helper-build = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+
+        # Runs go vet across the helper sources. buildGoModule's checkPhase
+        # already runs go test, but vet only fires for packages with _test.go
+        # files; this check exercises every package regardless.
+        tmux-helper-vet = pkgs.runCommand "tmux-helper-vet" {
+          nativeBuildInputs = [pkgs.go];
+        } ''
+          export HOME=$TMPDIR
+          export GOCACHE=$TMPDIR/go-build
+          cp -r ${./modules/tmux-helper/src} src
+          chmod -R u+w src
+          cd src
+          go vet ./...
+          touch $out
+        '';
+      }
     );
   };
 }
