@@ -3,7 +3,9 @@ package cmds
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,7 +18,7 @@ import (
 // SSH-aware detection (process tree walk + ssh -G + per-pane file cache).
 func Status(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: status <uptime-fmt|loadavg|user-host> [args...]")
+		return fmt.Errorf("usage: status <uptime-fmt|loadavg|user-host|git-branch|nix-shell|llm> [args...]")
 	}
 	switch args[0] {
 	case "uptime-fmt":
@@ -25,6 +27,12 @@ func Status(args []string) error {
 		return statusLoadavg()
 	case "user-host":
 		return statusUserHost(args[1:])
+	case "git-branch":
+		return statusGitBranch(args[1:])
+	case "nix-shell":
+		return statusNixShell()
+	case "llm":
+		return statusLLM(args[1:])
 	default:
 		return fmt.Errorf("unknown status subcommand: %s", args[0])
 	}
@@ -114,4 +122,67 @@ func detectPaneSSH(paneID, panePIDStr string) *ssh.Connection {
 	}
 	_ = ssh.Write(serverPID, paneID, conn)
 	return conn
+}
+
+// statusGitBranch emits the current git branch when the pane's cwd is in a
+// git repo, prefixed with " " and a leading symbol. Empty when not in a
+// repo (so #{...} substitutions render blank). Cwd is passed as arg[0],
+// typically #{pane_current_path} from the bind.
+func statusGitBranch(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	cwd := args[0]
+	if cwd == "" {
+		return nil
+	}
+	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil // Not a repo, or git missing -- silently empty.
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" || branch == "HEAD" {
+		return nil
+	}
+	fmt.Printf(" %s", branch)
+	return nil
+}
+
+// statusNixShell shows " ❄" when IN_NIX_SHELL is set in the helper's env.
+// In practice this picks up nix-shell, nix develop, devenv -- anything
+// that exports IN_NIX_SHELL. Helper's env comes from the tmux client/pane
+// that invoked it via #(...) substitution.
+func statusNixShell() error {
+	if os.Getenv("IN_NIX_SHELL") != "" {
+		fmt.Print(" ❄")
+	}
+	return nil
+}
+
+// statusLLM walks the pane's process tree (arg[0] = #{pane_pid}) and emits
+// an indicator if claude/aider/cursor/llm/copilot is found in the chain.
+func statusLLM(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	panePID, err := strconv.Atoi(args[0])
+	if err != nil {
+		return nil
+	}
+	tree, err := system.PsTree()
+	if err != nil {
+		return nil
+	}
+	for _, pid := range system.DescendantsOf(tree, panePID) {
+		comm := tree[pid].Comm
+		// Strip path if any (ps may include it for some procs).
+		comm = filepath.Base(comm)
+		switch comm {
+		case "claude", "aider", "cursor", "copilot", "ollama":
+			fmt.Printf(" 🤖 %s", comm)
+			return nil
+		}
+	}
+	return nil
 }

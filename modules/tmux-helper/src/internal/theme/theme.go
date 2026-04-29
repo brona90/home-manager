@@ -121,8 +121,9 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	// indicator (⌨) lives on status-right where the user expects it; per
 	// user feedback we don't double-up with a left-side block.
 	statusLeft := fmt.Sprintf(
-		`#[fg=%s,bg=%s,bold] ❐ #S #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑ #(%s status uptime-fmt) `,
+		`#[fg=%s,bg=%s,bold] ❐ #S#(%s status git-branch #{pane_current_path})#(%s status nix-shell)#(%s status llm #{pane_pid}) #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑ #(%s status uptime-fmt) `,
 		p.StatusLeftPrimaryFg, p.StatusLeftPrimaryBg,
+		helperBin, helperBin, helperBin,
 		p.StatusLeftPrimaryBg, p.StatusLeftSecondaryBg,
 		p.StatusLeftSecondaryFg, p.StatusLeftSecondaryBg,
 		helperBin,
