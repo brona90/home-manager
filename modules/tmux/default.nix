@@ -1,3 +1,7 @@
+# tmux module after the Phase 9 cutover from gpakosz/.tmux to the helper-
+# driven generated config. The legacy gpakosz files in modules/tmux/tmux-
+# config/ are deleted in this commit; useHelper is kept as a kill-switch
+# for one release (Phase 9.5 will drop the option entirely).
 {
   config,
   lib,
@@ -9,8 +13,7 @@
   # Path to the helper binary. On darwin with preferSystemPath, point at
   # /usr/local/bin/tmux-helper (installed once via the tmux-helper-install
   # flake app) so BeyondTrust EPM has a stable fingerprintable path. Else
-  # use the /nix/store output directly. Phase 2 first referenced this only
-  # when useHelper = true; remains lazy when useHelper is off.
+  # use the /nix/store output directly.
   helperBin =
     if cfg.preferSystemPath && pkgs.stdenv.isDarwin
     then "/usr/local/bin/tmux-helper"
@@ -19,7 +22,7 @@
   themes = import ./themes.nix;
   themesJson = pkgs.writeText "tmux-themes.json" (builtins.toJSON themes);
 
-  experimentalConf = pkgs.writeText "tmux-experimental.conf" (
+  experimentalConf = pkgs.writeText "tmux.conf" (
     import ./conf-experimental.nix {
       inherit helperBin;
       defaultThemePreset = cfg.theme.preset;
@@ -27,22 +30,17 @@
   );
 in {
   options.my.tmux = {
-    enable = lib.mkEnableOption "tmux configuration (gpakosz/.tmux)";
-
-    configDir = lib.mkOption {
-      type = lib.types.path;
-      description = "Path to the tmux config directory containing .tmux.conf and .tmux.conf.local";
-    };
+    enable = lib.mkEnableOption "tmux configuration (helper-driven)";
 
     useHelper = lib.mkOption {
       type = lib.types.bool;
-      default = false;
+      default = true;
       description = ''
-        When true, replaces the bundled gpakosz config with the Nix-generated
-        experimental tmux.conf driven by the tmux-helper Go binary. Off by
-        default until the rewrite reaches feature parity (Phase 9). For ad-hoc
-        testing without flipping this flag, run `nix run .#tmux-experimental`
-        which spins up a parallel tmux server on a separate socket.
+        Source the Nix-generated helper-driven tmux conf. Default true
+        post-Phase-9 cutover. Set false as a one-release escape hatch
+        if a regression slips through; you'll get a near-empty
+        programs.tmux config (just the home-manager defaults). The
+        flag itself goes away in Phase 9.5.
       '';
     };
 
@@ -63,9 +61,10 @@ in {
       description = ''
         Default tmux color palette to apply at conf load. Switchable at
         runtime via prefix-T (cycle) without home-manager-switch. The
-        runtime choice is stored in @tmux_theme_preset on the tmux server
-        for the session lifetime; persisting across server restarts
-        requires changing this option and running home-manager switch.
+        runtime choice is stored in @tmux_theme_preset on the tmux
+        server for the session lifetime; persisting across server
+        restarts requires changing this option and running home-manager
+        switch.
       '';
     };
 
@@ -73,49 +72,32 @@ in {
       type = lib.types.bool;
       default = false;
       description = ''
-        Use /usr/local/bin/tmux-helper instead of the /nix/store path in
-        keybindings and #(...) substitutions. Set true on macOS so every
-        helper invocation has a stable path BeyondTrust EPM can fingerprint
-        by, plus a stable ad-hoc cdhash. Requires the binary to actually be
-        installed there -- run `nix run .#tmux-helper-install` once after
-        the first home-manager switch and on every helper version bump.
+        Use /usr/local/bin/tmux-helper instead of the /nix/store path
+        in keybindings and #(...) substitutions. Set true on macOS so
+        every helper invocation has a stable path BeyondTrust EPM can
+        fingerprint by, plus a stable ad-hoc cdhash. Requires the
+        binary to actually be installed there -- run
+        `nix run .#tmux-helper-install` once after the first
+        home-manager switch and on every helper version bump.
       '';
     };
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [pkgs.perl];
-
     programs.tmux = {
       enable = true;
       terminal = "tmux-256color";
       extraConfig =
         if cfg.useHelper
-        then ''
-          source-file ${experimentalConf}
-        ''
-        else ''
-          # UTF-8 and true color support
-          set -g default-terminal "tmux-256color"
-          set -ag terminal-overrides ",xterm-256color:RGB"
-          set -ag terminal-overrides ",*256col*:Tc"
-
-          # Ensure UTF-8
-          set -q -g status-utf8 on
-          setw -q -g utf8 on
-
-          # Source the gpakosz config
-          source-file ${cfg.configDir}/.tmux.conf
-        '';
+        then "source-file ${experimentalConf}\n"
+        else "";
     };
 
+    # Read by `tmux-helper reload` (prefix-r) and `tmux-helper theme
+    # apply/cycle` (prefix-T) at runtime. tmux inherits these from the
+    # launching shell.
     home.sessionVariables = {
-      TMUX_CONF = "${cfg.configDir}/.tmux.conf";
-      TMUX_CONF_LOCAL = "${cfg.configDir}/.tmux.conf.local";
-      TMUX_PLUGIN_MANAGER_PATH = "$HOME/.tmux/plugins";
-      # Read by `tmux-helper reload` so prefix-r knows what to source-file.
       TMUX_HELPER_CONF = "${experimentalConf}";
-      # Read by `tmux-helper theme apply/cycle` to load the palette JSON.
       TMUX_HELPER_THEMES = "${themesJson}";
     };
   };

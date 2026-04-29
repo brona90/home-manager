@@ -119,10 +119,7 @@
               };
 
               my = {
-                tmux = {
-                  enable = true;
-                  configDir = ./modules/tmux/tmux-config;
-                };
+                tmux.enable = true;
                 tmuxHelper.enable = true;
                 emacs = {
                   enable = true;
