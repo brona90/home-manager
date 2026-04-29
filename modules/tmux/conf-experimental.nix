@@ -4,11 +4,16 @@
 #
 # Phase 2: status bar wired to the Go helper (uptime/loadavg/user-host).
 # Phase 3: copy-mode-vi clipboard binding + OSC 52 pass-through for SSH panes.
-# Phase 4: theme + 38 keybindings reproducing gpakosz UX. Pure-tmux binds
-#          fire directly; helper-dependent ones (maximize, toggle-mouse,
-#          reload, clear-history, fpp, urlview) display a placeholder until
-#          their Phase-5/Phase-7 implementations land.
-{helperBin}: ''
+# Phase 4: theme + 38 keybindings reproducing gpakosz UX.
+# Phase 5: helper-driven binds (reload, clear-history, maximize, toggle-mouse,
+#          vim-tmux-navigator).
+# Phase 5.1: dynamic themes (gpakosz, catppuccin-mocha, tokyonight, gruvbox,
+#            rose-pine, nord, dracula, solarized-dark, kanagawa). Helper
+#            applies the chosen theme at conf load and on prefix-T cycle.
+{
+  helperBin,
+  defaultThemePreset,
+}: ''
   # --- Terminal ----------------------------------------------------------
   set -g default-terminal "tmux-256color"
   set -ag terminal-overrides ",xterm-256color:RGB"
@@ -17,9 +22,6 @@
   setw -q -g utf8 on
 
   # --- OSC 52 clipboard pass-through (SSH'd panes) -----------------------
-  # \E]52;c;<base64>\007 lets a pane write to the local terminal's clipboard
-  # via the terminal emulator -- so selecting text inside an SSH session
-  # reaches your real clipboard without the helper round-tripping back.
   set -g set-clipboard on
   set -ag terminal-overrides ",*:Ms=\E]52;%p1%s;%p2%s\007"
 
@@ -37,51 +39,23 @@
   set -g renumber-windows on
   set -g status-keys emacs
   setw -g mode-keys vi
-
-  # --- Theme: 17-color gpakosz palette -----------------------------------
-  # Pane borders + active focus
-  set -g pane-border-style "fg=#444444"
-  set -g pane-active-border-style "fg=#00afff"
-  # Message line (when tmux echoes things to you)
-  set -g message-style "fg=#000000,bg=#ffff00,bold"
-  set -g message-command-style "fg=#ffff00,bg=#000000,bold"
-  # Copy / choose modes
-  setw -g mode-style "fg=#000000,bg=#ffff00,bold"
-  # Status bar base
   set -g status on
   set -g status-interval 10
   set -g status-justify left
   set -g status-position bottom
-  set -g status-style "fg=#8a8a8a,bg=#080808,none"
   set -g status-left-length 100
   set -g status-right-length 120
-  # Window status (tabs in middle of status bar)
-  setw -g window-status-style "fg=#8a8a8a,bg=#080808,none"
-  setw -g window-status-current-style "fg=#000000,bg=#00afff,bold"
-  setw -g window-status-activity-style "underscore"
-  setw -g window-status-bell-style "fg=#ffff00,blink,bold"
-  setw -g window-status-last-style "fg=#00afff,none"
   setw -g window-status-separator ""
   setw -g window-status-format        " #I #W#{?window_bell_flag,🔔,}#{?window_zoomed_flag,🔍,} "
   setw -g window-status-current-format " #I #W#{?window_zoomed_flag,🔍,} "
-  # Clock-mode (prefix t)
-  setw -g clock-mode-colour "#00afff"
   setw -g clock-mode-style 24
 
-  # --- Status-left: ❐ session | up Nd Nh Nm ------------------------------
-  # tmux's #{uptime_d/h/m} are native; no helper exec needed for uptime.
-  set -g status-left "#[fg=#000000,bg=#ffff00,bold] ❐ #S #[fg=#ffff00,bg=#080808,nobold]#[fg=#8a8a8a,bg=#080808] up#{?uptime_d, #{uptime_d}d,}#{?uptime_h, #{uptime_h}h,}#{?uptime_m, #{uptime_m}m,} "
-
-  # --- Status-right: prefix/sync | loadavg , %R , %d %b | user@host ------
-  set -g status-right "#{?client_prefix,#[fg=#ffff00] ⌨ ,}#{?pane_synchronized,#[fg=#d70000] 🔒 ,}#[fg=#8a8a8a,bg=#080808] #(${helperBin} status loadavg) , %R , %d %b | #(${helperBin} status user-host) "
-
   # --- Keybindings -------------------------------------------------------
-  # Reload (Phase 5: replace stub with helper reload subcommand)
+  # Reload via helper (TMUX_HELPER_CONF env var supplies the path).
   bind r run-shell "${helperBin} reload"
 
-  # Global C-l clears history with screen redraw. gpakosz had this with a
-  # 0.2s sleep + clear-history; will be wired through helper in Phase 5 so
-  # the timing stays consistent across terminals.
+  # Clear-history: send-keys C-l, sleep 200ms, clear-history (helper does
+  # this with proper timing so the redraw doesn't end up in cleared scroll).
   bind C-l run-shell "${helperBin} clear-history #{pane_id}"
 
   # Sessions
@@ -89,7 +63,7 @@
   bind C-f command-prompt -p "find session" "switch-client -t %%"
   bind BTab switch-client -l
 
-  # Splits open in the same cwd as the active pane
+  # Splits in same cwd
   bind - split-window -v -c "#{pane_current_path}"
   bind _ split-window -h -c "#{pane_current_path}"
 
@@ -99,7 +73,7 @@
   bind -r k select-pane -U
   bind -r l select-pane -R
 
-  # Swap panes
+  # Swap
   bind > swap-pane -D
   bind < swap-pane -U
 
@@ -114,28 +88,29 @@
   # prefix-C-l now bound to clear-history (above); use prefix-n for next-window
   bind Tab last-window
 
-  # Zoom (Phase 5: maximize-pane via helper, gpakosz's prefix-+)
+  # Maximize-pane (gpakosz prefix-+: break-pane out, restore on second press)
   bind + run-shell "${helperBin} maximize-pane #{session_name} #{pane_id}"
 
-  # Mouse toggle (Phase 5)
+  # Mouse toggle
   bind m run-shell "${helperBin} toggle-mouse"
 
-  # vim-tmux-navigator: C-h/j/k/l globally. If the active pane's foreground
-  # command is vim/nvim, the helper forwards C-w<dir> to that pane; otherwise
-  # it does select-pane in the corresponding direction. The plan reassigned
-  # the old global C-l (clear-history) to prefix-C-l above so this binding
-  # can take it over.
+  # Theme cycle (prefix T) -- iterates sorted theme list, persists choice in
+  # @tmux_theme_preset on the tmux server. Themes ship as a JSON read at
+  # runtime (TMUX_HELPER_THEMES env var, set declaratively via Nix).
+  bind T run-shell "${helperBin} theme cycle"
+
+  # vim-tmux-navigator: C-h/j/k/l globally. Helper detects vim/nvim in the
+  # active pane and forwards C-w<dir>; otherwise select-pane.
   bind -n C-h run-shell "${helperBin} navigate left"
   bind -n C-j run-shell "${helperBin} navigate down"
   bind -n C-k run-shell "${helperBin} navigate up"
   bind -n C-l run-shell "${helperBin} navigate right"
 
-
   # File picker / urlview (Phase 7)
   bind F display-message "phase 7: fpp picker not yet wired"
   bind U display-message "phase 7: urlview not yet wired"
 
-  # Copy mode: Enter to enter, vi-style selection
+  # Copy mode
   bind Enter copy-mode
   bind -T copy-mode-vi v send -X begin-selection
   bind -T copy-mode-vi C-v send -X rectangle-toggle
@@ -144,12 +119,16 @@
   bind -T copy-mode-vi H send -X start-of-line
   bind -T copy-mode-vi L send -X end-of-line
 
-  # Prefix-y: pipe last buffer to clipboard via helper (matches gpakosz's
-  # cross-platform y; the helper handles backend selection in one place).
+  # Prefix-y: pipe last buffer to clipboard via helper
   bind y run-shell "tmux save-buffer - | ${helperBin} clipboard copy"
 
   # Buffers
   bind b list-buffers
   bind p paste-buffer -p
   bind P choose-buffer
+
+  # --- Apply default theme on conf load ----------------------------------
+  # Sets all theme-related options (status-left, status-right, palette, etc.)
+  # via the helper which reads $TMUX_HELPER_THEMES (set via home.sessionVars).
+  run-shell "${helperBin} theme apply ${defaultThemePreset}"
 ''

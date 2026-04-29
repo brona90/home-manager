@@ -1,0 +1,165 @@
+# Pure-data theme palettes for the experimental tmux conf. Each palette has
+# the same shape, so conf-experimental.nix can render against any theme.
+{
+  gpakosz = {
+    paneBorder = "#444444"; paneActiveBorder = "#00afff";
+    messageFg = "#000000"; messageBg = "#ffff00";
+    messageCommandFg = "#ffff00"; messageCommandBg = "#000000";
+    modeFg = "#000000"; modeBg = "#ffff00";
+    statusFg = "#8a8a8a"; statusBg = "#080808";
+    windowFg = "#8a8a8a"; windowBg = "#080808";
+    windowCurrentFg = "#000000"; windowCurrentBg = "#00afff";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#ffff00"; windowBellAttr = "blink,bold";
+    windowLastFg = "#00afff";
+    statusLeftPrimaryFg = "#000000"; statusLeftPrimaryBg = "#ffff00";
+    statusLeftSecondaryFg = "#8a8a8a"; statusLeftSecondaryBg = "#080808";
+    statusRightAccentFg = "#000000"; statusRightAccentBg = "#e4e4e4";
+    statusRightAlertFg = "#ffffff"; statusRightAlertBg = "#d70000";
+    clockColor = "#00afff";
+  };
+
+  catppuccin-mocha = {
+    paneBorder = "#313244"; paneActiveBorder = "#cba6f7";
+    messageFg = "#1e1e2e"; messageBg = "#f9e2af";
+    messageCommandFg = "#f9e2af"; messageCommandBg = "#1e1e2e";
+    modeFg = "#1e1e2e"; modeBg = "#f9e2af";
+    statusFg = "#a6adc8"; statusBg = "#1e1e2e";
+    windowFg = "#a6adc8"; windowBg = "#1e1e2e";
+    windowCurrentFg = "#1e1e2e"; windowCurrentBg = "#cba6f7";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#f9e2af"; windowBellAttr = "blink,bold";
+    windowLastFg = "#89b4fa";
+    statusLeftPrimaryFg = "#1e1e2e"; statusLeftPrimaryBg = "#cba6f7";
+    statusLeftSecondaryFg = "#a6adc8"; statusLeftSecondaryBg = "#1e1e2e";
+    statusRightAccentFg = "#1e1e2e"; statusRightAccentBg = "#a6e3a1";
+    statusRightAlertFg = "#1e1e2e"; statusRightAlertBg = "#f38ba8";
+    clockColor = "#89b4fa";
+  };
+
+  tokyonight = {
+    paneBorder = "#3b4261"; paneActiveBorder = "#7aa2f7";
+    messageFg = "#1f2335"; messageBg = "#e0af68";
+    messageCommandFg = "#e0af68"; messageCommandBg = "#1f2335";
+    modeFg = "#1f2335"; modeBg = "#e0af68";
+    statusFg = "#a9b1d6"; statusBg = "#1f2335";
+    windowFg = "#a9b1d6"; windowBg = "#1f2335";
+    windowCurrentFg = "#1f2335"; windowCurrentBg = "#7aa2f7";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#e0af68"; windowBellAttr = "blink,bold";
+    windowLastFg = "#7dcfff";
+    statusLeftPrimaryFg = "#1f2335"; statusLeftPrimaryBg = "#7aa2f7";
+    statusLeftSecondaryFg = "#a9b1d6"; statusLeftSecondaryBg = "#1f2335";
+    statusRightAccentFg = "#1f2335"; statusRightAccentBg = "#9ece6a";
+    statusRightAlertFg = "#1f2335"; statusRightAlertBg = "#f7768e";
+    clockColor = "#7dcfff";
+  };
+
+  gruvbox = {
+    paneBorder = "#3c3836"; paneActiveBorder = "#fabd2f";
+    messageFg = "#1d2021"; messageBg = "#fabd2f";
+    messageCommandFg = "#fabd2f"; messageCommandBg = "#1d2021";
+    modeFg = "#1d2021"; modeBg = "#fabd2f";
+    statusFg = "#a89984"; statusBg = "#1d2021";
+    windowFg = "#a89984"; windowBg = "#1d2021";
+    windowCurrentFg = "#1d2021"; windowCurrentBg = "#fabd2f";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#fabd2f"; windowBellAttr = "blink,bold";
+    windowLastFg = "#83a598";
+    statusLeftPrimaryFg = "#1d2021"; statusLeftPrimaryBg = "#fabd2f";
+    statusLeftSecondaryFg = "#a89984"; statusLeftSecondaryBg = "#1d2021";
+    statusRightAccentFg = "#1d2021"; statusRightAccentBg = "#b8bb26";
+    statusRightAlertFg = "#1d2021"; statusRightAlertBg = "#fb4934";
+    clockColor = "#83a598";
+  };
+
+  rose-pine = {
+    paneBorder = "#26233a"; paneActiveBorder = "#9ccfd8";
+    messageFg = "#191724"; messageBg = "#f6c177";
+    messageCommandFg = "#f6c177"; messageCommandBg = "#191724";
+    modeFg = "#191724"; modeBg = "#f6c177";
+    statusFg = "#908caa"; statusBg = "#191724";
+    windowFg = "#908caa"; windowBg = "#191724";
+    windowCurrentFg = "#191724"; windowCurrentBg = "#9ccfd8";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#f6c177"; windowBellAttr = "blink,bold";
+    windowLastFg = "#c4a7e7";
+    statusLeftPrimaryFg = "#191724"; statusLeftPrimaryBg = "#9ccfd8";
+    statusLeftSecondaryFg = "#908caa"; statusLeftSecondaryBg = "#191724";
+    statusRightAccentFg = "#191724"; statusRightAccentBg = "#a3be8c";
+    statusRightAlertFg = "#191724"; statusRightAlertBg = "#eb6f92";
+    clockColor = "#c4a7e7";
+  };
+
+  nord = {
+    paneBorder = "#3b4252"; paneActiveBorder = "#88c0d0";
+    messageFg = "#2e3440"; messageBg = "#ebcb8b";
+    messageCommandFg = "#ebcb8b"; messageCommandBg = "#2e3440";
+    modeFg = "#2e3440"; modeBg = "#ebcb8b";
+    statusFg = "#d8dee9"; statusBg = "#2e3440";
+    windowFg = "#d8dee9"; windowBg = "#2e3440";
+    windowCurrentFg = "#2e3440"; windowCurrentBg = "#88c0d0";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#ebcb8b"; windowBellAttr = "blink,bold";
+    windowLastFg = "#81a1c1";
+    statusLeftPrimaryFg = "#2e3440"; statusLeftPrimaryBg = "#88c0d0";
+    statusLeftSecondaryFg = "#d8dee9"; statusLeftSecondaryBg = "#2e3440";
+    statusRightAccentFg = "#2e3440"; statusRightAccentBg = "#a3be8c";
+    statusRightAlertFg = "#2e3440"; statusRightAlertBg = "#bf616a";
+    clockColor = "#81a1c1";
+  };
+
+  dracula = {
+    paneBorder = "#44475a"; paneActiveBorder = "#bd93f9";
+    messageFg = "#282a36"; messageBg = "#f1fa8c";
+    messageCommandFg = "#f1fa8c"; messageCommandBg = "#282a36";
+    modeFg = "#282a36"; modeBg = "#f1fa8c";
+    statusFg = "#f8f8f2"; statusBg = "#282a36";
+    windowFg = "#f8f8f2"; windowBg = "#282a36";
+    windowCurrentFg = "#282a36"; windowCurrentBg = "#bd93f9";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#f1fa8c"; windowBellAttr = "blink,bold";
+    windowLastFg = "#8be9fd";
+    statusLeftPrimaryFg = "#282a36"; statusLeftPrimaryBg = "#bd93f9";
+    statusLeftSecondaryFg = "#f8f8f2"; statusLeftSecondaryBg = "#282a36";
+    statusRightAccentFg = "#282a36"; statusRightAccentBg = "#50fa7b";
+    statusRightAlertFg = "#282a36"; statusRightAlertBg = "#ff5555";
+    clockColor = "#8be9fd";
+  };
+
+  solarized-dark = {
+    paneBorder = "#073642"; paneActiveBorder = "#268bd2";
+    messageFg = "#002b36"; messageBg = "#b58900";
+    messageCommandFg = "#b58900"; messageCommandBg = "#002b36";
+    modeFg = "#002b36"; modeBg = "#b58900";
+    statusFg = "#93a1a1"; statusBg = "#002b36";
+    windowFg = "#93a1a1"; windowBg = "#002b36";
+    windowCurrentFg = "#002b36"; windowCurrentBg = "#268bd2";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#b58900"; windowBellAttr = "blink,bold";
+    windowLastFg = "#2aa198";
+    statusLeftPrimaryFg = "#002b36"; statusLeftPrimaryBg = "#268bd2";
+    statusLeftSecondaryFg = "#93a1a1"; statusLeftSecondaryBg = "#002b36";
+    statusRightAccentFg = "#002b36"; statusRightAccentBg = "#859900";
+    statusRightAlertFg = "#002b36"; statusRightAlertBg = "#dc322f";
+    clockColor = "#2aa198";
+  };
+
+  kanagawa = {
+    paneBorder = "#363646"; paneActiveBorder = "#7e9cd8";
+    messageFg = "#1f1f28"; messageBg = "#dca561";
+    messageCommandFg = "#dca561"; messageCommandBg = "#1f1f28";
+    modeFg = "#1f1f28"; modeBg = "#dca561";
+    statusFg = "#dcd7ba"; statusBg = "#1f1f28";
+    windowFg = "#dcd7ba"; windowBg = "#1f1f28";
+    windowCurrentFg = "#1f1f28"; windowCurrentBg = "#7e9cd8";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#dca561"; windowBellAttr = "blink,bold";
+    windowLastFg = "#7fb4ca";
+    statusLeftPrimaryFg = "#1f1f28"; statusLeftPrimaryBg = "#7e9cd8";
+    statusLeftSecondaryFg = "#dcd7ba"; statusLeftSecondaryBg = "#1f1f28";
+    statusRightAccentFg = "#1f1f28"; statusRightAccentBg = "#98bb6c";
+    statusRightAlertFg = "#1f1f28"; statusRightAlertBg = "#e82424";
+    clockColor = "#7fb4ca";
+  };
+}
