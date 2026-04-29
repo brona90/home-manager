@@ -117,8 +117,17 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	// Status-left and status-right rebuilt from palette segments. Includes
 	// the 👓 pairing indicator, ! root indicator (bold,blink), ⌨ prefix, and
 	// 🔒 sync indicator -- all from gpakosz parity.
+	// status-left:
+	//   * BIG prefix indicator on the LEFT when client_prefix is held -- bold
+	//     + reverse + blink, contrasted with the alert palette. Impossible
+	//     to miss.
+	//   * gpakosz "❐ session" segment in primary palette colors.
+	//   * "↑Nd Nh Nm" uptime via tmux's native #{uptime_*} format vars.
+	// Inline #[...] commas inside #{?...,X,} get escaped as \, so tmux's
+	// format parser doesn't split the conditional on them.
 	statusLeft := fmt.Sprintf(
-		"#[fg=%s,bg=%s,bold] ❐ #S #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑#{?uptime_d, #{uptime_d}d,}#{?uptime_h, #{uptime_h}h,}#{?uptime_m, #{uptime_m}m,} ",
+		`#{?client_prefix,#[fg=%s\,bg=%s\,bold\,reverse\,blink] ⌨ PREFIX #[default],}#[fg=%s,bg=%s,bold] ❐ #S #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑#{?uptime_d, #{uptime_d}d,}#{?uptime_h, #{uptime_h}h,}#{?uptime_m, #{uptime_m}m,} `,
+		p.StatusRightAlertFg, p.StatusRightAlertBg,
 		p.StatusLeftPrimaryFg, p.StatusLeftPrimaryBg,
 		p.StatusLeftPrimaryBg, p.StatusLeftSecondaryBg,
 		p.StatusLeftSecondaryFg, p.StatusLeftSecondaryBg,
