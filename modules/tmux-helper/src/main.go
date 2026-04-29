@@ -34,6 +34,7 @@ var subcommands = map[string]subcommandFunc{
 	"new-window-ssh":  cmdStub,
 	"split-window-ssh": cmdStub,
 	"apply-theme":     cmdStub,
+	"theme":           cmds.Theme,
 	"picker":          cmdStub,
 	"navigate":        cmds.Navigate,
 	"jump":            cmdStub,

@@ -10,8 +10,14 @@
   # useHelper = true; otherwise Nix laziness keeps it from being evaluated.
   helperBin = "${config.my.tmuxHelper.package}/bin/tmux-helper";
 
+  themes = import ./themes.nix;
+  themesJson = pkgs.writeText "tmux-themes.json" (builtins.toJSON themes);
+
   experimentalConf = pkgs.writeText "tmux-experimental.conf" (
-    import ./conf-experimental.nix {inherit helperBin;}
+    import ./conf-experimental.nix {
+      inherit helperBin;
+      defaultThemePreset = cfg.theme.preset;
+    }
   );
 in {
   options.my.tmux = {
@@ -31,6 +37,28 @@ in {
         default until the rewrite reaches feature parity (Phase 9). For ad-hoc
         testing without flipping this flag, run `nix run .#tmux-experimental`
         which spins up a parallel tmux server on a separate socket.
+      '';
+    };
+
+    theme.preset = lib.mkOption {
+      type = lib.types.enum [
+        "gpakosz"
+        "catppuccin-mocha"
+        "tokyonight"
+        "gruvbox"
+        "rose-pine"
+        "nord"
+        "dracula"
+        "solarized-dark"
+        "kanagawa"
+      ];
+      default = "gpakosz";
+      description = ''
+        Default tmux color palette to apply at conf load. Switchable at
+        runtime via prefix-T (cycle) without home-manager-switch. The
+        runtime choice is stored in @tmux_theme_preset on the tmux server
+        for the session lifetime; persisting across server restarts
+        requires changing this option and running home-manager switch.
       '';
     };
   };
@@ -67,6 +95,8 @@ in {
       TMUX_PLUGIN_MANAGER_PATH = "$HOME/.tmux/plugins";
       # Read by `tmux-helper reload` so prefix-r knows what to source-file.
       TMUX_HELPER_CONF = "${experimentalConf}";
+      # Read by `tmux-helper theme apply/cycle` to load the palette JSON.
+      TMUX_HELPER_THEMES = "${themesJson}";
     };
   };
 }
