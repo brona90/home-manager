@@ -161,7 +161,12 @@ func statusNixShell() error {
 }
 
 // statusLLM walks the pane's process tree (arg[0] = #{pane_pid}) and emits
-// an indicator if claude/aider/cursor/llm/copilot is found in the chain.
+// an indicator when claude/aider/cursor/copilot/ollama is in the chain.
+//
+// Match logic accommodates Nix-wrapped binaries: a Nix-wrapped `claude`
+// shows up in ps with comm=".claude-wrapped" rather than the bare name.
+// We strip the leading "." and trailing "-wrapped", then check against the
+// known list. Substring match catches "claude-code", "ollama-server", etc.
 func statusLLM(args []string) error {
 	if len(args) == 0 {
 		return nil
@@ -174,14 +179,17 @@ func statusLLM(args []string) error {
 	if err != nil {
 		return nil
 	}
+	known := []string{"claude", "aider", "cursor", "copilot", "ollama"}
 	for _, pid := range system.DescendantsOf(tree, panePID) {
-		comm := tree[pid].Comm
-		// Strip path if any (ps may include it for some procs).
+		comm := strings.ToLower(tree[pid].Comm)
+		comm = strings.TrimPrefix(comm, ".")
+		comm = strings.TrimSuffix(comm, "-wrapped")
 		comm = filepath.Base(comm)
-		switch comm {
-		case "claude", "aider", "cursor", "copilot", "ollama":
-			fmt.Printf(" 🤖 %s", comm)
-			return nil
+		for _, name := range known {
+			if comm == name || strings.HasPrefix(comm, name+"-") {
+				fmt.Printf(" 🤖 %s", name)
+				return nil
+			}
 		}
 	}
 	return nil
