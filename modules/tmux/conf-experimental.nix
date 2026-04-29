@@ -115,6 +115,7 @@
   bind -T copy-mode-vi v send -X begin-selection
   bind -T copy-mode-vi C-v send -X rectangle-toggle
   bind -T copy-mode-vi y send -X copy-pipe-and-cancel "${helperBin} clipboard copy"
+  bind -T copy-mode-vi o send -X copy-pipe-and-cancel "${helperBin} open-file"
   bind -T copy-mode-vi Escape send -X cancel
   bind -T copy-mode-vi H send -X start-of-line
   bind -T copy-mode-vi L send -X end-of-line

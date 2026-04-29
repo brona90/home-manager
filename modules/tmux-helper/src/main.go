@@ -38,7 +38,7 @@ var subcommands = map[string]subcommandFunc{
 	"picker":          cmds.Picker,
 	"navigate":        cmds.Navigate,
 	"jump":            cmdStub,
-	"open-file":       cmdStub,
+	"open-file":       cmds.OpenFile,
 }
 
 func main() {
