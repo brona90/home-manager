@@ -6,6 +6,13 @@
 }: {
   my.gpg.enableYubiKey = true;
 
+  # Use /usr/local/bin/tmux-helper (installed via `nix run .#tmux-helper-install`)
+  # so BeyondTrust EPM has a stable fingerprintable path + cdhash. Until that
+  # one-time sudo install runs, every helper invocation will fail visibly --
+  # which is the right failure mode (status bar shows the error in display-message
+  # and the user knows to run the install command).
+  my.tmux.preferSystemPath = true;
+
   my.zsh.extraAliases = {
     ls = "ls -G"; # macOS ls uses -G for color
     zscaler-stop = "sudo launchctl bootout system/com.zscaler.tray; sudo launchctl bootout system/com.zscaler.zfd; sudo launchctl bootout system/com.zscaler.tunnel";

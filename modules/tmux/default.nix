@@ -6,9 +6,15 @@
 }: let
   cfg = config.my.tmux;
 
-  # Path to the helper binary in /nix/store. Phase 2 only references this when
-  # useHelper = true; otherwise Nix laziness keeps it from being evaluated.
-  helperBin = "${config.my.tmuxHelper.package}/bin/tmux-helper";
+  # Path to the helper binary. On darwin with preferSystemPath, point at
+  # /usr/local/bin/tmux-helper (installed once via the tmux-helper-install
+  # flake app) so BeyondTrust EPM has a stable fingerprintable path. Else
+  # use the /nix/store output directly. Phase 2 first referenced this only
+  # when useHelper = true; remains lazy when useHelper is off.
+  helperBin =
+    if cfg.preferSystemPath && pkgs.stdenv.isDarwin
+    then "/usr/local/bin/tmux-helper"
+    else "${config.my.tmuxHelper.package}/bin/tmux-helper";
 
   themes = import ./themes.nix;
   themesJson = pkgs.writeText "tmux-themes.json" (builtins.toJSON themes);
@@ -42,6 +48,7 @@ in {
 
     theme.preset = lib.mkOption {
       type = lib.types.enum [
+        "molokai"
         "gpakosz"
         "catppuccin-mocha"
         "tokyonight"
@@ -52,13 +59,26 @@ in {
         "solarized-dark"
         "kanagawa"
       ];
-      default = "gpakosz";
+      default = "molokai";
       description = ''
         Default tmux color palette to apply at conf load. Switchable at
         runtime via prefix-T (cycle) without home-manager-switch. The
         runtime choice is stored in @tmux_theme_preset on the tmux server
         for the session lifetime; persisting across server restarts
         requires changing this option and running home-manager switch.
+      '';
+    };
+
+    preferSystemPath = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Use /usr/local/bin/tmux-helper instead of the /nix/store path in
+        keybindings and #(...) substitutions. Set true on macOS so every
+        helper invocation has a stable path BeyondTrust EPM can fingerprint
+        by, plus a stable ad-hoc cdhash. Requires the binary to actually be
+        installed there -- run `nix run .#tmux-helper-install` once after
+        the first home-manager switch and on every helper version bump.
       '';
     };
   };
