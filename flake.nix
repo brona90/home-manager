@@ -248,7 +248,12 @@
             tmux-experimental = let
               helperPkg = pkgs.callPackage ./modules/tmux-helper/package.nix {};
               helperBin = "${helperPkg}/bin/tmux-helper";
-              confText = import ./modules/tmux/conf-experimental.nix {inherit helperBin;};
+              themesJson = pkgs.writeText "tmux-themes.json"
+                (builtins.toJSON (import ./modules/tmux/themes.nix));
+              confText = import ./modules/tmux/conf-experimental.nix {
+                inherit helperBin;
+                defaultThemePreset = "gpakosz";
+              };
               conf = pkgs.writeText "tmux-experimental.conf" confText;
             in {
               type = "app";
@@ -257,6 +262,8 @@
                 name = "tmux-experimental";
                 runtimeInputs = [pkgs.tmux];
                 text = ''
+                  export TMUX_HELPER_CONF=${conf}
+                  export TMUX_HELPER_THEMES=${themesJson}
                   exec tmux -L experimental -f ${conf} new-session
                 '';
               }}/bin/tmux-experimental";
