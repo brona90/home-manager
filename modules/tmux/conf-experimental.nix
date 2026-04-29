@@ -99,6 +99,14 @@
   # runtime (TMUX_HELPER_THEMES env var, set declaratively via Nix).
   bind T run-shell "${helperBin} theme cycle"
 
+  # tmux-jump (prefix j): enter copy-mode, prompt for a char, jump cursor
+  # forward to its next occurrence in the visible pane. Pure-tmux v1; the
+  # easymotion-style multi-target visual labels would need helper-side
+  # screen capture + relabel + restore (~150 LOC) and is deferred.
+  bind j copy-mode \; command-prompt -1 -p "jump-to:" "send -X search-forward-text '%%%%'"
+  bind J copy-mode \; command-prompt -1 -p "jump-back:" "send -X search-backward-text '%%%%'"
+
+
   # vim-tmux-navigator: C-h/j/k/l globally. Helper detects vim/nvim in the
   # active pane and forwards C-w<dir>; otherwise select-pane.
   bind -n C-h run-shell "${helperBin} navigate left"
