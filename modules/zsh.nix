@@ -452,6 +452,15 @@ in {
 
       mise = {
         enable = true;
+        # Integration on so the small global tool list (node, python, gh,
+        # gcloud) auto-activates everywhere. Per-prompt cost stays low
+        # because ~/.config/mise/config.toml is intentionally short -- one
+        # mise hook-env tick per declared tool, so 4 tools = ~50 ms total.
+        # Per-project toolchains (go, rust, java, kubectl, terraform, etc.)
+        # live in each project's .mise.toml and load via direnv's use_mise.
+        # General CLI utilities (jq, fd, bat, shellcheck, watchexec,
+        # imagemagick) are in home.packages from nixpkgs -- declarative,
+        # reproducible, zero per-prompt cost.
         enableZshIntegration = true;
       };
 
