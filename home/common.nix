@@ -65,7 +65,9 @@ in {
         # count; nixpkgs delivers these with zero shell-init cost and pins
         # versions through the flake lockfile. mise stays available as a
         # CLI for per-project version pinning via direnv's use_mise.
-        nodejs_20 # was: mise global node@20
+        # Node intentionally NOT here -- modules/vim/default.nix already
+        # provides nodejs_22 for LazyVim language servers; adding nodejs_20
+        # collides on corepack/yarn.js between buildEnv paths.
         python312 # was: mise global python@3.12
         gh # was: mise global gh@latest
         google-cloud-sdk # was: mise global gcloud@latest
