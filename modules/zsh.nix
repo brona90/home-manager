@@ -51,9 +51,6 @@ in {
             lh = "ls -alt | head";
             screen = "TERM=screen screen";
             cl = "clear";
-            # Windows tools (only the user-named ones; PATH below intentionally
-            # drops most Windows dirs to keep zsh tab-completion fast).
-            code = "/mnt/c/Program Files/Microsoft VS Code/bin/code";
             gz = "tar -zcvf";
             ka9 = "killall -9";
             k9 = "kill -9";
