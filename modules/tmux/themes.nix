@@ -162,4 +162,21 @@
     statusRightAlertFg = "#1f1f28"; statusRightAlertBg = "#e82424";
     clockColor = "#7fb4ca";
   };
+  molokai = {
+    paneBorder = "#3a3d3f"; paneActiveBorder = "#a6e22e";
+    messageFg = "#1b1d1e"; messageBg = "#e6db74";
+    messageCommandFg = "#e6db74"; messageCommandBg = "#1b1d1e";
+    modeFg = "#1b1d1e"; modeBg = "#e6db74";
+    statusFg = "#f8f8f2"; statusBg = "#1b1d1e";
+    windowFg = "#75715e"; windowBg = "#1b1d1e";
+    windowCurrentFg = "#1b1d1e"; windowCurrentBg = "#a6e22e";
+    windowActivityAttr = "underscore";
+    windowBellFg = "#e6db74"; windowBellAttr = "blink,bold";
+    windowLastFg = "#66d9ef";
+    statusLeftPrimaryFg = "#1b1d1e"; statusLeftPrimaryBg = "#a6e22e";
+    statusLeftSecondaryFg = "#f8f8f2"; statusLeftSecondaryBg = "#1b1d1e";
+    statusRightAccentFg = "#1b1d1e"; statusRightAccentBg = "#66d9ef";
+    statusRightAlertFg = "#f8f8f2"; statusRightAlertBg = "#f92672";
+    clockColor = "#a6e22e";
+  };
 }

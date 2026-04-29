@@ -245,6 +245,15 @@
             else {}
           )
           // {
+            tmux-helper-install = {
+              type = "app";
+              meta.description = "Install /usr/local/bin/tmux-helper for stable BT-fingerprintable path on macOS";
+              program = "${import ./modules/tmux-helper/install-script.nix {
+                inherit pkgs;
+                helperPackage = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+              }}/bin/tmux-helper-install";
+            };
+
             tmux-experimental = let
               helperPkg = pkgs.callPackage ./modules/tmux-helper/package.nix {};
               helperBin = "${helperPkg}/bin/tmux-helper";
@@ -252,7 +261,7 @@
                 (builtins.toJSON (import ./modules/tmux/themes.nix));
               confText = import ./modules/tmux/conf-experimental.nix {
                 inherit helperBin;
-                defaultThemePreset = "gpakosz";
+                defaultThemePreset = "molokai";
               };
               conf = pkgs.writeText "tmux-experimental.conf" confText;
             in {
