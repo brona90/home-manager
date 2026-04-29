@@ -107,8 +107,8 @@
   bind -n C-l run-shell "${helperBin} navigate right"
 
   # File picker / urlview (Phase 7)
-  bind F display-message "phase 7: fpp picker not yet wired"
-  bind U display-message "phase 7: urlview not yet wired"
+  bind F run-shell "${helperBin} fpp #{pane_id} #{pane_current_path}"
+  bind U run-shell "${helperBin} urlview #{pane_id} #{pane_current_path}"
 
   # Copy mode
   bind Enter copy-mode
@@ -121,6 +121,16 @@
 
   # Prefix-y: pipe last buffer to clipboard via helper
   bind y run-shell "tmux save-buffer - | ${helperBin} clipboard copy"
+
+  # Fzf-driven popup pickers (require fzf on PATH; helper falls back to a
+  # display-message if missing). Mirrored from gpakosz's prefix-s session
+  # picker but rendered in tmux's display-popup overlay so they're a quick
+  # one-handed action without leaving the current pane.
+  bind s run-shell "${helperBin} picker sessions"
+  bind w run-shell "${helperBin} picker windows"
+  bind . run-shell "${helperBin} picker panes"
+  bind P run-shell "${helperBin} picker projects"
+
 
   # Buffers
   bind b list-buffers
