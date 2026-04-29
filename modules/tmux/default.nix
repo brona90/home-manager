@@ -1,7 +1,7 @@
-# tmux module after the Phase 9 cutover from gpakosz/.tmux to the helper-
-# driven generated config. The legacy gpakosz files in modules/tmux/tmux-
-# config/ are deleted in this commit; useHelper is kept as a kill-switch
-# for one release (Phase 9.5 will drop the option entirely).
+# tmux module post-Phase-9.5: helper-driven generated config is the only
+# path. The Phase-9 useHelper kill-switch was removed once the config
+# proved stable in daily use; rollback to the gpakosz config is via
+# `git revert` of the Phase-9 cutover commit.
 {
   config,
   lib,
@@ -31,18 +31,6 @@
 in {
   options.my.tmux = {
     enable = lib.mkEnableOption "tmux configuration (helper-driven)";
-
-    useHelper = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Source the Nix-generated helper-driven tmux conf. Default true
-        post-Phase-9 cutover. Set false as a one-release escape hatch
-        if a regression slips through; you'll get a near-empty
-        programs.tmux config (just the home-manager defaults). The
-        flag itself goes away in Phase 9.5.
-      '';
-    };
 
     theme.preset = lib.mkOption {
       type = lib.types.enum [
@@ -87,10 +75,7 @@ in {
     programs.tmux = {
       enable = true;
       terminal = "tmux-256color";
-      extraConfig =
-        if cfg.useHelper
-        then "source-file ${experimentalConf}\n"
-        else "";
+      extraConfig = "source-file ${experimentalConf}\n";
     };
 
     # Read by `tmux-helper reload` (prefix-r) and `tmux-helper theme
