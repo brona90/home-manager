@@ -129,8 +129,8 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 		helperBin,
 	)
 	statusRight := fmt.Sprintf(
-		"#{?client_prefix,#[fg=%s]#[bg=%s]#[bold] ⌨ ,}#{?#{>:#{session_attached},1},#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s] %%R | %%d %%b | #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[bold]#[blink] !#[default],} ",
-		p.StatusRightAlertFg, p.StatusRightAlertBg,
+		"#{?client_prefix,#[fg=%s]#[bold] ⌨ ,}#{?#{>:#{session_attached},1},#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s] %%R | %%d %%b | #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[bold]#[blink] !#[default],} ",
+		p.StatusRightAlertFg,
 		p.StatusFg, p.StatusBg,
 		p.StatusRightAlertFg, p.StatusRightAlertBg,
 		p.StatusFg, p.StatusBg,
