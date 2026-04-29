@@ -51,6 +51,9 @@ in {
             lh = "ls -alt | head";
             screen = "TERM=screen screen";
             cl = "clear";
+            # Windows tools (only the user-named ones; PATH below intentionally
+            # drops most Windows dirs to keep zsh tab-completion fast).
+            code = "/mnt/c/Program Files/Microsoft VS Code/bin/code";
             gz = "tar -zcvf";
             ka9 = "killall -9";
             k9 = "kill -9";
@@ -392,6 +395,25 @@ in {
           }
 
           ${cfg.extraInitExtra}
+        '';
+
+        # Trim slow Windows /mnt/c PATH entries that lag tab-completion and
+        # zsh-fast-syntax-highlighting (each PATH walk hits the 9P bridge).
+        # Kept: /mnt/c/WINDOWS{,*} (cmd, powershell, clip, explorer, ssh.exe),
+        # /mnt/c/Users/*/AppData/Local/Microsoft/WindowsApps (winget, Store).
+        # Dropped: Program Files{,(x86)}, ProgramData, AppData/Local/Programs,
+        # mise, Warp, scoop, .local, user bin/Scripts. Anything dropped that
+        # is still wanted should land as an explicit alias above.
+        envExtra = ''
+          path=( ''${path:#/mnt/c/[Pp]rogram*} )
+          path=( ''${path:#/mnt/c/ProgramData*} )
+          path=( ''${path:#/mnt/c/Users/*/AppData/Local/Programs*} )
+          path=( ''${path:#/mnt/c/Users/*/AppData/Local/mise*} )
+          path=( ''${path:#/mnt/c/Users/*/AppData/Local/Warp*} )
+          path=( ''${path:#/mnt/c/Users/*/scoop*} )
+          path=( ''${path:#/mnt/c/Users/*/.local*} )
+          path=( ''${path:#/mnt/c/Users/*/bin} )
+          path=( ''${path:#/mnt/c/Users/*/Scripts} )
         '';
 
         history = {
