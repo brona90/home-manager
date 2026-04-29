@@ -126,14 +126,15 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	// Inline #[...] commas inside #{?...,X,} get escaped as \, so tmux's
 	// format parser doesn't split the conditional on them.
 	statusLeft := fmt.Sprintf(
-		`#{?client_prefix,#[fg=%s\,bg=%s\,bold\,reverse\,blink] ⌨ PREFIX #[default],}#[fg=%s,bg=%s,bold] ❐ #S #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑#{?uptime_d, #{uptime_d}d,}#{?uptime_h, #{uptime_h}h,}#{?uptime_m, #{uptime_m}m,} `,
+		`#{?client_prefix,#[fg=%s]#[bg=%s]#[bold]#[reverse]#[blink] ⌨ PREFIX #[default],}#[fg=%s,bg=%s,bold] ❐ #S #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑ #(%s status uptime-fmt) `,
 		p.StatusRightAlertFg, p.StatusRightAlertBg,
 		p.StatusLeftPrimaryFg, p.StatusLeftPrimaryBg,
 		p.StatusLeftPrimaryBg, p.StatusLeftSecondaryBg,
 		p.StatusLeftSecondaryFg, p.StatusLeftSecondaryBg,
+		helperBin,
 	)
 	statusRight := fmt.Sprintf(
-		"#{?client_prefix,#[fg=%s,bg=%s,bold] ⌨ ,}#{?#{>:#{session_attached},1},#[fg=%s,bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s,bg=%s] 🔒 ,}#[fg=%s,bg=%s] %%R | %%d %%b | #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[bold,blink] !#[default],} ",
+		"#{?client_prefix,#[fg=%s]#[bg=%s]#[bold] ⌨ ,}#{?#{>:#{session_attached},1},#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s] %%R | %%d %%b | #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[bold]#[blink] !#[default],} ",
 		p.StatusRightAlertFg, p.StatusRightAlertBg,
 		p.StatusFg, p.StatusBg,
 		p.StatusRightAlertFg, p.StatusRightAlertBg,
