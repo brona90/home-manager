@@ -25,6 +25,20 @@ in {
     claudeCode.enable = true;
   };
 
+  # General-purpose CLI tools, formerly maintained via mise's global config.
+  # Migrated to nixpkgs because (a) declarative + reproducible across hosts,
+  # (b) zero per-prompt cost (mise hook-env was burning 100ms+ per global
+  # tool), (c) the nixpkgs versions are pinned by the flake lockfile rather
+  # than auto-bumped by `mise use --global X@latest`.
+  home.packages = with pkgs; [
+    jq
+    fd
+    bat
+    shellcheck
+    watchexec
+    imagemagick
+  ];
+
   # Manage ~/.config/nix/nix.conf declaratively.
   # Use extra-* variants so settings append to the system list and work
   # for non-root users even before trusted-users is configured.
