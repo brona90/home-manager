@@ -405,6 +405,13 @@ in {
         # mise, Warp, scoop, .local, user bin/Scripts. Anything dropped that
         # is still wanted should land as an explicit alias above.
         envExtra = ''
+          # Strip slow Windows /mnt/c PATH entries to keep zsh-fast-syntax-
+          # highlighting and tab-completion snappy. Each /mnt/c entry costs a
+          # 9P-bridge stat() per command-name lookup, which in steady-state
+          # typing fires per keystroke. Kept: /mnt/c/WINDOWS/system32 (clip.exe,
+          # cmd.exe, powershell.exe, wsl.exe) and WindowsApps (winget). Drop
+          # the rest, including OpenSSH/Wbem/WindowsPowerShell/v1.0 which are
+          # never useful from a WSL Linux shell.
           path=( ''${path:#/mnt/c/[Pp]rogram*} )
           path=( ''${path:#/mnt/c/ProgramData*} )
           path=( ''${path:#/mnt/c/Users/*/AppData/Local/Programs*} )
@@ -414,6 +421,9 @@ in {
           path=( ''${path:#/mnt/c/Users/*/.local*} )
           path=( ''${path:#/mnt/c/Users/*/bin} )
           path=( ''${path:#/mnt/c/Users/*/Scripts} )
+          path=( ''${path:#/mnt/c/WINDOWS/System32/OpenSSH} )
+          path=( ''${path:#/mnt/c/WINDOWS/System32/Wbem} )
+          path=( ''${path:#/mnt/c/WINDOWS/System32/WindowsPowerShell*} )
         '';
 
         history = {
