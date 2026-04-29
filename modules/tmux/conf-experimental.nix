@@ -77,12 +77,12 @@
 
   # --- Keybindings -------------------------------------------------------
   # Reload (Phase 5: replace stub with helper reload subcommand)
-  bind r display-message "phase 5: tmux-helper reload not yet wired (try :source-file ~/.tmux.conf for now)"
+  bind r run-shell "${helperBin} reload"
 
   # Global C-l clears history with screen redraw. gpakosz had this with a
   # 0.2s sleep + clear-history; will be wired through helper in Phase 5 so
   # the timing stays consistent across terminals.
-  bind -n C-l display-message "phase 5: clear-history not yet wired"
+  bind C-l run-shell "${helperBin} clear-history #{pane_id}"
 
   # Sessions
   bind C-c new-session
@@ -111,14 +111,25 @@
 
   # Window navigation
   bind -r C-h previous-window
-  bind -r C-l next-window
+  # prefix-C-l now bound to clear-history (above); use prefix-n for next-window
   bind Tab last-window
 
   # Zoom (Phase 5: maximize-pane via helper, gpakosz's prefix-+)
-  bind + display-message "phase 5: maximize-pane not yet wired (use prefix-z for native zoom)"
+  bind + run-shell "${helperBin} maximize-pane #{session_name} #{pane_id}"
 
   # Mouse toggle (Phase 5)
-  bind m display-message "phase 5: toggle-mouse not yet wired"
+  bind m run-shell "${helperBin} toggle-mouse"
+
+  # vim-tmux-navigator: C-h/j/k/l globally. If the active pane's foreground
+  # command is vim/nvim, the helper forwards C-w<dir> to that pane; otherwise
+  # it does select-pane in the corresponding direction. The plan reassigned
+  # the old global C-l (clear-history) to prefix-C-l above so this binding
+  # can take it over.
+  bind -n C-h run-shell "${helperBin} navigate left"
+  bind -n C-j run-shell "${helperBin} navigate down"
+  bind -n C-k run-shell "${helperBin} navigate up"
+  bind -n C-l run-shell "${helperBin} navigate right"
+
 
   # File picker / urlview (Phase 7)
   bind F display-message "phase 7: fpp picker not yet wired"

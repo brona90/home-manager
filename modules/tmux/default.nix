@@ -65,6 +65,8 @@ in {
       TMUX_CONF = "${cfg.configDir}/.tmux.conf";
       TMUX_CONF_LOCAL = "${cfg.configDir}/.tmux.conf.local";
       TMUX_PLUGIN_MANAGER_PATH = "$HOME/.tmux/plugins";
+      # Read by `tmux-helper reload` so prefix-r knows what to source-file.
+      TMUX_HELPER_CONF = "${experimentalConf}";
     };
   };
 }
