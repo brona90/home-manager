@@ -452,16 +452,19 @@ in {
 
       mise = {
         enable = true;
-        # Integration on so the small global tool list (node, python, gh,
-        # gcloud) auto-activates everywhere. Per-prompt cost stays low
-        # because ~/.config/mise/config.toml is intentionally short -- one
-        # mise hook-env tick per declared tool, so 4 tools = ~50 ms total.
-        # Per-project toolchains (go, rust, java, kubectl, terraform, etc.)
-        # live in each project's .mise.toml and load via direnv's use_mise.
-        # General CLI utilities (jq, fd, bat, shellcheck, watchexec,
-        # imagemagick) are in home.packages from nixpkgs -- declarative,
-        # reproducible, zero per-prompt cost.
-        enableZshIntegration = true;
+        # Integration off because mise itself is uniquely slow on this WSL
+        # host: profiled 2026-04-29, mise --version takes 4-7s and hook-env
+        # takes 5s even with empty config. Other Nix-installed binaries
+        # (gh 357ms, starship 74ms, ls 25ms) are fast, so it's mise-specific
+        # not WSL-wide. MISE_DISABLE_DEFAULT_REGISTRIES helped --version
+        # (4.7s -> 0.17s) but didn't help hook-env -- the per-prompt cost
+        # is in mise's toolset diff logic, not configurable.
+        # Strategy: globally-needed tools (node, python, gh, gcloud) live
+        # in home.packages from nixpkgs (zero overhead). Mise stays as a
+        # CLI for per-project version pinning via .mise.toml in repos,
+        # activated through direnv's `use_mise` stdlib helper -- one-shot
+        # cost on cd-into-project, not per-prompt.
+        enableZshIntegration = false;
       };
 
       direnv = {

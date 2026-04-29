@@ -60,8 +60,15 @@ in {
     packages = with pkgs;
       [
         tree
-        # Migrated from mise global config (formerly node-pinned by mise@latest);
-        # nixpkgs is faster (zero hook-env cost) and reproducible via flake lock.
+        # Migrated from mise's global config (~/.config/mise/config.toml).
+        # mise hook-env on this WSL host took 5s/prompt regardless of tool
+        # count; nixpkgs delivers these with zero shell-init cost and pins
+        # versions through the flake lockfile. mise stays available as a
+        # CLI for per-project version pinning via direnv's use_mise.
+        nodejs_20 # was: mise global node@20
+        python312 # was: mise global python@3.12
+        gh # was: mise global gh@latest
+        google-cloud-sdk # was: mise global gcloud@latest
         jq
         fd
         bat # syntax-highlighted cat
