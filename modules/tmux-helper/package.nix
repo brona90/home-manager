@@ -28,8 +28,16 @@ buildGoModule rec {
   # cdhash + bundle identifier. ad-hoc means no Apple developer cert; the
   # signature is just a deterministic hash of the binary's contents +
   # identifier, computed by darwin.sigtool (a wrapper around `ldid`).
+  # Note: darwin.sigtool does NOT accept `--options runtime` (hardened
+  # runtime is meaningless for ad-hoc anyway -- it requires a real cert
+  # to be enforced). Stick to flags ldid supports: --force, --sign -,
+  # --identifier.
   postInstall = lib.optionalString stdenv.isDarwin ''
-    ${darwin.sigtool}/bin/codesign       --force       --sign -       --options runtime       --identifier com.brona.tmux-helper       $out/bin/tmux-helper
+    ${darwin.sigtool}/bin/codesign \
+      --force \
+      --sign - \
+      --identifier com.brona.tmux-helper \
+      $out/bin/tmux-helper
   '';
 
   meta = {
