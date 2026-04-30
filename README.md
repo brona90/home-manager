@@ -8,10 +8,10 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 |------|-------------|
 | [Doom Emacs](https://github.com/doomemacs/doomemacs) | Emacs distribution with sensible defaults via [nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened) |
 | [LazyVim](https://www.lazyvim.org/) | Neovim setup with lazy.nvim plugin manager |
-| [oh-my-tmux](https://github.com/gpakosz/.tmux) | tmux configuration with powerline-style status bar |
+| [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 38 keybinds, 10 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~1200 LOC). |
 | [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `zsh-fast-syntax-highlighting`, `zsh-history-substring-search` |
 | [Starship](https://starship.rs/) | Fast, customizable shell prompt |
-| [mise](https://mise.jdx.dev/) | Polyglot runtime manager (node, python, go, etc.) |
+| [mise](https://mise.jdx.dev/) | Polyglot runtime manager. Used **per-project only** via `direnv use_mise` -- the global zsh integration is intentionally off (5+ s/prompt cost on WSL). Globally needed runtimes live in nixpkgs (`home.packages`). |
 | [btop](https://github.com/aristocratos/btop) | Resource monitor with TUI |
 | [fzf](https://github.com/junegunn/fzf) | Fuzzy finder |
 | [ripgrep](https://github.com/BurntSushi/ripgrep) | Fast grep replacement |
@@ -179,7 +179,8 @@ This repo is designed to be easily forked:
 │   │   └── gpg-win-bridge.py  # WSL→Gpg4win Assuan proxy
 │   ├── emacs/             # Doom Emacs
 │   ├── vim/               # LazyVim
-│   └── tmux/              # oh-my-tmux
+│   ├── tmux/              # helper-driven tmux conf + 10 theme palettes
+│   └── tmux-helper/       # Go helper binary (status, clipboard, theme, navigate, ...)
 ├── secrets/               # Encrypted secrets (safe to commit)
 │   └── secrets.yaml
 ├── lib/                   # Helper functions
