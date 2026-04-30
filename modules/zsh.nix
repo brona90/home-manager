@@ -103,6 +103,16 @@ in {
             # Editors
             vim = "lvim";
             vi = "lvim";
+
+            # Windows interop -- /mnt/c is dropped from PATH for zsh perf
+            # (FSH command-existence checks per keystroke walk PATH and
+            # stat each /mnt/c entry over the 9P bridge). Alias the few
+            # .exes actually used so habit-typing keeps working.
+            clip = "/mnt/c/WINDOWS/system32/clip.exe";
+            explorer = "/mnt/c/WINDOWS/explorer.exe";
+            cmd = "/mnt/c/WINDOWS/system32/cmd.exe";
+            powershell = "/mnt/c/WINDOWS/system32/WindowsPowerShell/v1.0/powershell.exe";
+            notepad = "/mnt/c/WINDOWS/system32/notepad.exe";
           }
           // cfg.extraAliases;
 
@@ -394,33 +404,16 @@ in {
           ${cfg.extraInitExtra}
         '';
 
-        # Trim slow Windows /mnt/c PATH entries that lag tab-completion and
-        # zsh-fast-syntax-highlighting (each PATH walk hits the 9P bridge).
-        # Kept: /mnt/c/WINDOWS{,*} (cmd, powershell, clip, explorer, ssh.exe),
-        # /mnt/c/Users/*/AppData/Local/Microsoft/WindowsApps (winget, Store).
-        # Dropped: Program Files{,(x86)}, ProgramData, AppData/Local/Programs,
-        # mise, Warp, scoop, .local, user bin/Scripts. Anything dropped that
-        # is still wanted should land as an explicit alias above.
+        # Drop /mnt/c entirely from interactive PATH. Each /mnt/c entry
+        # costs a 9P-bridge stat() per command-name lookup, and zsh-fast-
+        # syntax-highlighting probes the command hash on every keystroke
+        # -- so even the few "kept" entries from the previous trim caused
+        # per-keystroke typing lag. The .exes actually invoked from zsh
+        # are surfaced via shellAliases above (clip, explorer, cmd,
+        # powershell, notepad). Anything else can be run by absolute path
+        # or aliased on demand.
         envExtra = ''
-          # Strip slow Windows /mnt/c PATH entries to keep zsh-fast-syntax-
-          # highlighting and tab-completion snappy. Each /mnt/c entry costs a
-          # 9P-bridge stat() per command-name lookup, which in steady-state
-          # typing fires per keystroke. Kept: /mnt/c/WINDOWS/system32 (clip.exe,
-          # cmd.exe, powershell.exe, wsl.exe) and WindowsApps (winget). Drop
-          # the rest, including OpenSSH/Wbem/WindowsPowerShell/v1.0 which are
-          # never useful from a WSL Linux shell.
-          path=( ''${path:#/mnt/c/[Pp]rogram*} )
-          path=( ''${path:#/mnt/c/ProgramData*} )
-          path=( ''${path:#/mnt/c/Users/*/AppData/Local/Programs*} )
-          path=( ''${path:#/mnt/c/Users/*/AppData/Local/mise*} )
-          path=( ''${path:#/mnt/c/Users/*/AppData/Local/Warp*} )
-          path=( ''${path:#/mnt/c/Users/*/scoop*} )
-          path=( ''${path:#/mnt/c/Users/*/.local*} )
-          path=( ''${path:#/mnt/c/Users/*/bin} )
-          path=( ''${path:#/mnt/c/Users/*/Scripts} )
-          path=( ''${path:#/mnt/c/WINDOWS/System32/OpenSSH} )
-          path=( ''${path:#/mnt/c/WINDOWS/System32/Wbem} )
-          path=( ''${path:#/mnt/c/WINDOWS/System32/WindowsPowerShell*} )
+          path=( ''${path:#/mnt/c/*} )
         '';
 
         history = {
