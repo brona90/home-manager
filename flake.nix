@@ -254,7 +254,8 @@
             tmux-experimental = let
               helperPkg = pkgs.callPackage ./modules/tmux-helper/package.nix {};
               helperBin = "${helperPkg}/bin/tmux-helper";
-              themesJson = pkgs.writeText "tmux-themes.json"
+              themesJson =
+                pkgs.writeText "tmux-themes.json"
                 (builtins.toJSON (import ./modules/tmux/themes.nix));
               confText = import ./modules/tmux/conf-experimental.nix {
                 inherit helperBin;
@@ -337,20 +338,21 @@
         # Runs go vet across the helper sources. buildGoModule's checkPhase
         # already runs go test, but vet only fires for packages with _test.go
         # files; this check exercises every package regardless.
-        tmux-helper-vet = pkgs.runCommand "tmux-helper-vet" {
-          nativeBuildInputs = [pkgs.go];
-        } ''
-          export HOME=$TMPDIR
-          export GOCACHE=$TMPDIR/go-build
-          # Match package.nix: helper is built CGO_ENABLED=0, so vet (which
-          # otherwise resolves runtime/cgo and demands gcc) must match.
-          export CGO_ENABLED=0
-          cp -r ${./modules/tmux-helper/src} src
-          chmod -R u+w src
-          cd src
-          go vet ./...
-          touch $out
-        '';
+        tmux-helper-vet =
+          pkgs.runCommand "tmux-helper-vet" {
+            nativeBuildInputs = [pkgs.go];
+          } ''
+            export HOME=$TMPDIR
+            export GOCACHE=$TMPDIR/go-build
+            # Match package.nix: helper is built CGO_ENABLED=0, so vet (which
+            # otherwise resolves runtime/cgo and demands gcc) must match.
+            export CGO_ENABLED=0
+            cp -r ${./modules/tmux-helper/src} src
+            chmod -R u+w src
+            cd src
+            go vet ./...
+            touch $out
+          '';
       }
     );
   };
