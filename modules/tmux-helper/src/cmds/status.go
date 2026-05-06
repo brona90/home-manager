@@ -18,7 +18,7 @@ import (
 // SSH-aware detection (process tree walk + ssh -G + per-pane file cache).
 func Status(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: status <uptime-fmt|loadavg|user-host|git-branch|nix-shell|llm> [args...]")
+		return fmt.Errorf("usage: status <uptime-fmt|loadavg|user-host|git-branch|nix-shell|llm|battery> [args...]")
 	}
 	switch args[0] {
 	case "uptime-fmt":
@@ -33,6 +33,8 @@ func Status(args []string) error {
 		return statusNixShell()
 	case "llm":
 		return statusLLM(args[1:])
+	case "battery":
+		return statusBattery()
 	default:
 		return fmt.Errorf("unknown status subcommand: %s", args[0])
 	}
@@ -192,5 +194,27 @@ func statusLLM(args []string) error {
 			}
 		}
 	}
+	return nil
+}
+
+// statusBattery prints " <icon> NN%" when a battery is present on the host
+// running the tmux server. Empty on desktops, WSL, and headless servers.
+// Icon picks: charged-on-AC = 🔌, charging = ⚡, low-discharging (≤20%) = 🪫,
+// otherwise 🔋.
+func statusBattery() error {
+	b, err := system.ReadBattery()
+	if err != nil || !b.Present {
+		return nil
+	}
+	icon := "🔋"
+	switch {
+	case b.Charging && b.Percent >= 99:
+		icon = "🔌"
+	case b.Charging:
+		icon = "⚡"
+	case b.Percent <= 20:
+		icon = "🪫"
+	}
+	fmt.Printf(" %s %d%%", icon, b.Percent)
 	return nil
 }

@@ -24,6 +24,8 @@
     statusLeftPrimaryBg = "#ffff00";
     statusLeftSecondaryFg = "#8a8a8a";
     statusLeftSecondaryBg = "#080808";
+    statusLeftTertiaryFg = "#e4e4e4";
+    statusLeftTertiaryBg = "#00afff";
     statusRightAccentFg = "#000000";
     statusRightAccentBg = "#e4e4e4";
     statusRightAlertFg = "#ffffff";
@@ -54,6 +56,8 @@
     statusLeftPrimaryBg = "#cba6f7";
     statusLeftSecondaryFg = "#a6adc8";
     statusLeftSecondaryBg = "#1e1e2e";
+    statusLeftTertiaryFg = "#1e1e2e";
+    statusLeftTertiaryBg = "#89b4fa";
     statusRightAccentFg = "#1e1e2e";
     statusRightAccentBg = "#a6e3a1";
     statusRightAlertFg = "#1e1e2e";
@@ -84,6 +88,8 @@
     statusLeftPrimaryBg = "#7aa2f7";
     statusLeftSecondaryFg = "#a9b1d6";
     statusLeftSecondaryBg = "#1f2335";
+    statusLeftTertiaryFg = "#1f2335";
+    statusLeftTertiaryBg = "#7dcfff";
     statusRightAccentFg = "#1f2335";
     statusRightAccentBg = "#9ece6a";
     statusRightAlertFg = "#1f2335";
@@ -114,6 +120,8 @@
     statusLeftPrimaryBg = "#fabd2f";
     statusLeftSecondaryFg = "#a89984";
     statusLeftSecondaryBg = "#1d2021";
+    statusLeftTertiaryFg = "#1d2021";
+    statusLeftTertiaryBg = "#83a598";
     statusRightAccentFg = "#1d2021";
     statusRightAccentBg = "#b8bb26";
     statusRightAlertFg = "#1d2021";
@@ -144,8 +152,10 @@
     statusLeftPrimaryBg = "#9ccfd8";
     statusLeftSecondaryFg = "#908caa";
     statusLeftSecondaryBg = "#191724";
+    statusLeftTertiaryFg = "#191724";
+    statusLeftTertiaryBg = "#9ccfd8";
     statusRightAccentFg = "#191724";
-    statusRightAccentBg = "#a3be8c";
+    statusRightAccentBg = "#c4a7e7";
     statusRightAlertFg = "#191724";
     statusRightAlertBg = "#eb6f92";
     clockColor = "#c4a7e7";
@@ -174,6 +184,8 @@
     statusLeftPrimaryBg = "#88c0d0";
     statusLeftSecondaryFg = "#d8dee9";
     statusLeftSecondaryBg = "#2e3440";
+    statusLeftTertiaryFg = "#2e3440";
+    statusLeftTertiaryBg = "#81a1c1";
     statusRightAccentFg = "#2e3440";
     statusRightAccentBg = "#a3be8c";
     statusRightAlertFg = "#2e3440";
@@ -204,6 +216,8 @@
     statusLeftPrimaryBg = "#bd93f9";
     statusLeftSecondaryFg = "#f8f8f2";
     statusLeftSecondaryBg = "#282a36";
+    statusLeftTertiaryFg = "#282a36";
+    statusLeftTertiaryBg = "#8be9fd";
     statusRightAccentFg = "#282a36";
     statusRightAccentBg = "#50fa7b";
     statusRightAlertFg = "#282a36";
@@ -234,6 +248,8 @@
     statusLeftPrimaryBg = "#268bd2";
     statusLeftSecondaryFg = "#93a1a1";
     statusLeftSecondaryBg = "#002b36";
+    statusLeftTertiaryFg = "#002b36";
+    statusLeftTertiaryBg = "#2aa198";
     statusRightAccentFg = "#002b36";
     statusRightAccentBg = "#859900";
     statusRightAlertFg = "#002b36";
@@ -264,6 +280,8 @@
     statusLeftPrimaryBg = "#7e9cd8";
     statusLeftSecondaryFg = "#dcd7ba";
     statusLeftSecondaryBg = "#1f1f28";
+    statusLeftTertiaryFg = "#1f1f28";
+    statusLeftTertiaryBg = "#7fb4ca";
     statusRightAccentFg = "#1f1f28";
     statusRightAccentBg = "#98bb6c";
     statusRightAlertFg = "#1f1f28";
@@ -293,6 +311,8 @@
     statusLeftPrimaryBg = "#a6e22e";
     statusLeftSecondaryFg = "#f8f8f2";
     statusLeftSecondaryBg = "#1b1d1e";
+    statusLeftTertiaryFg = "#1b1d1e";
+    statusLeftTertiaryBg = "#66d9ef";
     statusRightAccentFg = "#1b1d1e";
     statusRightAccentBg = "#66d9ef";
     statusRightAlertFg = "#f8f8f2";

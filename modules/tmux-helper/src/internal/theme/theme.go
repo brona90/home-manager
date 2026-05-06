@@ -36,6 +36,8 @@ type Palette struct {
 	StatusLeftPrimaryBg   string `json:"statusLeftPrimaryBg"`
 	StatusLeftSecondaryFg string `json:"statusLeftSecondaryFg"`
 	StatusLeftSecondaryBg string `json:"statusLeftSecondaryBg"`
+	StatusLeftTertiaryFg  string `json:"statusLeftTertiaryFg"`
+	StatusLeftTertiaryBg  string `json:"statusLeftTertiaryBg"`
 	StatusRightAccentFg   string `json:"statusRightAccentFg"`
 	StatusRightAccentBg   string `json:"statusRightAccentBg"`
 	StatusRightAlertFg    string `json:"statusRightAlertFg"`
@@ -114,26 +116,32 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 		{"set-window-option", "-g", "clock-mode-colour", p.ClockColor},
 	}
 
-	// Status-left and status-right rebuilt from palette segments. Includes
-	// the 👓 pairing indicator, ! root indicator (bold,blink), ⌨ prefix, and
-	// 🔒 sync indicator -- all from gpakosz parity.
-	// status-left: gpakosz "❐ session | ↑uptime" layout. The prefix-active
-	// indicator (⌨) lives on status-right where the user expects it; per
-	// user feedback we don't double-up with a left-side block.
+	// status-left: gpakosz 3-segment fade.
+	//   seg1 (Primary, bold): " ❐ #S [git/nix/llm] "
+	//   seg2 (Secondary):     " | "  -- thin separator block
+	//   seg3 (Tertiary):      " ↑ uptime "
 	statusLeft := fmt.Sprintf(
 		`#[fg=%s,bg=%s,bold] ❐ #S#(%s status git-branch #{pane_current_path})#(%s status nix-shell)#(%s status llm #{pane_pid}) #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑ #(%s status uptime-fmt) `,
 		p.StatusLeftPrimaryFg, p.StatusLeftPrimaryBg,
 		helperBin, helperBin, helperBin,
-		p.StatusLeftPrimaryBg, p.StatusLeftSecondaryBg,
 		p.StatusLeftSecondaryFg, p.StatusLeftSecondaryBg,
+		p.StatusLeftTertiaryFg, p.StatusLeftTertiaryBg,
 		helperBin,
 	)
+	// status-right: 3-segment fade matching gpakosz upstream.
+	//   seg1 (StatusFg/Bg, subtle):  loadavg | time + battery
+	//   seg2 (StatusRightAlert, red): date
+	//   seg3 (StatusRightAccent, bold): user@host[!]
+	// Indicators (prefix/pairing/sync) overlay onto seg1.
 	statusRight := fmt.Sprintf(
-		"#{?client_prefix,#[fg=%s]#[bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s] %%R | %%d %%b | #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[bold]#[blink] !#[default],} ",
-		p.StatusRightAlertFg,
-		p.StatusFg, p.StatusBg,
-		p.StatusRightAlertFg, p.StatusRightAlertBg,
-		p.StatusFg, p.StatusBg,
+		"#{?client_prefix,#[fg=%s]#[bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold] #(%s status loadavg) | %%R#(%s status battery) #[fg=%s,bg=%s,nobold] %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[blink] !,} ",
+		p.StatusRightAlertFg,                       // prefix indicator
+		p.StatusFg, p.StatusBg,                     // pairing
+		p.StatusRightAlertFg, p.StatusRightAlertBg, // synchronized
+		p.StatusFg, p.StatusBg,                     // seg1 (loadavg, time, battery)
+		helperBin, helperBin,
+		p.StatusRightAlertFg, p.StatusRightAlertBg, // seg2 (date)
+		p.StatusRightAccentFg, p.StatusRightAccentBg, // seg3 (user-host)
 		helperBin,
 	)
 
