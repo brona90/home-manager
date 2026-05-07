@@ -61,6 +61,9 @@ jobs:
     name: Build Home Configurations
     runs-on: ${{ matrix.runner }}
     needs: check
+    # Cap at 60 min so a stuck build (e.g. shellcheck on lvim wrapper on macOS-14)
+    # surfaces fast instead of bleeding the GitHub Actions 6h job timeout.
+    timeout-minutes: 60
     # Run on push to main/master (not PRs) to populate cache
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     strategy:
@@ -96,7 +99,9 @@ jobs:
       - name: Build home configuration
         run: |
           echo "Building homeConfigurations.${{ matrix.config }}"
-          nix build '.#homeConfigurations."${{ matrix.config }}".activationPackage'
+          # -L (print-build-logs) so a hanging derivation surfaces its actual
+          # build phase output instead of just "building '...drv'..." silence.
+          nix build -L '.#homeConfigurations."${{ matrix.config }}".activationPackage'
           echo "Build complete - artifacts pushed to cachix automatically"
 
   docker-build:
