@@ -51,18 +51,24 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [
-      cfg.package
-      pkgs.ispell
-      pkgs.typescript-language-server
-      pkgs.pyright
-      pkgs.gopls
-      pkgs.haskell-language-server
-      pkgs.jdt-language-server
-      pkgs.sbcl
-      emacsClientWrapper
-      emacsClientTerminal
-    ];
+    home.packages =
+      [
+        cfg.package
+        pkgs.ispell
+        pkgs.typescript-language-server
+        pkgs.pyright
+        pkgs.gopls
+        pkgs.jdt-language-server
+        pkgs.sbcl
+        emacsClientWrapper
+        emacsClientTerminal
+      ]
+      # haskell-language-server is gated to Linux: cache.nixos.org has been
+      # delivering the darwin closure at byte-trickle speed (multiple CI runs
+      # blew the 60min cap copying this single path), and the user doesn't
+      # write Haskell on the corporate Mac. Linux runs build it from cache
+      # in seconds.
+      ++ lib.optional pkgs.stdenv.isLinux pkgs.haskell-language-server;
 
     services.emacs = lib.mkIf cfg.daemon.enable {
       enable = true;
