@@ -470,6 +470,14 @@ in {
       direnv = {
         enable = true;
         nix-direnv.enable = true;
+        # cache.nixos.org doesn't have a darwin binary for direnv 2.37.1, so
+        # CI builds from source. The upstream test suite (zsh ./test/direnv-test.zsh)
+        # hangs on macOS-14 runners after "Testing base", burning the whole 60min
+        # job timeout. Linux builds it the same way but the tests complete fine.
+        package =
+          if pkgs.stdenv.isDarwin
+          then pkgs.direnv.overrideAttrs (_: {doCheck = false;})
+          else pkgs.direnv;
         stdlib = ''
           use_mise() {
             eval "$(mise direnv)"
