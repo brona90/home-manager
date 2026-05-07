@@ -82,6 +82,14 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
             sandbox = false
+            # Mac runs were hanging 50+ min on stalled cache.nixos.org pulls
+            # (e.g. haskell-language-server). Default stalled-download-timeout
+            # is 300s; a slow trickle download below the stall threshold can
+            # bleed the whole 60min job. Tighter values + download-attempts
+            # force a retry that may pick a healthier mirror.
+            stalled-download-timeout = 60
+            connect-timeout = 30
+            download-attempts = 5
 
       # This job PUSHES to cachix (has authToken)
       - uses: cachix/cachix-action@v17
