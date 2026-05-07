@@ -98,6 +98,10 @@
   # prefix-C-l now bound to clear-history (above); use prefix-n for next-window
   bind Tab last-window
 
+  # Window reorder (gpakosz prefix-C-S-H / prefix-C-S-L)
+  bind -r C-S-H swap-window -t -1 \; select-window -t -1
+  bind -r C-S-L swap-window -t +1 \; select-window -t +1
+
   # Maximize-pane (gpakosz prefix-+: break-pane out, restore on second press)
   bind + run-shell "${helperBin} maximize-pane #{session_name} #{pane_id}"
 
