@@ -6,6 +6,14 @@
 }: let
   cfg = config.my.claudeCode;
 
+  # Hoisted out of the enabledPlugins keys to keep an at-sign-prefixed plugin
+  # marketplace string out of the raw file text. GitHub's mention parser
+  # greedy-matches the substring at-cl* (the plugins-official user 404s, so it
+  # falls back to the bot user id 81847) and pulls that bot into the repo's
+  # contributors widget. Splitting the literal preserves the evaluated value
+  # Claude Code reads while avoiding the raw-text mention match in this file.
+  marketplace = "claude-plugins-official";
+
   statusLineScript = pkgs.writeShellApplication {
     name = "claude-statusline";
     runtimeInputs = [pkgs.jq pkgs.git pkgs.coreutils];
@@ -95,9 +103,9 @@
       command = "${statusLineScript}/bin/claude-statusline";
     };
     enabledPlugins = {
-      "lua-lsp@redacted-plugins-official" = true;
-      "pyright-lsp@redacted-plugins-official" = true;
-      "typescript-lsp@redacted-plugins-official" = true;
+      "lua-lsp@${marketplace}" = true;
+      "pyright-lsp@${marketplace}" = true;
+      "typescript-lsp@${marketplace}" = true;
     };
     permissions = {
       allow = [
