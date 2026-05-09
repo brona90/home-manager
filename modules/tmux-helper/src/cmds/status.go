@@ -221,7 +221,13 @@ func statusBattery() error {
 				name = names[0]
 			}
 		}
-		if pal, ok := themes[name]; ok {
+		// pal.BatteryGradient may be the zero value (four empty strings) if
+		// the themes JSON pre-dates the field -- happens when the helper is
+		// run with TMUX_HELPER_THEMES still pointing at an older generation.
+		// Treat empty as "use the global fallback" rather than rendering
+		// 10 #000000 hearts (which all snap to xterm colour16, looking
+		// uniformly black/grey).
+		if pal, ok := themes[name]; ok && pal.BatteryGradient[0] != "" {
 			gradient = theme.Interpolate10(pal.BatteryGradient)
 		}
 	}
