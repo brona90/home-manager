@@ -55,12 +55,22 @@
     allSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
     forAllSystems = nixpkgs.lib.genAttrs allSystems;
 
+    # Setting programs.direnv.package alone isn't enough: something else in
+    # the activation closure still pulls vanilla pkgs.direnv and runs its
+    # zsh test suite, which hangs the macOS-14 CI runner. Overriding via
+    # pkgsFor ensures every consumer of pkgs.direnv gets the patched build.
+    skipDirenvChecksOnDarwin = _final: prev:
+      nixpkgs.lib.optionalAttrs prev.stdenv.isDarwin {
+        direnv = prev.direnv.overrideAttrs (_: {doCheck = false;});
+      };
+
     pkgsFor = system:
       import nixpkgs {
         inherit system;
         config.allowUnfree = true;
         overlays = [
           doom-emacs.overlays.default
+          skipDirenvChecksOnDarwin
         ];
       };
 
