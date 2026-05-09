@@ -141,11 +141,12 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	// Indicators (prefix/pairing/sync) overlay onto seg1.
 	// `status battery` writes the rendered bar text (with embedded #[fg=...]
 	// codes) into the @battery_bar user option as a side effect and prints
-	// nothing. #{E:@battery_bar} forces tmux to re-expand the option's value
-	// as a format string, which honors the embedded #[fg=...] -- something
-	// raw #(...) substitution output does NOT reliably do across tmux builds.
+	// nothing. #{E:#{@battery_bar}} reads the option value (inner #{...})
+	// and expands it as a format (outer E:), so the embedded #[fg=...]
+	// codes are honored -- something raw #(...) substitution output does
+	// NOT reliably do across tmux builds.
 	statusRight := fmt.Sprintf(
-		"#{?client_prefix,#[fg=%s]#[bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold] %%R#(%s status battery)#{E:@battery_bar} #[fg=%s,bg=%s,nobold] %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[blink] !,} ",
+		"#{?client_prefix,#[fg=%s]#[bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold] %%R#(%s status battery)#{E:#{@battery_bar}} #[fg=%s,bg=%s,nobold] %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[blink] !,} ",
 		p.StatusRightAlertFg,                       // prefix indicator
 		p.StatusFg, p.StatusBg,                     // pairing
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // synchronized
