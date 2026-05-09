@@ -12,6 +12,7 @@ import (
 	"tmux-helper/internal/ssh"
 	"tmux-helper/internal/system"
 	"tmux-helper/internal/theme"
+	"tmux-helper/internal/tmux"
 )
 
 // Status routes the 'status' subcommand.
@@ -248,6 +249,15 @@ func statusBattery() error {
 	}
 	bar.WriteString("#[default] ")
 	fmt.Fprintf(&bar, "%d%%", b.Percent)
-	fmt.Print(bar.String())
+
+	// tmux's #(...) substitution does not reprocess inline format codes
+	// like #[fg=...] on every build/version (display-message -p test on
+	// macOS tmux confirmed: hearts render in default-fg). Stash the bar
+	// text in a tmux user option instead; the status format references
+	// #{E:@battery_bar}, where E forces format expansion of the value
+	// and inner #[fg=...] codes are honored.
+	_ = tmux.SetGlobalOption("@battery_bar", bar.String())
+
+	// Print nothing on stdout: the bar shows via #{E:@battery_bar}.
 	return nil
 }
