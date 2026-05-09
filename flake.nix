@@ -67,7 +67,15 @@
     pkgsFor = system:
       import nixpkgs {
         inherit system;
-        config.allowUnfree = true;
+        config = {
+          allowUnfree = true;
+          # sbcl-2.6.3 is marked broken on darwin in the pinned nixpkgs.
+          # It's pulled into the home-manager activation eval (transitively
+          # via emacs lisp packages) so the eval refuses outright. "ignore"
+          # lets eval proceed; if a subsequent build actually invokes sbcl
+          # we'll surface the real failure there instead of at eval-time.
+          problems.handlers.sbcl.broken = "ignore";
+        };
         overlays = [
           doom-emacs.overlays.default
           skipDirenvChecksOnDarwin
