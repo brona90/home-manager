@@ -13,18 +13,14 @@ import (
 	"tmux-helper/internal/system"
 )
 
-// Status routes the 'status' subcommand. Phase 2 implemented uptime-fmt,
-// loadavg, and a local-only user-host. Phase 6 upgrades user-host with
-// SSH-aware detection (process tree walk + ssh -G + per-pane file cache).
+// Status routes the 'status' subcommand.
 func Status(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: status <uptime-fmt|loadavg|user-host|git-branch|nix-shell|llm|battery> [args...]")
+		return fmt.Errorf("usage: status <uptime-fmt|user-host|git-branch|nix-shell|llm|battery> [args...]")
 	}
 	switch args[0] {
 	case "uptime-fmt":
 		return statusUptimeFmt()
-	case "loadavg":
-		return statusLoadavg()
 	case "user-host":
 		return statusUserHost(args[1:])
 	case "git-branch":
@@ -46,15 +42,6 @@ func statusUptimeFmt() error {
 		return err
 	}
 	fmt.Println(system.FormatUptimeShort(d))
-	return nil
-}
-
-func statusLoadavg() error {
-	la, err := system.LoadAvg()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%.2f %.2f %.2f\n", la[0], la[1], la[2])
 	return nil
 }
 
