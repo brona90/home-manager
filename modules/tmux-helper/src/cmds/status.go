@@ -11,6 +11,7 @@ import (
 
 	"tmux-helper/internal/ssh"
 	"tmux-helper/internal/system"
+	"tmux-helper/internal/theme"
 )
 
 // Status routes the 'status' subcommand.
@@ -184,24 +185,69 @@ func statusLLM(args []string) error {
 	return nil
 }
 
-// statusBattery prints " <icon> NN%" when a battery is present on the host
-// running the tmux server. Empty on desktops, WSL, and headless servers.
-// Icon picks: charged-on-AC = 🔌, charging = ⚡, low-discharging (≤20%) = 🪫,
-// otherwise 🔋.
+// fallbackBatteryGradient is used when the active theme can't be resolved
+// (themes JSON unreadable, or unknown theme name in @tmux_theme_preset).
+// Matches the gpakosz default red→orange→yellow→green spectrum.
+var fallbackBatteryGradient = theme.Interpolate10([4]string{
+	"#ff0000", "#ffaf00", "#afff00", "#00ff00",
+})
+
+// statusBattery prints a 10-cell heart bar followed by NN% when a battery
+// is present on the host running the tmux server. Cells 0..(charge/10)-1
+// render as colored hearts using the active theme's batteryGradient
+// (4 anchors interpolated to 10 cells); remaining cells render as a dim
+// "·". A charging indicator (🔌 fully charged, ⚡ charging, 🪫 low)
+// prefixes the bar. Empty output on desktops, WSL, and headless servers.
 func statusBattery() error {
 	b, err := system.ReadBattery()
 	if err != nil || !b.Present {
 		return nil
 	}
-	icon := "🔋"
+
+	// Round-half-up to the nearest 10% bucket, clamped to [0, 10].
+	cells := (b.Percent + 5) / 10
+	if cells < 0 {
+		cells = 0
+	}
+	if cells > 10 {
+		cells = 10
+	}
+
+	gradient := fallbackBatteryGradient
+	if themes, err := loadThemes(); err == nil {
+		name := strings.TrimSpace(maybeOpt(optThemePreset))
+		if name == "" {
+			if names := themes.Names(); len(names) > 0 {
+				name = names[0]
+			}
+		}
+		if pal, ok := themes[name]; ok {
+			gradient = theme.Interpolate10(pal.BatteryGradient)
+		}
+	}
+
+	prefix := ""
 	switch {
 	case b.Charging && b.Percent >= 99:
-		icon = "🔌"
+		prefix = "🔌 "
 	case b.Charging:
-		icon = "⚡"
+		prefix = "⚡ "
 	case b.Percent <= 20:
-		icon = "🪫"
+		prefix = "🪫 "
 	}
-	fmt.Printf(" %s %d%%", icon, b.Percent)
+
+	var bar strings.Builder
+	bar.WriteString(" ")
+	bar.WriteString(prefix)
+	for i := 0; i < 10; i++ {
+		if i < cells {
+			fmt.Fprintf(&bar, "#[fg=%s]♥", gradient[i])
+		} else {
+			bar.WriteString("#[fg=colour240]·")
+		}
+	}
+	bar.WriteString("#[default] ")
+	fmt.Fprintf(&bar, "%d%%", b.Percent)
+	fmt.Print(bar.String())
 	return nil
 }

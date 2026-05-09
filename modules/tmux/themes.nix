@@ -31,6 +31,7 @@
     statusRightAlertFg = "#ffffff";
     statusRightAlertBg = "#d70000";
     clockColor = "#00afff";
+    batteryGradient = ["#d70000" "#ff8700" "#5fff00" "#00afff"];
   };
 
   catppuccin-mocha = {
@@ -63,6 +64,7 @@
     statusRightAlertFg = "#1e1e2e";
     statusRightAlertBg = "#f38ba8";
     clockColor = "#89b4fa";
+    batteryGradient = ["#f38ba8" "#fab387" "#f9e2af" "#a6e3a1"];
   };
 
   tokyonight = {
@@ -95,6 +97,7 @@
     statusRightAlertFg = "#1f2335";
     statusRightAlertBg = "#f7768e";
     clockColor = "#7dcfff";
+    batteryGradient = ["#f7768e" "#ff9e64" "#e0af68" "#9ece6a"];
   };
 
   gruvbox = {
@@ -127,6 +130,7 @@
     statusRightAlertFg = "#1d2021";
     statusRightAlertBg = "#fb4934";
     clockColor = "#83a598";
+    batteryGradient = ["#fb4934" "#fe8019" "#fabd2f" "#b8bb26"];
   };
 
   rose-pine = {
@@ -159,6 +163,7 @@
     statusRightAlertFg = "#191724";
     statusRightAlertBg = "#eb6f92";
     clockColor = "#c4a7e7";
+    batteryGradient = ["#eb6f92" "#f6c177" "#ebbcba" "#9ccfd8"];
   };
 
   nord = {
@@ -191,6 +196,7 @@
     statusRightAlertFg = "#2e3440";
     statusRightAlertBg = "#bf616a";
     clockColor = "#81a1c1";
+    batteryGradient = ["#bf616a" "#d08770" "#ebcb8b" "#a3be8c"];
   };
 
   dracula = {
@@ -223,6 +229,7 @@
     statusRightAlertFg = "#282a36";
     statusRightAlertBg = "#ff5555";
     clockColor = "#8be9fd";
+    batteryGradient = ["#ff5555" "#ffb86c" "#f1fa8c" "#50fa7b"];
   };
 
   solarized-dark = {
@@ -255,6 +262,7 @@
     statusRightAlertFg = "#002b36";
     statusRightAlertBg = "#dc322f";
     clockColor = "#2aa198";
+    batteryGradient = ["#dc322f" "#cb4b16" "#b58900" "#859900"];
   };
 
   kanagawa = {
@@ -287,6 +295,7 @@
     statusRightAlertFg = "#1f1f28";
     statusRightAlertBg = "#e82424";
     clockColor = "#7fb4ca";
+    batteryGradient = ["#c34043" "#ff9e3b" "#dca561" "#76946a"];
   };
   molokai = {
     paneBorder = "#3a3d3f";
@@ -318,5 +327,6 @@
     statusRightAlertFg = "#f8f8f2";
     statusRightAlertBg = "#f92672";
     clockColor = "#a6e22e";
+    batteryGradient = ["#f92672" "#fd971f" "#e6db74" "#a6e22e"];
   };
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 )
 
 // Palette mirrors modules/tmux/themes.nix attrset entry-by-entry. Field tags
@@ -43,6 +44,11 @@ type Palette struct {
 	StatusRightAlertFg    string `json:"statusRightAlertFg"`
 	StatusRightAlertBg    string `json:"statusRightAlertBg"`
 	ClockColor            string `json:"clockColor"`
+
+	// BatteryGradient is a 4-color anchor list (#rrggbb each) used by the
+	// battery heart bar. anchors[0] paints cell 0, anchors[3] paints cell 9;
+	// the remaining cells are linearly interpolated in RGB.
+	BatteryGradient [4]string `json:"batteryGradient"`
 }
 
 // Themes maps a theme name to its palette.
@@ -150,4 +156,40 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 		[]string{"set-option", "-g", "status-right", statusRight},
 	)
 	return cmds
+}
+
+// Interpolate10 returns 10 #rrggbb colors evenly distributed across four
+// anchor colors in linear RGB space. Cell 0 is anchors[0]; cell 9 is
+// anchors[3]; intermediate cells fall on the line between adjacent anchors.
+// Anchors must be #rrggbb literals; malformed entries silently render as
+// black for that channel and do not abort the bar.
+func Interpolate10(anchors [4]string) [10]string {
+	var rgbs [4][3]int
+	for i, h := range anchors {
+		rgbs[i] = hexToRGB(h)
+	}
+	var out [10]string
+	for i := 0; i < 10; i++ {
+		// Map cell index 0..9 onto the 0..3 anchor space.
+		t := float64(i) * 3.0 / 9.0
+		idx := int(t)
+		if idx >= 3 {
+			idx = 2
+		}
+		f := t - float64(idx)
+		a := rgbs[idx]
+		b := rgbs[idx+1]
+		r := int(float64(a[0])*(1-f) + float64(b[0])*f + 0.5)
+		g := int(float64(a[1])*(1-f) + float64(b[1])*f + 0.5)
+		bl := int(float64(a[2])*(1-f) + float64(b[2])*f + 0.5)
+		out[i] = fmt.Sprintf("#%02x%02x%02x", r, g, bl)
+	}
+	return out
+}
+
+func hexToRGB(s string) [3]int {
+	s = strings.TrimPrefix(s, "#")
+	var rgb [3]int
+	_, _ = fmt.Sscanf(s, "%02x%02x%02x", &rgb[0], &rgb[1], &rgb[2])
+	return rgb
 }
