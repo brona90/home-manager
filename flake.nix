@@ -127,11 +127,6 @@
               ./modules/zscaler-bypass.nix
               # Zscaler bypass routes only on corporate machines (user 888973)
               {my.zscalerBypass.enable = username == "888973";}
-              # tmux-helper at /usr/local/bin/tmux-helper (stable path + cdhash
-              # for BeyondTrust EPM fingerprinting) only on the BT-managed
-              # corporate Mac. Personal Macs get the helper from the nix-store
-              # path directly (no one-time sudo install needed).
-              {my.tmux.preferSystemPath = username == "888973";}
             ]
           )
           ++ [
