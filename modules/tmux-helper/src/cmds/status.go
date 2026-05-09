@@ -241,21 +241,12 @@ func statusBattery() error {
 	bar.WriteString(prefix)
 	for i := 0; i < 10; i++ {
 		if i < cells {
-			// Raw ANSI 256-color SGR escape rather than tmux's `#[fg=...]`
-			// markup. tmux's format parser silently drops style directives
-			// in some `#(...)` output paths (observed on macOS tmux 3.x);
-			// raw SGR bytes pass through tmux untouched and the terminal
-			// applies them directly.
-			fmt.Fprintf(&bar, "\x1b[38;5;%dm♥", theme.HexTo256(gradient[i]))
+			fmt.Fprintf(&bar, "#[fg=colour%d]♥", theme.HexTo256(gradient[i]))
 		} else {
-			// Reset to default fg so the dot inherits the ambient status
-			// style (visible against any theme bg).
-			bar.WriteString("\x1b[39m·")
+			bar.WriteString("#[fg=default]·")
 		}
 	}
-	// Reset all SGR attributes after the bar so subsequent status segments
-	// render in their own configured style.
-	bar.WriteString("\x1b[0m ")
+	bar.WriteString("#[default] ")
 	fmt.Fprintf(&bar, "%d%%", b.Percent)
 	fmt.Print(bar.String())
 	return nil
