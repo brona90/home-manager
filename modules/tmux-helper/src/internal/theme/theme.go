@@ -193,3 +193,31 @@ func hexToRGB(s string) [3]int {
 	_, _ = fmt.Sscanf(s, "%02x%02x%02x", &rgb[0], &rgb[1], &rgb[2])
 	return rgb
 }
+
+// xterm256Cube is the per-channel value scheme for the 6×6×6 RGB cube at
+// xterm color indices 16..231: each channel value picks one of these.
+var xterm256Cube = [6]int{0, 95, 135, 175, 215, 255}
+
+// HexTo256 returns the xterm 256-color index closest to the given hex.
+// Uses the 6×6×6 RGB cube (indices 16..231) with the standard non-linear
+// step values; grayscale (232..255) is not considered. Hex colors are
+// emitted as `colourN` strings inside `#(...)` substitution output where
+// tmux's format parser swallows literal `#` escapes.
+func HexTo256(hex string) int {
+	rgb := hexToRGB(hex)
+	snap := func(v int) int {
+		best, bestDist := 0, 1<<30
+		for i, c := range xterm256Cube {
+			d := v - c
+			if d < 0 {
+				d = -d
+			}
+			if d < bestDist {
+				bestDist = d
+				best = i
+			}
+		}
+		return best
+	}
+	return 16 + 36*snap(rgb[0]) + 6*snap(rgb[1]) + snap(rgb[2])
+}

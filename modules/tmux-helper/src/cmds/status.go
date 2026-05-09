@@ -241,17 +241,15 @@ func statusBattery() error {
 	bar.WriteString(prefix)
 	for i := 0; i < 10; i++ {
 		if i < cells {
-			// Hex color leading-# must be doubled for tmux. When the helper's
-			// stdout is interpolated back into the status format, tmux's
-			// parser treats a single `#` followed by a non-special char as
-			// the start of an escape, mangling `#[fg=#ff0000]`. `##` decodes
-			// to a literal `#` so the parser sees fg=#ff0000 cleanly.
-			hex := strings.Replace(gradient[i], "#", "##", 1)
-			fmt.Fprintf(&bar, "#[fg=%s]♥", hex)
+			// tmux's format parser is unreliable with `#[fg=#rrggbb]` inside
+			// `#(...)` substitution output (the leading `#` of the hex value
+			// is consumed as the start of a new escape), so emit the closest
+			// xterm 256-color index instead. Coarser than truecolor but
+			// renders consistently across tmux versions.
+			fmt.Fprintf(&bar, "#[fg=colour%d]♥", theme.HexTo256(gradient[i]))
 		} else {
 			// Inherit the ambient status-style fg so the dot stays visible
-			// across all palettes (a fixed colour240 disappears against dark
-			// theme backgrounds).
+			// across all palettes.
 			bar.WriteString("#[fg=default]·")
 		}
 	}
