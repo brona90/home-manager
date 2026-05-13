@@ -59,10 +59,13 @@ in {
         pkgs.pyright
         pkgs.gopls
         pkgs.jdt-language-server
-        pkgs.sbcl
         emacsClientWrapper
         emacsClientTerminal
       ]
+      # sbcl is gated to Linux: the ECL bootstrap segfaults on macOS
+      # (upstream nixpkgs issue with SBCL 2.6.3). Installed via Homebrew
+      # on Darwin instead (see home/darwin.nix).
+      ++ lib.optional pkgs.stdenv.isLinux pkgs.sbcl
       # haskell-language-server is gated to Linux: cache.nixos.org has been
       # delivering the darwin closure at byte-trickle speed (multiple CI runs
       # blew the 60min cap copying this single path), and the user doesn't
