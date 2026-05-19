@@ -6,6 +6,7 @@
 }: {
   my = {
     gpg.enableYubiKey = true;
+    displayplacer.enable = true;
 
     zsh.extraAliases = {
       ls = "ls -G"; # macOS ls uses -G for color

@@ -125,6 +125,7 @@
             else [
               ./home/darwin.nix
               ./modules/zscaler-bypass.nix
+              ./modules/displayplacer.nix
               # Zscaler bypass routes only on corporate machines (user 888973)
               {my.zscalerBypass.enable = username == "888973";}
             ]
