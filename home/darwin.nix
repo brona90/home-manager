@@ -14,6 +14,10 @@
   };
 
   home = {
+    packages = with pkgs; [
+      claude-code # Anthropic Claude CLI
+    ];
+
     # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
     # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
     # symlinked into ~/Library/Fonts/ so macOS can discover them.
