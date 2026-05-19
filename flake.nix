@@ -138,6 +138,7 @@
 
               my = {
                 tmux.enable = true;
+                tmux.theme.preset = "nord";
                 tmuxHelper.enable = true;
                 emacs = {
                   enable = true;
