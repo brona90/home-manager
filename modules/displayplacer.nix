@@ -44,11 +44,11 @@
           /^Persistent screen id:/ { id=$NF; type=""; next }
           /^Type:/                 { type=tolower($0) }
           /^$/ {
-            if (id != "" && type !~ /built-?in/) { print id; exit }
+            if (id != "" && type !~ /built[- ]?in/) { print id; exit }
             id=""; type=""
           }
           END {
-            if (id != "" && type !~ /built-?in/) print id
+            if (id != "" && type !~ /built[- ]?in/) print id
           }
         '
       }
