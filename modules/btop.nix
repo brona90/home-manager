@@ -19,7 +19,7 @@ in {
     programs.btop = {
       enable = true;
       settings = {
-        color_theme = "Default";
+        color_theme = "matcha-dark-sea";
         theme_background = false;
         vim_keys = true;
         update_ms = cfg.updateMs;
