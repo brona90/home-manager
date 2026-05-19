@@ -64,7 +64,7 @@
           rectangle \
           signal \
           slack
-        $DRY_RUN_CMD "$_brew" install lilypond sbcl
+        $DRY_RUN_CMD "$_brew" install lilypond sbcl displayplacer
       fi
     '';
   };
