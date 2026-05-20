@@ -94,6 +94,31 @@ in {
       };
     })
 
+    # --- macOS gpg-agent (no Linux home-manager service available on Darwin) ---
+    (lib.mkIf (!isLinux) {
+      programs.zsh.initContent = lib.mkAfter ''
+        if [[ -t 1 ]]; then
+          GPG_TTY=$(tty)
+          export GPG_TTY
+          gpg-connect-agent updatestartuptty /bye >/dev/null 2>&1
+        fi
+      '';
+
+      home.file.".gnupg/gpg-agent.conf".text = ''
+        # Managed by home-manager (modules/gpg.nix). Short cache TTL so commit
+        # signing prompts for a passphrase rather than silently using cached
+        # credentials. default = idle re-prompt; max = absolute re-prompt.
+        pinentry-program ${pkgs.pinentry_mac}/Applications/pinentry-mac.app/Contents/MacOS/pinentry-mac
+        default-cache-ttl 60
+        max-cache-ttl 300
+      '';
+
+      # Drop cached credentials and pick up the new config on every activation.
+      home.activation.reloadGpgAgent = lib.hm.dag.entryAfter ["writeBoundary"] ''
+        $DRY_RUN_CMD ${pkgs.gnupg}/bin/gpgconf --kill gpg-agent 2>/dev/null || true
+      '';
+    })
+
     # --- Windows forwarding (WSL YubiKey bridge) ---
     (lib.mkIf (isLinux && cfg.forwardToWindows) {
       programs.gpg.settings = {
