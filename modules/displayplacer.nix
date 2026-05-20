@@ -1,7 +1,9 @@
 # Wrapper around Homebrew's `displayplacer` providing named resolution
 # presets for common ultrawide / UHD monitors. The script resolves the
-# external (non-built-in) display's persistent ID at runtime, so presets
-# work regardless of which monitor is connected.
+# main display's persistent ID at runtime (the one macOS reports as
+# origin (0,0)), so presets target whatever the system currently treats
+# as the primary screen — typically an external monitor when one is
+# attached, otherwise the built-in.
 #
 # Usage:
 #   dp list             — show all displays + available modes
@@ -38,31 +40,62 @@
         exit 1
       fi
 
-      # Find the first non-built-in display's persistent screen ID
-      _external_id() {
+      # Find the main display's persistent screen ID (the one at origin 0,0).
+      # head -n 1 sidesteps BSD awk re-running END after exit.
+      _main_id() {
         "$DP" list | /usr/bin/awk '
-          /^Persistent screen id:/ { id=$NF; type=""; next }
-          /^Type:/                 { type=tolower($0) }
+          /^Persistent screen id:/ { id=$NF; main=0; next }
+          /^Origin:.*main display/ { main=1 }
           /^$/ {
-            if (id != "" && type !~ /built[- ]?in/) { print id; exit }
-            id=""; type=""
+            if (main && id != "") { print id; exit }
+            id=""; main=0
           }
-          END {
-            if (id != "" && type !~ /built[- ]?in/) print id
-          }
-        '
+        ' | /usr/bin/head -n 1
       }
 
-      _set_external() {
-        local res=$1 hz=''${2:-60} scaling=''${3:-off}
+      # Print supported resolutions for a given display id, deduped.
+      _supported_res() {
+        local id=$1
+        "$DP" list | /usr/bin/awk -v id="$id" '
+          /^Persistent screen id:/ { want=($NF==id); next }
+          want && /^  mode/ {
+            for (i=1; i<=NF; i++) if ($i ~ /^res:/) print substr($i, 5)
+          }
+        ' | /usr/bin/sort -u
+      }
+
+      _set_main() {
+        local res=$1 hz=$2 scaling=''${3:-off}
         local id
-        id=$(_external_id)
+        id=$(_main_id)
         if [[ -z "$id" ]]; then
-          echo "error: no external display detected. Connect the monitor and try again." >&2
+          echo "error: could not identify main display from 'displayplacer list'." >&2
           exit 1
         fi
-        echo "→ external display $id : ''${res} @ ''${hz}Hz (scaling:$scaling)"
-        "$DP" "id:$id res:$res hz:$hz color_depth:8 scaling:$scaling origin:(0,0) degree:0"
+
+        local hz_part="" hz_label="(any hz)"
+        if [[ -n "$hz" ]]; then
+          hz_part="hz:$hz "
+          hz_label="@ ''${hz}Hz"
+        fi
+
+        echo "→ main display $id : ''${res} ''${hz_label} (scaling:$scaling)"
+
+        # Try requested mode; if it fails and hz was specified, retry without
+        # hz (built-in MBP panels report Hertz: N/A and reject any hz spec).
+        if "$DP" "id:$id res:$res ''${hz_part}color_depth:8 scaling:$scaling origin:(0,0) degree:0" 2>/dev/null; then
+          return 0
+        fi
+        if [[ -n "$hz_part" ]] \
+          && "$DP" "id:$id res:$res color_depth:8 scaling:$scaling origin:(0,0) degree:0" 2>/dev/null; then
+          echo "  (applied without hz — this display has no configurable refresh rate)"
+          return 0
+        fi
+
+        echo "" >&2
+        echo "Mode ''${res} not supported by this display. Supported resolutions:" >&2
+        _supported_res "$id" | /usr/bin/sed 's/^/  /' >&2
+        exit 1
       }
 
       _usage() {
@@ -92,9 +125,11 @@ HiDPI variants (Retina-style — only on supported displays):
   uwqhd-hidpi           3440 x 1440 scaled
 
 Custom:
-  set WIDTHxHEIGHT [HZ]  Apply arbitrary resolution (HZ defaults to 60)
+  set WIDTHxHEIGHT [HZ]  Apply arbitrary resolution (HZ optional)
 
-Each preset accepts an optional refresh rate as the second arg, e.g.:
+Each preset accepts an optional refresh rate as the second arg. If
+omitted, displayplacer picks any matching mode (necessary for built-in
+laptop panels, which report Hertz: N/A). Examples:
   dp uwqhd 100          3440x1440 @ 100 Hz
   dp 4k 30              3840x2160 @ 30 Hz (useful over Remote Desktop)
 EOF
@@ -104,30 +139,30 @@ EOF
         list) "$DP" list ;;
 
         # Ultrawide
-        uwfhd)             _set_external 2560x1080 "''${2:-60}" ;;
-        uwqhd)             _set_external 3440x1440 "''${2:-60}" ;;
-        uwqhd-plus)        _set_external 3840x1600 "''${2:-60}" ;;
-        5k2k)              _set_external 5120x2160 "''${2:-60}" ;;
-        dqhd|super-uw)     _set_external 5120x1440 "''${2:-60}" ;;
-        dwuxga)            _set_external 3840x1200 "''${2:-60}" ;;
+        uwfhd)             _set_main 2560x1080 "''${2:-}" ;;
+        uwqhd)             _set_main 3440x1440 "''${2:-}" ;;
+        uwqhd-plus)        _set_main 3840x1600 "''${2:-}" ;;
+        5k2k)              _set_main 5120x2160 "''${2:-}" ;;
+        dqhd|super-uw)     _set_main 5120x1440 "''${2:-}" ;;
+        dwuxga)            _set_main 3840x1200 "''${2:-}" ;;
 
         # 16:9
-        4k|uhd)            _set_external 3840x2160 "''${2:-60}" ;;
-        1440p|qhd)         _set_external 2560x1440 "''${2:-60}" ;;
-        1200p|wuxga)       _set_external 1920x1200 "''${2:-60}" ;;
-        1080p|fhd)         _set_external 1920x1080 "''${2:-60}" ;;
-        720p)              _set_external 1280x720  "''${2:-60}" ;;
+        4k|uhd)            _set_main 3840x2160 "''${2:-}" ;;
+        1440p|qhd)         _set_main 2560x1440 "''${2:-}" ;;
+        1200p|wuxga)       _set_main 1920x1200 "''${2:-}" ;;
+        1080p|fhd)         _set_main 1920x1080 "''${2:-}" ;;
+        720p)              _set_main 1280x720  "''${2:-}" ;;
 
         # HiDPI variants
-        4k-hidpi)          _set_external 3840x2160 "''${2:-60}" on ;;
-        uwqhd-hidpi)       _set_external 3440x1440 "''${2:-60}" on ;;
+        4k-hidpi)          _set_main 3840x2160 "''${2:-}" on ;;
+        uwqhd-hidpi)       _set_main 3440x1440 "''${2:-}" on ;;
 
         set)
           if [[ -z "''${2:-}" ]]; then
             echo "Usage: dp set WIDTHxHEIGHT [HZ]" >&2
             exit 1
           fi
-          _set_external "$2" "''${3:-60}"
+          _set_main "$2" "''${3:-}"
           ;;
 
         ""|--help|-h|help) _usage ;;
