@@ -54,6 +54,7 @@
 
       if [[ -n "$_brew" ]]; then
         $DRY_RUN_CMD "$_brew" install --cask \
+          betterdisplay \
           calibre \
           chrome-remote-desktop-host \
           clipy \
