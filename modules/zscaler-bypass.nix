@@ -385,17 +385,18 @@ in {
       _dest="/Library/LaunchDaemons/$_label.plist"
       _src="${plist}"
 
-      # Install/update only when the plist has changed
-      if ! diff -q "$_src" "$_dest" &>/dev/null; then
-        $DRY_RUN_CMD /usr/bin/sudo /bin/launchctl bootout "system/$_label" 2>/dev/null || true
-        $DRY_RUN_CMD /usr/bin/sudo /bin/cp -f "$_src" "$_dest"
-        $DRY_RUN_CMD /usr/bin/sudo /bin/chmod 644 "$_dest"
-        $DRY_RUN_CMD /usr/bin/sudo /usr/sbin/chown root:wheel "$_dest"
-        $DRY_RUN_CMD /usr/bin/sudo /bin/launchctl bootstrap system "$_dest"
-      fi
-
-      # Always re-apply routes as root so they survive Zscaler restarts and hms runs
-      $DRY_RUN_CMD /usr/bin/sudo ${bypassScript}/bin/zscaler-bypass || true
+      # Single sudo call: update plist if changed, then re-apply routes
+      $DRY_RUN_CMD /usr/bin/sudo /bin/bash -s "$_label" "$_dest" "$_src" "${bypassScript}/bin/zscaler-bypass" << 'PRIV_EOF'
+        _label="$1"; _dest="$2"; _src="$3"; _bypass="$4"
+        if ! diff -q "$_src" "$_dest" &>/dev/null; then
+          /bin/launchctl bootout "system/$_label" 2>/dev/null || true
+          /bin/cp -f "$_src" "$_dest"
+          /bin/chmod 644 "$_dest"
+          /usr/sbin/chown root:wheel "$_dest"
+          /bin/launchctl bootstrap system "$_dest"
+        fi
+        "$_bypass" || true
+      PRIV_EOF
     '';
   };
 }
