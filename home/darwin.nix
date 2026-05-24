@@ -31,7 +31,7 @@
       recursive = true;
     };
 
-    activation.homebrew = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    activation.homebrew = lib.hm.dag.entryAfter ["writeBoundary" "zscalerBypass"] ''
       # Install Homebrew if not present
       if ! command -v brew &>/dev/null \
           && [[ ! -x /opt/homebrew/bin/brew ]] \
