@@ -188,11 +188,11 @@
               [[ -f "$CONF" ]] || /usr/bin/touch "$CONF"
             }
 
-            # Re-run the daemon as root so it picks up config changes immediately
+            # Re-run the bypass script as root so routes take effect immediately
             _apply() {
               if /usr/bin/pgrep -x ZscalerTunnel > /dev/null 2>&1; then
-                echo "Applying routes via daemon..."
-                /usr/bin/sudo /bin/launchctl kickstart -k "system/${daemonLabel}"
+                echo "Applying routes..."
+                /usr/bin/sudo ${bypassScript}/bin/zscaler-bypass
               fi
             }
 
