@@ -355,6 +355,10 @@ in {
         # python.org / pypi.org / files.pythonhosted.org covered by subnet (151.101.0.0/16)
         "pypi.org"
         "files.pythonhosted.org"
+        # Homebrew cask sources
+        "dl.discordapp.net"
+        "updates.signal.org"
+        "downloads.slack-edge.com"
       ];
       description = "Hostnames whose resolved IPs get direct /32 routes bypassing Zscaler";
     };
