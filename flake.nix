@@ -75,6 +75,12 @@
           # lets eval proceed; if a subsequent build actually invokes sbcl
           # we'll surface the real failure there instead of at eval-time.
           problems.handlers.sbcl.broken = "ignore";
+          # Suppress the per-eval x86_64-darwin deprecation warning from
+          # nixpkgs (it fires on every flake check / hms on this Intel
+          # Mac). The deprecation is acknowledged -- 26.05 is the last
+          # release supporting x86_64-darwin -- and tracked separately
+          # from CI noise.
+          allowDeprecatedx86_64Darwin = true;
         };
         overlays = [
           doom-emacs.overlays.default

@@ -8,7 +8,9 @@
 }:
 pkgs.writeShellApplication {
   name = "tmux-helper-install";
-  runtimeInputs = [pkgs.coreutils pkgs.sudo];
+  # pkgs.sudo is Linux-only; on macOS we rely on /usr/bin/sudo via the
+  # inherited PATH (writeShellApplication's default inheritPath = true).
+  runtimeInputs = [pkgs.coreutils];
   text = ''
     set -euo pipefail
     HELPER=${helperPackage}/bin/tmux-helper
