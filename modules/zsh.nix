@@ -412,8 +412,19 @@ in {
         # are surfaced via shellAliases above (clip, explorer, cmd,
         # powershell, notepad). Anything else can be run by absolute path
         # or aliased on demand.
+        #
+        # On Darwin, also re-source nix-daemon.sh from .zshenv. macOS
+        # system updates periodically reset /etc/zshrc and /etc/zprofile,
+        # wiping the nix-daemon sourcing the installer added there. The
+        # nix-daemon script self-guards via __ETC_PROFILE_NIX_SOURCED, so
+        # this is safe even when /etc/zshrc is intact.
         envExtra = ''
           path=( ''${path:#/mnt/c/*} )
+        ''
+        + lib.optionalString pkgs.stdenv.isDarwin ''
+          if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
+            . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+          fi
         '';
 
         history = {
