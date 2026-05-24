@@ -325,6 +325,8 @@
       </array>
       <key>RunAtLoad</key>
       <true/>
+      <key>StartInterval</key>
+      <integer>300</integer>
       <key>WatchPaths</key>
       <array>
         <string>/private/var/run/resolv.conf</string>
@@ -343,12 +345,14 @@ in {
         "nix-community.cachix.org"
         "gfoster.cachix.org"
         # github.com / api.github.com / codeload.github.com covered by subnets (140.82.112.0/20)
+        # release-assets.githubusercontent.com covered by subnet (185.199.108.0/22)
         "objects.githubusercontent.com"
         "raw.githubusercontent.com"
         "registry.npmjs.org"
         "crates.io"
         "static.crates.io"
         "index.crates.io"
+        # python.org / pypi.org / files.pythonhosted.org covered by subnet (151.101.0.0/16)
         "pypi.org"
         "files.pythonhosted.org"
       ];
@@ -360,6 +364,10 @@ in {
       default = [
         # GitHub's IP range — github.com/api.github.com/codeload rotate within this /20
         "140.82.112.0/20"
+        # GitHub Pages / release-assets.githubusercontent.com
+        "185.199.108.0/22"
+        # Fastly CDN — python.org, pypi.org, files.pythonhosted.org, crates.io, etc.
+        "151.101.0.0/16"
       ];
       description = "CIDR subnets to bypass Zscaler for via direct network routes";
     };
@@ -381,6 +389,9 @@ in {
         $DRY_RUN_CMD /usr/bin/sudo /usr/sbin/chown root:wheel "$_dest"
         $DRY_RUN_CMD /usr/bin/sudo /bin/launchctl bootstrap system "$_dest"
       fi
+
+      # Always re-apply routes as root so they survive Zscaler restarts and hms runs
+      $DRY_RUN_CMD /usr/bin/sudo ${bypassScript}/bin/zscaler-bypass || true
     '';
   };
 }
