@@ -48,6 +48,8 @@ in {
               "${secretsDir}/github_token.tmp" \
               "${secretsDir}/dockerhub_token.tmp" \
               "${secretsDir}/cachix_token.tmp" \
+              "${secretsDir}/porkbun_api_key.tmp" \
+              "${secretsDir}/porkbun_secret_key.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" \
               "${secretsDir}/gpg_private_key.tmp" \
@@ -75,6 +77,17 @@ in {
               if ${pkgs.sops}/bin/sops -d --extract '["cachix_token"]' "${secretsFile}" > "${secretsDir}/cachix_token.tmp" 2>/dev/null; then
                 chmod 0400 "${secretsDir}/cachix_token.tmp"
                 mv -f "${secretsDir}/cachix_token.tmp" "${secretsDir}/cachix_token"
+              fi
+
+              # Decrypt Porkbun API credentials
+              if ${pkgs.sops}/bin/sops -d --extract '["porkbun"]["api_key"]' "${secretsFile}" > "${secretsDir}/porkbun_api_key.tmp" 2>/dev/null; then
+                chmod 0400 "${secretsDir}/porkbun_api_key.tmp"
+                mv -f "${secretsDir}/porkbun_api_key.tmp" "${secretsDir}/porkbun_api_key"
+              fi
+
+              if ${pkgs.sops}/bin/sops -d --extract '["porkbun"]["secret_key"]' "${secretsFile}" > "${secretsDir}/porkbun_secret_key.tmp" 2>/dev/null; then
+                chmod 0400 "${secretsDir}/porkbun_secret_key.tmp"
+                mv -f "${secretsDir}/porkbun_secret_key.tmp" "${secretsDir}/porkbun_secret_key"
               fi
 
               # Decrypt SSH keys - write directly, not via symlink
@@ -126,6 +139,8 @@ in {
         GITHUB_TOKEN_FILE = "${secretsDir}/github_token";
         DOCKERHUB_TOKEN_FILE = "${secretsDir}/dockerhub_token";
         CACHIX_TOKEN_FILE = "${secretsDir}/cachix_token";
+        PORKBUN_API_KEY_FILE = "${secretsDir}/porkbun_api_key";
+        PORKBUN_SECRET_KEY_FILE = "${secretsDir}/porkbun_secret_key";
       };
     };
 
@@ -144,6 +159,12 @@ in {
         };
         cachix_token = {
           path = "${secretsDir}/cachix_token";
+        };
+        "porkbun/api_key" = {
+          path = "${secretsDir}/porkbun_api_key";
+        };
+        "porkbun/secret_key" = {
+          path = "${secretsDir}/porkbun_secret_key";
         };
         "ssh/${cfg.sshKeyName}" = {
           path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}";
@@ -172,10 +193,14 @@ in {
       export GITHUB_TOKEN_FILE="${secretsDir}/github_token"
       export DOCKERHUB_TOKEN_FILE="${secretsDir}/dockerhub_token"
       export CACHIX_TOKEN_FILE="${secretsDir}/cachix_token"
+      export PORKBUN_API_KEY_FILE="${secretsDir}/porkbun_api_key"
+      export PORKBUN_SECRET_KEY_FILE="${secretsDir}/porkbun_secret_key"
 
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       cachix-token() { cat "$CACHIX_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+      porkbun-api-key() { cat "$PORKBUN_API_KEY_FILE" 2>/dev/null || echo "Secret not available"; }
+      porkbun-secret-key() { cat "$PORKBUN_SECRET_KEY_FILE" 2>/dev/null || echo "Secret not available"; }
 
       # Authenticate cachix using stored token
       cachix-auth() {

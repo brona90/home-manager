@@ -10,6 +10,9 @@
 # github_token: ghp_xxxxxxxxxxxxxxxxxxxx
 # dockerhub_token: dckr_pat_xxxxxxxxxxxxxxxxxxxx
 # cachix_token: your-cachix-auth-token
+# porkbun:
+#   api_key: pk1_xxxxxxxxxxxxxxxxxxxx
+#   secret_key: sk1_xxxxxxxxxxxxxxxxxxxx
 # ssh:
 #   id_rsa: |                    # key name must match my.sops.sshKeyName (default: id_rsa)
 #     -----BEGIN OPENSSH PRIVATE KEY-----

@@ -14,6 +14,23 @@
   # Claude Code reads while avoiding the raw-text mention match in this file.
   marketplace = "claude-plugins-official";
 
+  porkbunMcpWrapper = pkgs.writeShellApplication {
+    name = "porkbun-mcp";
+    runtimeInputs = [pkgs.nodejs pkgs.coreutils];
+    text = ''
+      api_key_file="${config.home.homeDirectory}/.config/sops-nix/secrets/porkbun_api_key"
+      secret_key_file="${config.home.homeDirectory}/.config/sops-nix/secrets/porkbun_secret_key"
+      if [ ! -r "$api_key_file" ] || [ ! -r "$secret_key_file" ]; then
+        echo "porkbun-mcp: secret files missing or unreadable" >&2
+        exit 1
+      fi
+      PORKBUN_API_KEY=$(cat "$api_key_file")
+      PORKBUN_SECRET_API_KEY=$(cat "$secret_key_file")
+      export PORKBUN_API_KEY PORKBUN_SECRET_API_KEY
+      exec npx -y @porkbunllc/mcp-server "$@"
+    '';
+  };
+
   statusLineScript = pkgs.writeShellApplication {
     name = "claude-statusline";
     runtimeInputs = [pkgs.jq pkgs.git pkgs.coreutils];
@@ -106,6 +123,11 @@
       "lua-lsp@${marketplace}" = true;
       "pyright-lsp@${marketplace}" = true;
       "typescript-lsp@${marketplace}" = true;
+    };
+    mcpServers = {
+      porkbun = {
+        command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
+      };
     };
     permissions = {
       allow = [
