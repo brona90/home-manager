@@ -23,6 +23,15 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Always-current claude-code: nixpkgs lags npm by several patch releases,
+    # so this flake (auto-bumped daily upstream) is the source of truth for
+    # the CLI. Its overlay replaces pkgs.claude-code; `nfu` pulls the newest
+    # pin each run. Prebuilt binaries available from claude-code.cachix.org.
+    claude-code = {
+      url = "github:sadjow/claude-code-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -31,6 +40,7 @@
     nixos-wsl,
     doom-emacs,
     sops-nix,
+    claude-code,
     ...
   }: let
     # Read user configuration.
@@ -84,6 +94,7 @@
         };
         overlays = [
           doom-emacs.overlays.default
+          claude-code.overlays.default
           skipDirenvChecksOnDarwin
         ];
       };
