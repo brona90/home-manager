@@ -34,7 +34,9 @@ matrix:
       runner: macos-14
 ```
 
-### Step 4: Configure Repository Variables (Optional)
+Also update the config names in the `check` job's dry-run step and the `eval-darwin` job's config list to match your `config.nix` (x86_64-darwin configs are eval-only, via Rosetta on the arm64 macOS runner — GitHub has no hosted Intel macOS runners).
+
+### Step 3: Configure Repository Variables (Optional)
 
 **Settings → Secrets and variables → Actions → Variables**
 
@@ -43,7 +45,7 @@ matrix:
 | `CACHIX_CACHE` | Your Cachix cache name | `myusername` |
 | `DOCKER_USERNAME` | Your Docker Hub username | `myusername` |
 
-### Step 5: Configure Secrets (Optional)
+### Step 4: Configure Secrets (Optional)
 
 **Settings → Secrets and variables → Actions → Secrets**
 
@@ -51,6 +53,7 @@ matrix:
 |--------|-------------|---------------|
 | `CACHIX_AUTH_TOKEN` | Cachix auth token for pushing | [cachix.org](https://app.cachix.org) → Your cache → Settings → Auth Tokens |
 | `DOCKERHUB_TOKEN` | Docker Hub access token | [hub.docker.com/settings/security](https://hub.docker.com/settings/security) → New Access Token |
+| `FLAKE_UPDATE_TOKEN` | Fine-grained PAT so weekly flake-update PRs trigger CI | See [Flake Updates](#flake-updates) below |
 
 **Without these secrets:**
 - ✅ Lint and flake check will still run
@@ -89,27 +92,39 @@ matrix:
 ## CI Pipeline
 
 ```
-lint (statix, deadnix, alejandra --check, shellcheck)
-  └─> check (nix flake check)
-        └─> build-home (push only: x86_64-linux + aarch64-darwin, pushes to Cachix)
-              └─> docker-build → docker-test (requires DOCKERHUB_TOKEN)
+lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
+  ├─> check (ubuntu: nix flake check + dry-run eval of the Linux config)
+  └─> eval-darwin (macos-14: dry-run eval of all Darwin configs; x86_64-darwin via Rosetta)
+      └─[+check]─> build-home (push only: x86_64-linux + 2× aarch64-darwin, pushes to Cachix)
+                     └─> docker-build (build → load → smoke test → push if DOCKERHUB_TOKEN)
+                           └─> docker-test (registry pull verification)
 ```
 
-NixOS and Darwin full system builds are in `validate.yml` (manual trigger).
+`nix flake check --all-systems` is intentionally not used: the Doom Emacs setup (nix-doom-emacs-unstraightened) relies on import-from-derivation whose intermediate derivations set `allowSubstitutes = false`, so evaluating a Darwin config requires *building* Darwin derivations — impossible on a Linux runner. The `eval-darwin` job provides that coverage on macOS instead, on PRs as well as pushes.
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck |
-| `check` | After lint | Validates flake structure with `nix flake check` |
-| `build-home` | Merge to master | Builds home configs (x86_64-linux + aarch64-darwin); pushes to Cachix if token set |
-| `docker-build` | After build-home | Builds Docker image; pushes to Docker Hub if token set |
-| `docker-test` | After docker-build | Pulls and smoke-tests the pushed image |
+| `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck, actionlint |
+| `check` | After lint | `nix flake check` + `nix build --dry-run` eval of the Linux config |
+| `eval-darwin` | After lint (pushes/PRs) | `nix build --dry-run` eval of all Darwin configs in `config.nix`; x86_64-darwin via Rosetta 2 (`extra-platforms`) |
+| `build-home` | Merge to master | Builds home configs (x86_64-linux + both aarch64-darwin); pushes to Cachix if token set. x86_64-darwin is eval-only (no hosted Intel macOS runners) |
+| `docker-build` | After build-home | Builds Docker image, loads it, smoke-tests it locally, and only then pushes to Docker Hub if token set |
+| `docker-test` | After docker-build | Pulls the pushed image from Docker Hub and verifies it runs; reports "skipped — no token" in the job summary if `DOCKERHUB_TOKEN` is unset |
 
 NixOS and Darwin full system builds are in `.github/workflows/validate.yml` (manual, weekly, or on `hosts/**`/`flake.lock`/`flake.nix` changes).
 
 ## Flake Updates
 
-The update workflow (`.github/workflows/update-flake.yml`) runs weekly and creates PRs to update `flake.lock`.
+The update workflow (`.github/workflows/update-flake.yml`) runs weekly: it updates `flake.lock`, validates it (`nix flake check` + a dry-run eval of the Linux config; Darwin eval needs a macOS runner and happens via the PR's CI), then opens a PR.
+
+**Important — `GITHUB_TOKEN` trap:** PRs created with the default workflow token do **not** trigger `pull_request` workflows, so flake-update PRs would otherwise get no CI. To fix this, create a `FLAKE_UPDATE_TOKEN` secret:
+
+1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token
+2. Resource owner: you; Repository access: only this repo
+3. Permissions: **Contents: Read and write**, **Pull requests: Read and write**
+4. Add it as a repository secret named `FLAKE_UPDATE_TOKEN` (Settings → Secrets and variables → Actions → Secrets)
+
+Without the PAT the workflow still works (the validation step gates the update), but the created PR will show no checks.
 
 ## Using the Docker Image
 

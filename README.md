@@ -32,11 +32,15 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 
 ```bash
 # Bootstrap on fresh system (interactive - prompts for username)
+# Works piped (prompts read from /dev/tty); process substitution also works:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/brona90/home-manager/master/bootstrap.sh)
 curl -fsSL https://raw.githubusercontent.com/brona90/home-manager/master/bootstrap.sh | bash
 
 # Or if already have nix and repo cloned:
-home-manager switch --flake '$HOME/.config/home-manager#USERNAME@SYSTEM' -b backup
+home-manager switch --flake "$HOME/.config/home-manager#USERNAME@SYSTEM" -b backup
 ```
+
+Bootstrap requires Nix to be installed first (it prints the [Determinate installer](https://install.determinate.systems) command if missing) and uses `sudo` once to add you to Nix `trusted-users`.
 
 ## Forking This Repo
 
@@ -175,6 +179,12 @@ This repo is designed to be easily forked:
 │   ├── gpg.nix            # GPG agent + YubiKey bridge (forwardToWindows)
 │   ├── btop.nix           # System monitor
 │   ├── sops.nix           # Secrets management
+│   ├── claude-code.nix    # Claude Code CLI settings, hooks, MCP servers
+│   ├── emacs-mcp.nix      # Emacs MCP server module
+│   ├── emacs-mcp-server.py  # MCP stdio server bridging Claude Code → emacsclient
+│   ├── docker-terminal.nix  # `terminal` wrapper for the Docker dev image
+│   ├── displayplacer.nix  # macOS display layout (displayplacer)
+│   ├── zscaler-bypass.nix # Route-only Zscaler bypass (allowlisted CIDRs)
 │   ├── scripts/
 │   │   └── gpg-win-bridge.py  # WSL→Gpg4win Assuan proxy
 │   ├── emacs/             # Doom Emacs
@@ -188,7 +198,8 @@ This repo is designed to be easily forked:
 │   └── docker-test-app.nix
 └── .github/workflows/     # CI/CD
     ├── ci.yml             # Main pipeline
-    └── validate.yml       # Manual validation
+    ├── update-flake.yml   # Weekly flake.lock update PRs
+    └── validate.yml       # NixOS/Darwin validation (manual, weekly, or on flake/hosts changes)
 ```
 
 ## Supported Systems
@@ -199,6 +210,14 @@ This repo is designed to be easily forked:
 - `aarch64-darwin` (Apple Silicon Mac)
 
 ## New Machine Setup
+
+**Step 0 — install Nix** (bootstrap checks for it and prints this command if missing):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
+```
+
+Note: bootstrap needs `sudo` once to add your user to Nix `trusted-users` in `/etc/nix/nix.conf` (required for cachix; it warns and asks for confirmation first).
 
 ### Option 1: Same age key (share secrets across machines)
 
@@ -455,6 +474,9 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 
 - `github_token` - GitHub API token
 - `dockerhub_token` - Docker Hub token
+- `cachix_token` - Cachix auth token (for pushing to the binary cache)
+- `porkbun/api_key` - Porkbun DNS API key
+- `porkbun/secret_key` - Porkbun DNS API secret key
 - `ssh/id_rsa` - SSH private key (synced to `~/.ssh/id_rsa`)
 - `ssh/id_rsa_pub` - SSH public key
 - `gpg/private_key` - GPG private key (for commit signing)
@@ -569,17 +591,26 @@ git commit -m "chore: update flake inputs"
 git push
 
 # Update single input
-nix flake lock --update-input <n>
+nix flake update <n>
 ```
 
 ## CI Pipeline
 
 ```
-lint (statix, deadnix)
-  └─> check (nix flake check)
-        ├─> docker-build → docker-test (if credentials available)
-        └─> validate-nixos
+ci.yml (push + PRs):
+lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
+  ├─> check (ubuntu: nix flake check + dry-run eval of the Linux config)
+  └─> eval-darwin (macos-14: dry-run eval of all 3 Darwin configs;
+      │            x86_64-darwin via Rosetta — no hosted Intel runners)
+      └─[+check]─> build-home (push to master only: x86_64-linux + 2× aarch64-darwin, pushes to Cachix)
+                     └─> docker-build (build → load → smoke test → push if DOCKERHUB_TOKEN)
+                           └─> docker-test (registry pull verification of the pushed image)
+
+validate.yml (manual, weekly, or on hosts/**, flake.nix, flake.lock changes):
+nixos (NixOS system build)    darwin (aarch64-darwin home config build)
 ```
+
+Note: `nix flake check --all-systems` is intentionally not used — the Doom Emacs setup uses import-from-derivation with `allowSubstitutes = false`, so Darwin configs can only be evaluated on a Darwin builder (hence the dedicated `eval-darwin` job).
 
 The CI is fork-friendly - lint and check always run, push operations only run if secrets are configured.
 
