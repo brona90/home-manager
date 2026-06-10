@@ -152,25 +152,10 @@ in {
       '';
 
       home = {
+        # The "touch your YubiKey" popup script is embedded inline in
+        # gpg-win-bridge.py (powershell -Command) so nothing is staged in
+        # the world-shared Windows Temp directory.
         file = {
-          ".local/bin/gpg_touch.ps1".text = ''
-            Add-Type -AssemblyName System.Windows.Forms
-            Add-Type -AssemblyName System.Drawing
-            $f = New-Object System.Windows.Forms.Form
-            $f.Text = 'GPG Signing'
-            $f.Size = New-Object System.Drawing.Size(300, 100)
-            $f.StartPosition = 'CenterScreen'
-            $f.TopMost = $true
-            $f.FormBorderStyle = 'FixedSingle'
-            $f.MaximizeBox = $false
-            $f.MinimizeBox = $false
-            $l = New-Object System.Windows.Forms.Label
-            $l.Text = 'Touch your YubiKey to sign'
-            $l.AutoSize = $true
-            $l.Location = New-Object System.Drawing.Point(30, 35)
-            $f.Controls.Add($l)
-            $f.ShowDialog() | Out-Null
-          '';
           ".local/bin/gpg-win-bridge" = {
             text = bridgeScript;
             executable = true;

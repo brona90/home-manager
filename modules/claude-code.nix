@@ -137,8 +137,10 @@
         "Bash(gh pr view *)"
         "Bash(gh pr checks *)"
         "Bash(gh api *)"
+        # emacs_eval is deliberately NOT allow-listed: it passes arbitrary
+        # elisp to emacsclient --eval, which is an unguarded code-execution
+        # path that bypasses every other permission gate.
         "mcp__emacs__emacs_show_diff"
-        "mcp__emacs__emacs_eval"
       ];
     };
     hooks = {
@@ -148,7 +150,9 @@
           hooks = [
             {
               type = "command";
-              command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && cat > \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
+              # Write via temp file + mv in the same directory so input.json
+              # appears atomically and readers never see a partial write.
+              command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && t=$(mktemp \"$d/input.XXXXXX\") && cat > \"$t\" && mv \"$t\" \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
               timeout = 10;
             }
           ];
@@ -174,6 +178,10 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    # The module that enables Claude Code also owns the CLI package
+    # (previously duplicated in home/linux.nix and home/darwin.nix).
+    home.packages = [pkgs.claude-code];
+
     home.file.".claude/settings.json".text =
       builtins.toJSON settings;
   };

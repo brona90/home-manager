@@ -1,6 +1,7 @@
 # Docker test app - runs the built image locally
 #
-# Usage: nix run .#docker-test
+# Usage: nix run .#docker-test [-- FLAKE_REF]
+#   FLAKE_REF defaults to $HOME/.config/home-manager
 {
   pkgs,
   homeDirectory,
@@ -12,18 +13,28 @@
   program = "${pkgs.writeShellApplication {
     name = "docker-test";
     text = ''
-      echo "Building Docker image..."
-      rm -f result
-      nix build "$HOME/.config/home-manager#dockerImage"
+      # Optional first argument: flake ref to build the image from
+      # (defaults to the standard checkout location; pass a path to test
+      # a fork or alternate checkout).
+      FLAKE_REF="''${1:-$HOME/.config/home-manager}"
+
+      # Build into a throwaway directory so no `result` symlink is left
+      # in the caller's cwd.
+      tmpdir=$(mktemp -d)
+      trap 'rm -rf "$tmpdir"' EXIT
+
+      echo "Building Docker image from $FLAKE_REF..."
+      nix build "$FLAKE_REF#dockerImage" -o "$tmpdir/result"
 
       echo "Loading image into Docker..."
-      docker load < result
+      docker load < "$tmpdir/result"
 
       DOCKER_ARGS=("-it" "--rm" "--network" "host")
-      DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+      # uid/gid 1000 matches the user baked into the image
+      # (lib/docker-image.nix), not the host user.
+      DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=1000,gid=1000,mode=0755")
       DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
 
-      [ -d "$HOME/.ssh" ] && DOCKER_ARGS+=("-v" "$HOME/.ssh:${homeDirectory}/.ssh:ro")
       [ -S "''${SSH_AUTH_SOCK:-}" ] && DOCKER_ARGS+=("-v" "$SSH_AUTH_SOCK:/ssh-agent" "-e" "SSH_AUTH_SOCK=/ssh-agent")
 
       echo "Starting container..."

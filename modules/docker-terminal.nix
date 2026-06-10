@@ -9,6 +9,12 @@
   repoConfig = userConfig.repo;
   inherit (config.home) homeDirectory;
 
+  # Must match the uid/gid baked into the image (lib/docker-image.nix
+  # defaults). Host ids ($(id -u)) diverge on macOS (501) and would leave
+  # the container user unable to write $HOME.
+  imageUid = 1000;
+  imageGid = 1000;
+
   terminalScript = pkgs.writeShellApplication {
     name = "terminal";
     text = ''
@@ -26,7 +32,10 @@
               -w|--workspace)
                 MODE="workspace"
                 WORKSPACE="$(cd "''${2:-$PWD}" && pwd)"
-                shift 2
+                # `shift 2` with no directory argument would fail under
+                # set -e; consume the optional argument only if present.
+                shift
+                if [[ $# -gt 0 ]]; then shift; fi
                 ;;
               -h|--help)
                 cat << HELP
@@ -40,9 +49,13 @@
         -h, --help          Show this help
 
       MODES:
-        Ephemeral (default): Clean environment each run, SSH keys mounted read-only
+        Ephemeral (default): Clean environment each run
         Persistent:          Home directory persists in ~/.local/share/docker-terminal
+                             (owned by uid 1000, the image user)
         Workspace:           Mount a directory for project work
+
+      SSH: the host SSH agent is forwarded when SSH_AUTH_SOCK is set;
+      private keys are never mounted into the container.
 
       ENVIRONMENT:
         DOCKER_TERMINAL_IMAGE  Override image (default: ${repoConfig.dockerHubUser}/terminal:latest)
@@ -63,39 +76,44 @@
             esac
           done
 
-          # Base Docker args
+          # Base Docker args. --network host trades isolation for
+          # convenience: the container shares the host network namespace
+          # (localhost services, SSH agent proxying). Acceptable for a
+          # personal dev shell; do not reuse for untrusted workloads.
           DOCKER_ARGS=("-it" "--rm" "--network" "host")
 
           # Configure based on mode
           case "$MODE" in
             ephemeral)
-              # Tmpfs home - nothing persists
-              DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+              # Tmpfs home - nothing persists. Owned by the image user
+              # (uid ${toString imageUid}), not the host user.
+              DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=${toString imageUid},gid=${toString imageGid},mode=0755")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
               ;;
 
             persistent)
-              # Persistent home directory
+              # Persistent home directory. Files created inside the
+              # container are owned by the image user (uid ${toString imageUid}), so the
+              # persist dir on the host ends up uid-${toString imageUid}-owned too.
               PERSIST_DIR="''${XDG_DATA_HOME:-$HOME/.local/share}/docker-terminal"
               mkdir -p "$PERSIST_DIR"
               DOCKER_ARGS+=("-v" "$PERSIST_DIR:${homeDirectory}")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
-              echo "Using persistent home: $PERSIST_DIR"
+              echo "Using persistent home: $PERSIST_DIR (files owned by uid ${toString imageUid} inside the container)"
               ;;
 
             workspace)
               # Ephemeral home + mounted workspace
-              DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=$(id -u),gid=$(id -g),mode=0755")
+              DOCKER_ARGS+=("--tmpfs" "${homeDirectory}:exec,uid=${toString imageUid},gid=${toString imageGid},mode=0755")
               DOCKER_ARGS+=("--tmpfs" "/tmp:exec,mode=1777")
               DOCKER_ARGS+=("-v" "$WORKSPACE:/workspace" "-w" "/workspace")
               echo "Workspace: $WORKSPACE -> /workspace"
               ;;
           esac
 
-          # Mount SSH keys (read-only) - all modes
-          if [ -d "$HOME/.ssh" ]; then
-            DOCKER_ARGS+=("-v" "$HOME/.ssh:${homeDirectory}/.ssh:ro")
-          fi
+          # SSH access is via agent forwarding only. ~/.ssh is deliberately
+          # NOT bind-mounted: it contains the sops-decrypted private key,
+          # which must never be exposed inside the container.
 
           # Forward SSH agent - all modes
           if [ -S "''${SSH_AUTH_SOCK:-}" ]; then

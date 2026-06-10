@@ -3,8 +3,30 @@ import socket, threading, os, subprocess, shutil, time, sys, struct, select
 
 PKSIGN_MARKER = b"PKSIGN"
 OK_NEWLINE = bytes([10]) + b"OK"
-WSL_PS1 = os.path.expanduser("~/.local/bin/gpg_touch.ps1")
 FALLBACK_GNUPGHOME = os.path.expanduser("~/.gnupg")
+
+# Static "touch your YubiKey" message box, passed inline via -Command so no
+# script file is ever staged in the world-shared Windows Temp directory
+# (staging there was a TOCTOU: anyone able to write that path got code
+# execution in the Windows user context on every signature popup).
+PS_TOUCH_POPUP = (
+    "Add-Type -AssemblyName System.Windows.Forms; "
+    "Add-Type -AssemblyName System.Drawing; "
+    "$f = New-Object System.Windows.Forms.Form; "
+    "$f.Text = 'GPG Signing'; "
+    "$f.Size = New-Object System.Drawing.Size(300, 100); "
+    "$f.StartPosition = 'CenterScreen'; "
+    "$f.TopMost = $true; "
+    "$f.FormBorderStyle = 'FixedSingle'; "
+    "$f.MaximizeBox = $false; "
+    "$f.MinimizeBox = $false; "
+    "$l = New-Object System.Windows.Forms.Label; "
+    "$l.Text = 'Touch your YubiKey to sign'; "
+    "$l.AutoSize = $true; "
+    "$l.Location = New-Object System.Drawing.Point(30, 35); "
+    "$f.Controls.Add($l); "
+    "$f.ShowDialog() | Out-Null"
+)
 
 def get_win_user():
     return subprocess.check_output(
@@ -12,18 +34,10 @@ def get_win_user():
         stderr=subprocess.DEVNULL, text=True
     ).strip()
 
-def setup_ps1(win_user):
-    dst = f"/mnt/c/Users/{win_user}/AppData/Local/Temp/gpg_touch.ps1"
-    try:
-        shutil.copy2(WSL_PS1, dst)
-    except Exception:
-        pass
-    return f"C:/Users/{win_user}/AppData/Local/Temp/gpg_touch.ps1"
-
-def start_touch_popup(win_ps1):
+def start_touch_popup():
     return subprocess.Popen(
         ["/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-         "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", win_ps1],
+         "-NoProfile", "-Command", PS_TOUCH_POPUP],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
@@ -220,7 +234,7 @@ def relay_fallback(client):
 def log(msg):
     print(f"gpg-bridge: {msg}", file=sys.stderr, flush=True)
 
-def handle(client, win_gnupg_path, win_ps1):
+def handle(client, win_gnupg_path):
     avail = card_available(win_gnupg_path)
     log(f"card_available={avail}")
     if not avail:
@@ -259,7 +273,7 @@ def handle(client, win_gnupg_path, win_ps1):
                         log(f"win→client: {line!r}")
                         if line.startswith(b"INQUIRE CONFIRM"):
                             if popup[0] is None:
-                                popup[0] = start_touch_popup(win_ps1)
+                                popup[0] = start_touch_popup()
                             log("intercepting CONFIRM, sending D 1\\nEND\\n")
                             with win_lock:
                                 try: win.sendall(b"D 1\nEND\n")
@@ -310,7 +324,7 @@ def handle(client, win_gnupg_path, win_ps1):
                     else:
                         pksign_buf += line + b"\n"
                         if popup[0] is None and PKSIGN_MARKER in pksign_buf:
-                            popup[0] = start_touch_popup(win_ps1)
+                            popup[0] = start_touch_popup()
                         if len(pksign_buf) > 1024:
                             pksign_buf = pksign_buf[-256:]
                         with win_lock:
@@ -338,7 +352,6 @@ def main():
     _card_cache[1] = 0.0
     win_user = get_win_user()
     win_gnupg = get_win_gnupg(win_user)
-    win_ps1 = setup_ps1(win_user)
     sock_path = os.popen("gpgconf --list-dirs agent-socket").read().strip()
     if not sock_path:
         print("Could not determine gpg-agent socket path", flush=True)
@@ -355,6 +368,6 @@ def main():
     print(f"GPG bridge listening on {sock_path}", flush=True)
     while True:
         client, _ = server.accept()
-        threading.Thread(target=handle, args=(client, win_gnupg, win_ps1), daemon=True).start()
+        threading.Thread(target=handle, args=(client, win_gnupg), daemon=True).start()
 
 raise SystemExit(main())
