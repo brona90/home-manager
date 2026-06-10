@@ -108,8 +108,8 @@
       path = vp.neo-tree-nvim;
     }
     {
-      name = "nvim-spectre";
-      path = vp.nvim-spectre;
+      name = "grug-far.nvim";
+      path = vp.grug-far-nvim;
     }
     {
       name = "telescope.nvim";
@@ -161,14 +161,8 @@
       name = "nvim-lspconfig";
       path = vp.nvim-lspconfig;
     }
-    {
-      name = "mason.nvim";
-      path = vp.mason-nvim;
-    }
-    {
-      name = "mason-lspconfig.nvim";
-      path = vp.mason-lspconfig-nvim;
-    }
+    # mason.nvim / mason-lspconfig.nvim intentionally NOT fetched —
+    # disabled in lua/plugins/mason.lua; Nix provides all tools on PATH.
     {
       name = "neoconf.nvim";
       path = vp.neoconf-nvim;
@@ -383,15 +377,20 @@
       # Export treesitter grammars path for init.lua to use
       export TREESITTER_GRAMMARS="${treesitterGrammars}"
 
-      # Copy pre-fetched plugins (not symlink) so we can add .git markers
+      # Copy pre-fetched plugins (not symlink) so we can add .git markers.
+      # Each copy is stamped with its source store path (.nix-src) and
+      # re-copied whenever the store path changes (plugin updated in Nix).
       for plugin in ${pluginsDir}/*; do
         name=$(basename "$plugin")
         target="$XDG_DATA_HOME/nvim/lazy/$name"
-        if [ ! -d "$target" ]; then
+        src=$(readlink -f "$plugin")
+        if [ ! -d "$target" ] || [ "$(cat "$target/.nix-src" 2>/dev/null || true)" != "$src" ]; then
+          rm -rf "$target"
           cp -rL "$plugin" "$target"
           chmod -R u+w "$target"
           # Create .git marker so lazy.nvim thinks plugin is installed
           mkdir -p "$target/.git"
+          printf '%s\n' "$src" > "$target/.nix-src"
         fi
       done
 
@@ -420,6 +419,10 @@ in {
       };
       "nvim/lua/config/options.lua" = {
         source = "${nvimConfigDir}/lua/config/options.lua";
+        force = true;
+      };
+      "nvim/lua/plugins/mason.lua" = {
+        source = "${nvimConfigDir}/lua/plugins/mason.lua";
         force = true;
       };
       "nvim/lua/plugins/theme.lua" = {

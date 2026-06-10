@@ -2,11 +2,12 @@
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 vim.opt.rtp:prepend(lazypath)
 
--- Add Nix-managed treesitter grammars to runtimepath
+-- Nix-managed treesitter grammars: passed to lazy.nvim below via
+-- performance.rtp.paths. Do NOT append to rtp here — lazy.nvim's
+-- performance.rtp.reset rebuilds the runtimepath during setup and would
+-- silently discard a manual append.
 local grammars_path = os.getenv("TREESITTER_GRAMMARS")
-if grammars_path then
-  vim.opt.runtimepath:append(grammars_path)
-else
+if not grammars_path then
   vim.schedule(function()
     vim.notify("TREESITTER_GRAMMARS not set — use 'lvim' wrapper, not 'nvim' directly", vim.log.levels.WARN)
   end)
@@ -46,6 +47,9 @@ require("lazy").setup({
   lockfile = vim.fn.stdpath("data") .. "/lazy-lock.json",
   performance = {
     rtp = {
+      -- lazy.nvim resets the runtimepath; re-add the Nix treesitter
+      -- grammars through its supported knob so they survive the reset.
+      paths = grammars_path and { grammars_path } or {},
       disabled_plugins = {
         "gzip",
         "tarPlugin",
