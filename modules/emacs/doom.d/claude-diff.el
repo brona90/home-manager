@@ -8,7 +8,7 @@
 ;;   n / p  — next / previous change
 ;;   j / k  — scroll diff up / down
 ;;   a      — approve (dismiss diff)
-;;   x      — deny (revert to HEAD, dismiss diff)
+;;   x      — deny (dismiss diff; deny the edit in the Claude prompt)
 ;;   D      — dismiss diff
 
 ;;; Code:
@@ -160,10 +160,13 @@
          (tool-name (alist-get 'tool_name data))
          (tool-input (alist-get 'tool_input data))
          (file-path (alist-get 'file_path tool-input)))
-    (when (and file-path (file-exists-p file-path))
-      (let* ((disk (with-temp-buffer
-                     (insert-file-contents file-path)
-                     (buffer-string)))
+    (when file-path
+      (let* ((disk (if (file-exists-p file-path)
+                       (with-temp-buffer
+                         (insert-file-contents file-path)
+                         (buffer-string))
+                     ;; Write to a NEW file: diff empty-before vs new content
+                     ""))
              (old-str (alist-get 'old_string tool-input))
              (new-str (alist-get 'new_string tool-input))
              (replace-all (alist-get 'replace_all tool-input))
@@ -284,12 +287,16 @@
               (when-let ((bw (get-buffer-window bb)))
                 (set-window-start bw start))))))
       after-buf before-buf))
-    ;; Auto-dismiss after 15s if PostToolUse never fires (user denied the edit).
-    ;; The PostToolUse dismiss hook cancels this timer via claude-diff--reset.
+    ;; Last-resort safety net only: PostToolUse fires after approval and
+    ;; dismisses the diff (cancelling this timer via claude-diff--reset),
+    ;; and SPC l D / SPC l x dismiss it manually.  This timer exists solely
+    ;; so an abandoned diff (e.g. denied edit, hook never fired) doesn't
+    ;; hold the window layout hostage forever.  Keep it long enough never
+    ;; to race the user's reading/decision time.
     (when claude-diff--auto-dismiss-timer
       (cancel-timer claude-diff--auto-dismiss-timer))
     (setq claude-diff--auto-dismiss-timer
-          (run-with-timer 15 nil #'claude-diff-dismiss))))
+          (run-with-timer 120 nil #'claude-diff-dismiss))))
 
 ;; ── Navigation ───────────────────────────────────────────────────────
 
@@ -367,20 +374,24 @@
   (claude-diff-dismiss))
 
 (defun claude-diff-deny ()
-  "Revert the file to HEAD and close the diff view."
+  "Close the diff view without touching the working tree.
+The diff is shown at PermissionRequest time, i.e. BEFORE the edit is
+applied, so there is nothing to revert — the actual denial must happen
+in the Claude Code prompt.  (Reverting via git here would clobber
+pre-existing uncommitted changes, not Claude's.)"
   (interactive)
-  (when claude-diff--current-file
-    (let ((default-directory (string-trim (shell-command-to-string "git rev-parse --show-toplevel"))))
-      (when (yes-or-no-p (format "Revert %s to HEAD? " (file-name-nondirectory claude-diff--current-file)))
-        (call-process "git" nil nil nil "checkout" "HEAD" "--" claude-diff--current-file)
-        (when-let ((buf (find-buffer-visiting claude-diff--current-file)))
-          (with-current-buffer buf (revert-buffer t t t)))
-        (message "Reverted %s to HEAD" (file-name-nondirectory claude-diff--current-file)))))
-  (claude-diff-dismiss))
+  (let ((file claude-diff--current-file))
+    (claude-diff-dismiss)
+    (message "Diff dismissed for %s — deny the edit in the Claude prompt (file untouched)"
+             (if file (file-name-nondirectory file) "file"))))
 
-;; ── File watcher trigger ──────────────────────────────────────────────
-;; The PermissionRequest hook writes JSON to this file.
-;; Emacs watches it and triggers the diff display.
+;; ── File watcher trigger (manual fallback) ────────────────────────────
+;; The PermissionRequest hook writes JSON to this file and triggers the
+;; diff via an explicit `emacsclient --eval (claude-diff-from-hook ...)'
+;; call — that is the primary, reliable mechanism.  The watcher below is
+;; NOT started automatically (it would double-trigger and can race a
+;; partially-written input.json); it is kept only for manual use via
+;; M-x claude-diff-watch-start should the hook eval ever be unavailable.
 
 (defvar claude-diff--hook-dir
   (expand-file-name "claude-diff" (or (getenv "XDG_RUNTIME_DIR") "/tmp"))
@@ -401,8 +412,11 @@
         (claude-diff-from-hook claude-diff--hook-file)))))
 
 (defun claude-diff-watch-start ()
-  "Start watching for Claude Code hook JSON file changes."
+  "Start watching for Claude Code hook JSON file changes.
+Manual fallback only — the PermissionRequest hook's explicit
+emacsclient eval is the primary trigger; do not run both."
   (interactive)
+  (require 'filenotify)
   (claude-diff-watch-stop)
   ;; Create dedicated directory so we only see our own events (not all of /tmp)
   (make-directory claude-diff--hook-dir t)
@@ -416,9 +430,6 @@
   (when claude-diff--file-watcher
     (ignore-errors (file-notify-rm-watch claude-diff--file-watcher))
     (setq claude-diff--file-watcher nil)))
-
-;; Auto-start watcher
-(claude-diff-watch-start)
 
 (provide 'claude-diff)
 ;;; claude-diff.el ends here

@@ -6,7 +6,7 @@ dependencies — only the Python 3 standard library.
 
 Tools provided:
   emacs_eval        — evaluate arbitrary Emacs Lisp
-  emacs_show_diff   — trigger 3-way ediff (HEAD vs pre-edit vs current)
+  emacs_show_diff   — show a 2-way diff (git HEAD vs file on disk)
   emacs_open_file   — visit a file, optionally at a line
   emacs_notify      — display a message in the minibuffer
 
@@ -23,6 +23,15 @@ import sys
 # ---------------------------------------------------------------------------
 
 PROTOCOL_VERSION = "2024-11-05"
+
+# Protocol revisions this server can speak.  initialize echoes the
+# client's requested version when supported, else falls back to
+# PROTOCOL_VERSION.
+SUPPORTED_PROTOCOL_VERSIONS = {
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+}
 
 SERVER_INFO = {
     "name": "emacs",
@@ -51,10 +60,10 @@ TOOLS = [
     {
         "name": "emacs_show_diff",
         "description": (
-            "Open a 3-way ediff in the user's Emacs frame showing "
-            "git HEAD vs the pre-edit snapshot vs the file on disk. "
-            "Call this after editing a file so the user can review your "
-            "changes interactively."
+            "Open a 2-way diff in the user's Emacs frame showing "
+            "git HEAD vs the file on disk (empty 'before' when the file "
+            "is not in a git repo). Call this after editing a file so "
+            "the user can review your changes interactively."
         ),
         "inputSchema": {
             "type": "object",
@@ -114,12 +123,16 @@ def _log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stdio transport: Content-Length framed JSON-RPC
+# Stdio transport: newline-delimited JSON-RPC (one JSON object per line)
 # ---------------------------------------------------------------------------
 
 
 def _read_message() -> dict | None:
-    """Read one newline-delimited JSON-RPC message from stdin."""
+    """Read one newline-delimited JSON-RPC message from stdin.
+
+    Malformed lines get a JSON-RPC -32700 Parse error reply (id null)
+    and are skipped rather than crashing the server.
+    """
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -127,7 +140,12 @@ def _read_message() -> dict | None:
         line = line.strip()
         if not line:
             continue  # skip blank lines
-        return json.loads(line)
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError as exc:
+            _log(f"parse error, skipping line: {exc}")
+            _error(None, -32700, "Parse error")
+            continue
 
 
 def _send_message(msg: dict) -> None:
@@ -216,14 +234,26 @@ def _handle_emacs_show_diff(arguments: dict) -> dict:
     abs_path = os.path.abspath(file_path)
     escaped = _elisp_escape(abs_path)
 
-    # For manual invocation, diff HEAD vs disk
-    elisp = f"""(let* ((before (with-temp-buffer
-                          (let ((default-directory (string-trim (shell-command-to-string "git rev-parse --show-toplevel"))))
-                            (call-process "git" nil t nil "show" (concat "HEAD:" (file-relative-name "{escaped}" default-directory)))
-                            (buffer-string))))
-                 (after (with-temp-buffer (insert-file-contents "{escaped}") (buffer-string))))
-              (claude-diff-show "{escaped}" before after)
-              "Opened diff for {escaped}")"""
+    # For manual invocation, diff git HEAD vs disk.  The repo root is
+    # resolved relative to the FILE's directory (never the daemon's cwd),
+    # via call-process with an exit-status check so stderr/error text can
+    # never be mistaken for a path.  Outside a repo (or for a file not in
+    # HEAD) fall back to an empty "before" vs the on-disk content.
+    elisp = f"""(let* ((file "{escaped}")
+                 (default-directory (file-name-directory file))
+                 (root (with-temp-buffer
+                         (when (zerop (call-process "git" nil (list t nil) nil
+                                                    "rev-parse" "--show-toplevel"))
+                           (string-trim (buffer-string)))))
+                 (before (and root
+                              (with-temp-buffer
+                                (let ((default-directory root))
+                                  (when (zerop (call-process "git" nil (list t nil) nil "show"
+                                                             (concat "HEAD:" (file-relative-name file root))))
+                                    (buffer-string))))))
+                 (after (with-temp-buffer (insert-file-contents file) (buffer-string))))
+            (claude-diff-show file (or before "") after)
+            "Opened diff for {escaped}")"""
 
     output, ok = _run_elisp(elisp)
     return {
@@ -248,7 +278,9 @@ def _handle_emacs_open_file(arguments: dict) -> dict:
     args.append(abs_path)
 
     try:
-        subprocess.run(args, check=True, timeout=5)
+        # capture_output: the child must never write to our stdout — that
+        # would corrupt the newline-delimited JSON-RPC protocol stream.
+        subprocess.run(args, check=True, timeout=5, capture_output=True)
         loc = f"{abs_path}:{line}" if line else abs_path
         return {"content": [{"type": "text", "text": f"Opened {loc}"}]}
     except Exception as exc:
@@ -266,7 +298,8 @@ def _handle_emacs_notify(arguments: dict) -> dict:
             "isError": True,
         }
     escaped = _elisp_escape(message)
-    output, ok = _run_elisp(f'(message "{escaped}")')
+    # "%s" guard: user text containing % must not be treated as a format spec
+    output, ok = _run_elisp(f'(message "%s" "{escaped}")')
     return {
         "content": [{"type": "text", "text": output}],
         "isError": not ok,
@@ -291,6 +324,13 @@ def _handle_request(msg: dict) -> None:
     msg_id = msg.get("id")
     params = msg.get("params", {})
 
+    # --- Client responses (id present, no method) ----
+    # Replies to server-initiated requests; we never send any, so just
+    # ignore them rather than erroring with "Method not found".
+    if "method" not in msg:
+        _log(f"ignoring client response (id={msg_id})")
+        return
+
     # --- Notifications (no id) ----
     if msg_id is None:
         # notifications/initialized — acknowledge, nothing to respond
@@ -299,14 +339,23 @@ def _handle_request(msg: dict) -> None:
 
     # --- Requests (have id) ----
     if method == "initialize":
+        requested = (params or {}).get("protocolVersion")
+        version = (
+            requested
+            if requested in SUPPORTED_PROTOCOL_VERSIONS
+            else PROTOCOL_VERSION
+        )
         _result(
             msg_id,
             {
-                "protocolVersion": PROTOCOL_VERSION,
+                "protocolVersion": version,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": SERVER_INFO,
             },
         )
+    elif method == "ping":
+        # MCP ping: respond promptly with an empty result
+        _result(msg_id, {})
     elif method == "tools/list":
         _result(msg_id, {"tools": TOOLS})
     elif method == "tools/call":

@@ -143,7 +143,26 @@ open PDF buffers it produces."
 ;; `load-theme' function. This is the default:
 (setq doom-theme 'doom-gruvbox)
 
-;; Claude Code: AI-assisted coding via Claude CLI in vterm
+;; 2-way diff review for Claude Code edits (claude-diff.el).
+;; Loaded eagerly at top level — NOT inside the deferred use-package!
+;; below — because the PermissionRequest hook calls
+;; `emacsclient --eval (claude-diff-from-hook ...)' and must work even
+;; when claude-code.el has never been loaded (e.g. Claude running in a
+;; plain vterm).
+(load! "claude-diff")
+
+;; Diff review keybindings (same SPC l prefix as claude-code below)
+(map! :leader
+      (:prefix ("l" . "claude")
+       :desc "Approve changes"    "a" #'claude-diff-approve
+       :desc "Deny changes"       "x" #'claude-diff-deny
+       :desc "Dismiss diff"       "D" #'claude-diff-dismiss
+       :desc "Next change"        "n" #'claude-diff-next-change
+       :desc "Prev change"        "p" #'claude-diff-prev-change
+       :desc "Scroll diff up"     "j" #'claude-diff-scroll-up
+       :desc "Scroll diff down"   "k" #'claude-diff-scroll-down))
+
+;; Claude Code: AI-assisted coding via Claude CLI in vterm (stays deferred)
 (use-package! claude-code
   :init
   (map! :leader
@@ -167,19 +186,7 @@ open PDF buffers it produces."
     :select nil
     :quit nil
     :ttl nil
-    :modeline t)
-  ;; Load 2-way diff review (claude-diff.el)
-  (load! "claude-diff")
-  ;; Diff review keybindings under the same SPC l prefix
-  (map! :leader
-        (:prefix "l"
-         :desc "Approve changes"    "a" #'claude-diff-approve
-         :desc "Deny changes"       "x" #'claude-diff-deny
-         :desc "Dismiss diff"       "D" #'claude-diff-dismiss
-         :desc "Next change"        "n" #'claude-diff-next-change
-         :desc "Prev change"        "p" #'claude-diff-prev-change
-         :desc "Scroll diff up"     "j" #'claude-diff-scroll-up
-         :desc "Scroll diff down"   "k" #'claude-diff-scroll-down)))
+    :modeline t))
 
 ;; ─── GPG pinentry (pinentry-emacs-frame custom Assuan wrapper) ─────
 ;; Direct epg/epa callers prompt in the minibuffer of the frame that
