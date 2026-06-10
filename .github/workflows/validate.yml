@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs so rapid pushes don't stack long macOS jobs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Fork-friendly: Use repository variables or fall back to defaults
 env:
   CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'gfoster' }}
@@ -66,17 +71,21 @@ jobs:
       - name: Find Darwin configuration
         id: config
         run: |
-          # List available homeConfigurations and find one for aarch64-darwin
-          CONFIGS=$(nix flake show --json 2>/dev/null | jq -r '.homeConfigurations | keys[]' 2>/dev/null || echo "")
-          DARWIN_CONFIG=$(echo "$CONFIGS" | grep 'aarch64-darwin' | head -1)
-          
+          # List available homeConfigurations and find one for aarch64-darwin.
+          # NOTE: `nix flake show --json` cannot enumerate homeConfigurations
+          # (non-standard output -> {"type":"unknown"}), so use nix eval.
+          # A failed eval must fail the job - do not swallow errors here.
+          CONFIGS_JSON=$(nix eval --json '.#homeConfigurations' --apply builtins.attrNames)
+          CONFIGS=$(echo "$CONFIGS_JSON" | jq -r '.[]')
+          DARWIN_CONFIG=$(echo "$CONFIGS" | grep 'aarch64-darwin' | head -1 || true)
+
           if [ -z "$DARWIN_CONFIG" ]; then
             echo "No aarch64-darwin configuration found"
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "Found: $DARWIN_CONFIG"
-            echo "config=$DARWIN_CONFIG" >> $GITHUB_OUTPUT
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "config=$DARWIN_CONFIG" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Build Darwin configuration
         if: steps.config.outputs.skip != 'true'

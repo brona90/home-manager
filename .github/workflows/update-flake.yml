@@ -9,19 +9,54 @@ permissions:
   contents: write
   pull-requests: write
 
+# Fork-friendly: Use repository variables or fall back to defaults
+env:
+  CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'gfoster' }}
+
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      
+
       - uses: cachix/install-nix-action@v31
         with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             experimental-features = nix-command flakes
+            accept-flake-config = true
+            sandbox = false
 
+      - uses: cachix/cachix-action@v17
+        with:
+          name: nix-community
+          extraPullNames: emacs,${{ env.CACHIX_CACHE }}
+
+      # Update the lock first and validate it BEFORE any PR is created, so the
+      # update is checked even when no PAT is configured (see token note below).
+      - name: Update flake.lock
+        run: nix flake update
+
+      # NOTE: not `--all-systems`: the unstraightened (Doom Emacs) IFD
+      # derivations set allowSubstitutes = false, so evaluating Darwin configs
+      # requires building Darwin derivations — impossible on this Linux
+      # runner. Darwin eval coverage for the resulting PR comes from ci.yml's
+      # eval-darwin job (which requires FLAKE_UPDATE_TOKEN to fire, see below).
+      - name: Validate updated flake
+        run: |
+          nix flake check
+          nix build --dry-run '.#homeConfigurations."gfoster@x86_64-linux".activationPackage'
+
+      # GITHUB_TOKEN trap: PRs created with the default workflow token do NOT
+      # trigger any `pull_request` workflows, so flake-update PRs would get
+      # zero CI. Add a fine-grained PAT (contents: read/write, pull-requests:
+      # read/write on this repo) as the FLAKE_UPDATE_TOKEN repo secret so the
+      # created PR fires CI like a human-opened one. Falls back to the default
+      # token when unset (PR is still created, but relies on the validation
+      # step above). See .github/SETUP.md for setup instructions.
       - uses: DeterminateSystems/update-flake-lock@v28
         with:
+          token: ${{ secrets.FLAKE_UPDATE_TOKEN || github.token }}
           pr-title: "flake.lock: update inputs"
           pr-labels: |
             dependencies

@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs: rapid pushes otherwise stack 60-min macOS jobs
+# and can race two `:latest` docker pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Fork-friendly: Use repository variables or fall back to defaults
 # Forkers can set these in Settings → Secrets and variables → Actions → Variables
 env:
@@ -37,6 +43,8 @@ jobs:
         run: nix run nixpkgs#alejandra -- --check .
       - name: Shellcheck bootstrap.sh
         run: nix run nixpkgs#shellcheck -- bootstrap.sh
+      - name: Actionlint workflows
+        run: nix run nixpkgs#actionlint -- .github/workflows/*.yml
 
   check:
     name: Flake Check
@@ -55,12 +63,62 @@ jobs:
         with:
           name: nix-community
           extraPullNames: emacs,${{ env.CACHIX_CACHE }}
+      # NOTE: deliberately NOT `--all-systems`: the Doom Emacs setup
+      # (nix-doom-emacs-unstraightened) uses import-from-derivation, and its
+      # intermediate derivations set allowSubstitutes = false. Evaluating a
+      # Darwin config therefore requires *building* Darwin derivations, which
+      # a Linux runner cannot do (verified: `nix flake check --all-systems`
+      # fails on x86_64-linux with "required system not available"). Darwin
+      # eval coverage lives in the eval-darwin job below instead.
       - run: nix flake check
+      # PR-time eval coverage for the Linux config. `nix build --dry-run`
+      # evaluates and plans the build without building the final closure.
+      - name: Evaluate Linux home configuration (dry-run)
+        run: nix build --dry-run '.#homeConfigurations."gfoster@x86_64-linux".activationPackage'
+
+  # PR-time evaluation coverage for all Darwin configs declared in config.nix.
+  # Runs on PRs too (unlike build-home), so a PR that breaks Darwin eval can
+  # no longer merge green. Must run on macOS: the unstraightened IFD steps
+  # (elisp compilation) have allowSubstitutes = false and need a Darwin
+  # builder even for a dry-run. x86_64-darwin has no hosted runners, so it is
+  # evaluated on this arm64 runner via Rosetta 2 (extra-platforms).
+  eval-darwin:
+    name: Evaluate Darwin Configurations
+    runs-on: macos-14
+    needs: lint
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+            sandbox = false
+            extra-platforms = x86_64-darwin
+            stalled-download-timeout = 60
+            connect-timeout = 30
+            download-attempts = 5
+      - uses: cachix/cachix-action@v17
+        with:
+          name: nix-community
+          extraPullNames: emacs,${{ env.CACHIX_CACHE }}
+      - name: Evaluate Darwin home configurations (dry-run)
+        run: |
+          for config in \
+            "gfoster@x86_64-darwin" \
+            "gfoster@aarch64-darwin" \
+            "888973@aarch64-darwin"; do
+            echo "::group::dry-run $config"
+            nix build --dry-run ".#homeConfigurations.\"$config\".activationPackage"
+            echo "::endgroup::"
+          done
 
   build-home:
     name: Build Home Configurations
     runs-on: ${{ matrix.runner }}
-    needs: check
+    needs: [check, eval-darwin]
     # Cap at 60 min so a stuck build (e.g. shellcheck on lvim wrapper on macOS-14)
     # surfaces fast instead of bleeding the GitHub Actions 6h job timeout.
     timeout-minutes: 60
@@ -71,8 +129,13 @@ jobs:
         include:
           - config: gfoster@x86_64-linux
             runner: ubuntu-latest
+          - config: gfoster@aarch64-darwin
+            runner: macos-14
           - config: 888973@aarch64-darwin
             runner: macos-14
+          # gfoster@x86_64-darwin is intentionally absent: GitHub has no
+          # hosted Intel macOS runners anymore. It still gets eval-only
+          # coverage via the eval-darwin job (Rosetta on the arm64 runner).
     steps:
       - uses: actions/checkout@v6
       - uses: cachix/install-nix-action@v31
@@ -149,47 +212,13 @@ jobs:
         run: |
           nix build .#dockerImage
           docker load < result
-      
-      - name: Push to Docker Hub
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          if [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "::notice::Skipping Docker Hub push - DOCKERHUB_TOKEN not configured"
-            echo "To enable Docker push, add DOCKERHUB_TOKEN secret in repository settings"
-            exit 0
-          fi
-          
-          IMAGE="${{ env.DOCKER_USERNAME }}/terminal"
-          
-          echo "$DOCKERHUB_TOKEN" | docker login -u "${{ env.DOCKER_USERNAME }}" --password-stdin
-          docker tag "$IMAGE:latest" "$IMAGE:$IMAGE_TAG"
-          docker push "$IMAGE:latest"
-          docker push "$IMAGE:$IMAGE_TAG"
-          
-          echo "::notice::Pushed $IMAGE:$IMAGE_TAG and $IMAGE:latest"
 
-  docker-test:
-    name: Test Docker Image
-    runs-on: ubuntu-latest
-    needs: docker-build
-    steps:
-      - name: Pull and test image
-        env:
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          IMAGE_TAG: ${{ needs.docker-build.outputs.image_tag }}
+      # Smoke test runs against the locally loaded image BEFORE any push,
+      # so a broken image never reaches Docker Hub.
+      - name: Smoke test image (pre-push)
         run: |
-          if [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "::notice::Skipping Docker test - no image was pushed"
-            exit 0
-          fi
-          
-          IMAGE="${{ env.DOCKER_USERNAME }}/terminal:$IMAGE_TAG"
-          
-          echo "Pulling image: $IMAGE"
-          docker pull "$IMAGE"
-          
+          IMAGE="${{ env.DOCKER_USERNAME }}/terminal:latest"
+
           echo "=== Testing tools exist and are executable ==="
           docker run --rm "$IMAGE" zsh -c "
             set -euo pipefail
@@ -211,4 +240,63 @@ jobs:
           echo "=== Testing interactive shell loads ==="
           docker run --rm "$IMAGE" zsh -i -c "echo 'Shell loaded successfully'"
 
-          echo "=== All tests passed ==="
+          echo "=== All smoke tests passed ==="
+
+      - name: Push to Docker Hub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::notice::Skipping Docker Hub push - DOCKERHUB_TOKEN not configured"
+            echo "To enable Docker push, add DOCKERHUB_TOKEN secret in repository settings"
+            exit 0
+          fi
+
+          IMAGE="${{ env.DOCKER_USERNAME }}/terminal"
+
+          echo "$DOCKERHUB_TOKEN" | docker login -u "${{ env.DOCKER_USERNAME }}" --password-stdin
+          docker tag "$IMAGE:latest" "$IMAGE:$IMAGE_TAG"
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:$IMAGE_TAG"
+
+          echo "::notice::Pushed $IMAGE:$IMAGE_TAG and $IMAGE:latest"
+
+  # Registry-pull verification only — the real gate is the pre-push smoke
+  # test in docker-build. This confirms the pushed artifact is pullable
+  # and runnable from Docker Hub.
+  docker-test:
+    name: Verify Pushed Docker Image
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - name: Pull and verify pushed image
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_TAG: ${{ needs.docker-build.outputs.image_tag }}
+        run: |
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            {
+              echo "## Docker registry verification"
+              echo ""
+              echo "**Skipped — no DOCKERHUB_TOKEN configured.** No image was pushed."
+              echo "The image was still built and smoke-tested locally in the docker-build job."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Registry verification skipped - DOCKERHUB_TOKEN not configured, no image was pushed"
+            exit 0
+          fi
+
+          IMAGE="${{ env.DOCKER_USERNAME }}/terminal:$IMAGE_TAG"
+
+          echo "Pulling image: $IMAGE"
+          docker pull "$IMAGE"
+
+          echo "=== Verifying pulled image runs ==="
+          docker run --rm "$IMAGE" zsh -i -c "echo 'Shell loaded successfully'"
+
+          {
+            echo "## Docker registry verification"
+            echo ""
+            echo "Pulled and ran \`$IMAGE\` successfully."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "=== Registry verification passed ==="

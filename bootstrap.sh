@@ -25,6 +25,32 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 fatal() { echo -e "${RED}[FATAL]${NC} $*" >&2; exit 1; }
 prompt() { echo -e "${BLUE}[INPUT]${NC} $*"; }
 
+# Prompts must keep working when the script is piped into bash
+# (curl ... | bash): stdin is then the script stream itself (at EOF by the
+# time we prompt), so interactive reads must come from the controlling
+# terminal instead. FD 3 is set up once as the prompt input source.
+init_prompt_input() {
+  if [ -t 0 ]; then
+    exec 3<&0
+  # [ -r /dev/tty ] is not enough: the node exists even without a controlling
+  # terminal and the open() is what fails. Probe an actual open in a subshell.
+  elif (exec 3</dev/tty) 2>/dev/null; then
+    exec 3</dev/tty
+  else
+    fatal "stdin is not a terminal and /dev/tty is unavailable, so interactive
+prompts cannot work. Run the script from a terminal, e.g.:
+
+    bash <(curl -fsSL https://raw.githubusercontent.com/${DEFAULT_REPO_OWNER}/${DEFAULT_REPO_NAME}/master/bootstrap.sh)"
+  fi
+}
+
+# Read one line of user input into the named variable (from FD 3, see above).
+# Usage: prompt_read varname
+prompt_read() {
+  # shellcheck disable=SC2229  # intentional indirect read into the named variable
+  IFS= read -r "$1" <&3
+}
+
 # Validation helpers
 validate_command() {
   local cmd="$1"
@@ -129,9 +155,22 @@ configure_trusted_user() {
     return
   fi
   
+  warn "About to add $username to Nix trusted-users in $system_nix_conf."
+  warn "This is a real privilege boundary: trusted users can set arbitrary"
+  warn "substituters (binary caches) and sandbox paths, which can influence"
+  warn "derivations built by the root-owned nix-daemon."
+  warn "It is required for pushing to/pulling from your personal cachix cache."
+  prompt "Add $username to trusted-users? [Y/n]"
+  local confirm_trusted=""
+  prompt_read confirm_trusted
+  if [[ "$confirm_trusted" =~ ^[Nn] ]]; then
+    warn "Skipping trusted-users configuration (cachix may not work fully)."
+    return
+  fi
+
   info "Adding $username to trusted-users (required for cachix)..."
   warn "This requires sudo access"
-  
+
   if grep -q "^trusted-users" "$system_nix_conf" 2>/dev/null; then
     # Append to existing trusted-users line
     sudo sed -i.bak "s/^trusted-users.*/& $username/" "$system_nix_conf"
@@ -239,11 +278,12 @@ setup_config() {
   else
     # Check if user wants to use a fork
     prompt "Use default repo ($REPO_URL)? (y/n)"
-    read -r use_default
-    
+    local use_default=""
+    prompt_read use_default
+
     if [[ "$use_default" != "y" ]]; then
       prompt "Enter your fork URL (e.g., https://github.com/yourname/home-manager.git):"
-      read -r REPO_URL
+      prompt_read REPO_URL
       
       # Validate URL format
       if [[ ! "$REPO_URL" =~ ^(https?://|git@) ]]; then
@@ -337,7 +377,8 @@ setup_sops() {
   fi
   
   prompt "Do you want to set up sops secrets? (y/n)"
-  read -r do_setup_sops
+  local do_setup_sops=""
+  prompt_read do_setup_sops
 
   if [[ "$do_setup_sops" != "y" ]]; then
     warn "Skipping sops setup. Secrets will not be available."
@@ -346,13 +387,15 @@ setup_sops() {
   fi
   
   prompt "Do you have an existing age key to copy? (y/n)"
-  read -r has_key
+  local has_key=""
+  prompt_read has_key
   
   if [[ "$has_key" == "y" ]]; then
     mkdir -p "$age_dir"
     prompt "Paste your age private key (starts with AGE-SECRET-KEY-), then press Enter twice:"
     local key=""
-    while IFS= read -r line; do
+    local line=""
+    while prompt_read line; do
       [[ -z "$line" ]] && break
       key+="$line"$'\n'
     done
@@ -438,7 +481,9 @@ activate_home_manager() {
 # Main bootstrap
 main() {
   info "=== Nix Home Manager Bootstrap ==="
-  
+
+  init_prompt_input
+
   local system
   system=$(detect_system)
   local default_username
@@ -447,7 +492,8 @@ main() {
   info "Detected system: $system"
   
   prompt "Enter username [$default_username]:"
-  read -r username
+  local username=""
+  prompt_read username
   username="${username:-$default_username}"
   
   # Validate username
