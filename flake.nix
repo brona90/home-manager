@@ -191,9 +191,18 @@
       ) {}
       userConfig.users;
 
-    # Find the first user that supports a given system
+    # All users that support a given system
+    usersForSystem = system:
+      builtins.filter (user: builtins.elem system user.systems) userConfig.users;
+
+    # Find the first user that supports a given system.
+    # CAVEAT: this head-pick is only safe for single-user contexts (CI's
+    # packages.default, the Linux dockerImage). On shared systems like
+    # aarch64-darwin (gfoster + 888973) it returns gfoster; use the
+    # per-user packages."home-<username>" outputs or apps.default (which
+    # resolves $USER at runtime) instead.
     userForSystem = system: let
-      matchingUsers = builtins.filter (user: builtins.elem system user.systems) userConfig.users;
+      matchingUsers = usersForSystem system;
     in
       if matchingUsers != []
       then builtins.head matchingUsers
@@ -219,29 +228,46 @@
         user = userForSystem system;
         pkgs = pkgsFor system;
         isLinux = !(nixpkgs.lib.hasInfix "darwin" system);
+
+        # Per-user activation packages: every user on this system is
+        # addressable as packages."home-<username>" regardless of the
+        # userForSystem head-pick (e.g. .#home-888973 on aarch64-darwin).
+        perUserPackages = builtins.listToAttrs (
+          map (u: {
+            name = "home-${u.username}";
+            value = homeConfigs."${u.username}@${system}".activationPackage;
+          }) (usersForSystem system)
+        );
       in
-        if user != null
-        then let
-          inherit (user) username;
-          homeDirectory = homeDirectoryFor {inherit system username;};
-          configKey = "${username}@${system}";
-        in
-          {
-            default = homeConfigs.${configKey}.activationPackage;
-            tmux-helper = pkgs.callPackage ./modules/tmux-helper/package.nix {};
-          }
-          // (
-            if isLinux
-            then {
-              dockerImage = import ./lib/docker-image.nix {
-                inherit pkgs homeDirectory username;
-                homeConfiguration = homeConfigs.${configKey};
-                imageName = dockerImageName;
-              };
+        perUserPackages
+        // {
+          tmux-helper = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+        }
+        // (
+          if user != null
+          then let
+            inherit (user) username;
+            homeDirectory = homeDirectoryFor {inherit system username;};
+            configKey = "${username}@${system}";
+          in
+            {
+              # Head-picked first matching user — kept for CI convenience.
+              # On multi-user systems prefer packages."home-<username>".
+              default = homeConfigs.${configKey}.activationPackage;
             }
-            else {}
-          )
-        else {}
+            // (
+              if isLinux
+              then {
+                dockerImage = import ./lib/docker-image.nix {
+                  inherit pkgs homeDirectory username;
+                  homeConfiguration = homeConfigs.${configKey};
+                  imageName = dockerImageName;
+                };
+              }
+              else {}
+            )
+          else {}
+        )
     );
 
     apps = forAllSystems (
@@ -250,120 +276,121 @@
         pkgs = pkgsFor system;
         isLinux = !(nixpkgs.lib.hasInfix "darwin" system);
       in
-        if user != null
-        then let
-          inherit (user) username;
-          homeDirectory = homeDirectoryFor {inherit system username;};
-        in
-          {
-            default = {
-              type = "app";
-              meta.description = "Activate home-manager configuration";
-              program = "${pkgs.writeShellApplication {
-                name = "activate-home";
-                text = ''
-                  echo "Activating home-manager configuration for ${system}..."
-                  home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup
-                '';
-              }}/bin/activate-home";
+        {
+          # Resolves the invoking user at runtime, so the same `nix run`
+          # activates the correct config on multi-user systems (e.g. both
+          # gfoster and 888973 on aarch64-darwin) instead of head-picking.
+          default = {
+            type = "app";
+            meta.description = "Activate home-manager configuration for the current user";
+            program = "${pkgs.writeShellApplication {
+              name = "activate-home";
+              text = ''
+                echo "Activating home-manager configuration for $USER@${system}..."
+                home-manager switch --flake "$HOME/.config/home-manager#$USER@${system}" -b backup
+              '';
+            }}/bin/activate-home";
+          };
+        }
+        // (
+          if user != null && isLinux
+          then {
+            docker-test = import ./lib/docker-test-app.nix {
+              inherit pkgs;
+              homeDirectory = homeDirectoryFor {
+                inherit system;
+                inherit (user) username;
+              };
+              imageName = dockerImageName;
             };
           }
-          // (
-            if isLinux
-            then {
-              docker-test = import ./lib/docker-test-app.nix {
-                inherit pkgs homeDirectory;
-                imageName = dockerImageName;
-              };
-            }
-            else {}
-          )
-          // {
-            tmux-helper-install = {
-              type = "app";
-              meta.description = "Install /usr/local/bin/tmux-helper for stable BT-fingerprintable path on macOS";
-              program = "${import ./modules/tmux-helper/install-script.nix {
-                inherit pkgs;
-                helperPackage = pkgs.callPackage ./modules/tmux-helper/package.nix {};
-              }}/bin/tmux-helper-install";
+          else {}
+        )
+        // {
+          tmux-helper-install = {
+            type = "app";
+            meta.description = "Install /usr/local/bin/tmux-helper for stable BT-fingerprintable path on macOS";
+            program = "${import ./modules/tmux-helper/install-script.nix {
+              inherit pkgs;
+              helperPackage = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+            }}/bin/tmux-helper-install";
+          };
+
+          tmux-experimental = let
+            helperPkg = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+            helperBin = "${helperPkg}/bin/tmux-helper";
+            themesJson =
+              pkgs.writeText "tmux-themes.json"
+              (builtins.toJSON (import ./modules/tmux/themes.nix));
+            confText = import ./modules/tmux/conf-experimental.nix {
+              inherit helperBin;
+              defaultThemePreset = "molokai";
             };
+            conf = pkgs.writeText "tmux-experimental.conf" confText;
+          in {
+            type = "app";
+            meta.description = "Experimental tmux server using tmux-helper (parallel to gpakosz daily driver)";
+            program = "${pkgs.writeShellApplication {
+              name = "tmux-experimental";
+              runtimeInputs = [pkgs.tmux];
+              text = ''
+                export TMUX_HELPER_CONF=${conf}
+                export TMUX_HELPER_THEMES=${themesJson}
+                exec tmux -L experimental -f ${conf} new-session
+              '';
+            }}/bin/tmux-experimental";
+          };
 
-            tmux-experimental = let
-              helperPkg = pkgs.callPackage ./modules/tmux-helper/package.nix {};
-              helperBin = "${helperPkg}/bin/tmux-helper";
-              themesJson =
-                pkgs.writeText "tmux-themes.json"
-                (builtins.toJSON (import ./modules/tmux/themes.nix));
-              confText = import ./modules/tmux/conf-experimental.nix {
-                inherit helperBin;
-                defaultThemePreset = "molokai";
-              };
-              conf = pkgs.writeText "tmux-experimental.conf" confText;
-            in {
-              type = "app";
-              meta.description = "Experimental tmux server using tmux-helper (parallel to gpakosz daily driver)";
-              program = "${pkgs.writeShellApplication {
-                name = "tmux-experimental";
-                runtimeInputs = [pkgs.tmux];
-                text = ''
-                  export TMUX_HELPER_CONF=${conf}
-                  export TMUX_HELPER_THEMES=${themesJson}
-                  exec tmux -L experimental -f ${conf} new-session
-                '';
-              }}/bin/tmux-experimental";
-            };
+          update-vim-plugins = {
+            type = "app";
+            meta.description = "Fetch latest lazy.nvim + LazyVim versions and hashes for modules/vim/default.nix";
+            program = "${pkgs.writeShellApplication {
+              name = "update-vim-plugins";
+              runtimeInputs = [pkgs.curl pkgs.jq pkgs.nix-prefetch-github];
+              text = ''
+                fetch_latest_tag() {
+                  local owner="$1" repo="$2" tag
+                  tag=$(curl -sL "https://api.github.com/repos/$owner/$repo/releases/latest" \
+                    | jq -r '.tag_name')
+                  if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+                    echo "error: failed to fetch release tag for $owner/$repo (got: '$tag')" >&2
+                    return 1
+                  fi
+                  echo "$tag"
+                }
 
-            update-vim-plugins = {
-              type = "app";
-              meta.description = "Fetch latest lazy.nvim + LazyVim versions and hashes for modules/vim/default.nix";
-              program = "${pkgs.writeShellApplication {
-                name = "update-vim-plugins";
-                runtimeInputs = [pkgs.curl pkgs.jq pkgs.nix-prefetch-github];
-                text = ''
-                  fetch_latest_tag() {
-                    local owner="$1" repo="$2" tag
-                    tag=$(curl -sL "https://api.github.com/repos/$owner/$repo/releases/latest" \
-                      | jq -r '.tag_name')
-                    if [ -z "$tag" ] || [ "$tag" = "null" ]; then
-                      echo "error: failed to fetch release tag for $owner/$repo (got: '$tag')" >&2
-                      return 1
-                    fi
-                    echo "$tag"
-                  }
+                echo "Fetching latest versions..."
+                lazy_tag=$(fetch_latest_tag folke lazy.nvim)
+                lazyvim_tag=$(fetch_latest_tag LazyVim LazyVim)
 
-                  echo "Fetching latest versions..."
-                  lazy_tag=$(fetch_latest_tag folke lazy.nvim)
-                  lazyvim_tag=$(fetch_latest_tag LazyVim LazyVim)
+                echo "  lazy.nvim : $lazy_tag"
+                echo "  LazyVim   : $lazyvim_tag"
+                echo ""
+                echo "Computing hashes (this may take a moment)..."
 
-                  echo "  lazy.nvim : $lazy_tag"
-                  echo "  LazyVim   : $lazyvim_tag"
-                  echo ""
-                  echo "Computing hashes (this may take a moment)..."
+                lazy_sha=$(nix-prefetch-github folke lazy.nvim --rev "$lazy_tag" --json | jq -r '.hash')
+                lazyvim_sha=$(nix-prefetch-github LazyVim LazyVim --rev "$lazyvim_tag" --json | jq -r '.hash')
 
-                  lazy_sha=$(nix-prefetch-github folke lazy.nvim --rev "$lazy_tag" --json | jq -r '.hash')
-                  lazyvim_sha=$(nix-prefetch-github LazyVim LazyVim --rev "$lazyvim_tag" --json | jq -r '.hash')
-
-                  echo ""
-                  echo "Update modules/vim/default.nix with:"
-                  echo ""
-                  echo "  lazyNvim = pkgs.fetchFromGitHub {"
-                  echo "    owner = \"folke\";"
-                  echo "    repo = \"lazy.nvim\";"
-                  echo "    rev = \"$lazy_tag\"; # https://github.com/folke/lazy.nvim/releases"
-                  echo "    sha256 = \"$lazy_sha\";"
-                  echo "  };"
-                  echo ""
-                  echo "  lazyVimDistro = pkgs.fetchFromGitHub {"
-                  echo "    owner = \"LazyVim\";"
-                  echo "    repo = \"LazyVim\";"
-                  echo "    rev = \"$lazyvim_tag\"; # https://github.com/LazyVim/LazyVim/releases"
-                  echo "    sha256 = \"$lazyvim_sha\";"
-                  echo "  };"
-                '';
-              }}/bin/update-vim-plugins";
-            };
-          }
-        else {}
+                echo ""
+                echo "Update modules/vim/default.nix with:"
+                echo ""
+                echo "  lazyNvim = pkgs.fetchFromGitHub {"
+                echo "    owner = \"folke\";"
+                echo "    repo = \"lazy.nvim\";"
+                echo "    rev = \"$lazy_tag\"; # https://github.com/folke/lazy.nvim/releases"
+                echo "    sha256 = \"$lazy_sha\";"
+                echo "  };"
+                echo ""
+                echo "  lazyVimDistro = pkgs.fetchFromGitHub {"
+                echo "    owner = \"LazyVim\";"
+                echo "    repo = \"LazyVim\";"
+                echo "    rev = \"$lazyvim_tag\"; # https://github.com/LazyVim/LazyVim/releases"
+                echo "    sha256 = \"$lazyvim_sha\";"
+                echo "  };"
+              '';
+            }}/bin/update-vim-plugins";
+          };
+        }
     );
 
     checks = forAllSystems (

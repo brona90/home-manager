@@ -15,9 +15,7 @@
   };
 
   home = {
-    packages = with pkgs; [
-      claude-code # Anthropic Claude CLI
-    ];
+    # claude-code is provided by modules/claude-code.nix (my.claudeCode.enable)
 
     # Make Nerd Fonts available to macOS CoreText (GUI apps like Emacs, terminals).
     # On Darwin, fonts in home.packages are NOT visible to CoreText; they must be
@@ -31,16 +29,18 @@
       recursive = true;
     };
 
+    # Idempotent, failure-tolerant Homebrew package sync. Activation runs
+    # under set -eu, so every brew invocation is wrapped in `if ! ...` --
+    # a flaky cask or missing network must never abort the rest of
+    # activation. `brew list` checks are local-only, so when everything is
+    # already installed this block finishes quickly with no network access.
+    #
+    # Homebrew itself is deliberately NOT installed here: a curl|bash
+    # bootstrap mid-activation needs interactive sudo and is fragile.
+    # Install it manually first (https://brew.sh):
+    #   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     activation.homebrew = lib.hm.dag.entryAfter ["writeBoundary" "zscalerBypass"] ''
-      # Install Homebrew if not present
-      if ! command -v brew &>/dev/null \
-          && [[ ! -x /opt/homebrew/bin/brew ]] \
-          && [[ ! -x /usr/local/bin/brew ]]; then
-        $DRY_RUN_CMD /bin/bash -eu -c \
-          'NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-      fi
-
-      # Resolve brew path (may not be on PATH yet in a fresh install)
+      # Resolve brew path (Apple Silicon vs Intel prefix)
       if command -v brew &>/dev/null; then
         _brew=brew
       elif [[ -x /opt/homebrew/bin/brew ]]; then
@@ -48,25 +48,30 @@
       elif [[ -x /usr/local/bin/brew ]]; then
         _brew=/usr/local/bin/brew
       else
-        echo "warning: brew not found after installation attempt; skipping cask installs" >&2
         _brew=""
+        echo "warning: Homebrew not found; skipping cask/formula installs." >&2
+        echo "  Install it manually, then re-run home-manager switch:" >&2
+        echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' >&2
       fi
 
       if [[ -n "$_brew" ]]; then
-        $DRY_RUN_CMD "$_brew" install --cask \
-          betterdisplay \
-          calibre \
-          chrome-remote-desktop-host \
-          clipy \
-          claude \
-          discord \
-          google-chrome \
-          iterm2 \
-          microsoft-teams \
-          rectangle \
-          signal \
-          slack
-        $DRY_RUN_CMD "$_brew" install lilypond sbcl displayplacer
+        for _cask in betterdisplay calibre chrome-remote-desktop-host \
+            clipy claude discord google-chrome iterm2 microsoft-teams \
+            rectangle signal slack; do
+          if ! "$_brew" list --cask "$_cask" &>/dev/null; then
+            if ! $DRY_RUN_CMD "$_brew" install --cask "$_cask"; then
+              echo "warning: brew install --cask $_cask failed; continuing" >&2
+            fi
+          fi
+        done
+
+        for _formula in lilypond sbcl displayplacer; do
+          if ! "$_brew" list --formula "$_formula" &>/dev/null; then
+            if ! $DRY_RUN_CMD "$_brew" install --formula "$_formula"; then
+              echo "warning: brew install --formula $_formula failed; continuing" >&2
+            fi
+          fi
+        done
       fi
     '';
   };

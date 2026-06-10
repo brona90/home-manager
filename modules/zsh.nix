@@ -71,7 +71,6 @@ in {
 
             # Nix (n = nix)
             nfu = "nix flake update";
-            nrs = ''sudo /run/current-system/sw/bin/nixos-rebuild switch --flake "$HOME/.config/home-manager"'';
             # Nix cleanup (nc = nix clean/collect)
             ncg = "nix-collect-garbage"; # basic garbage collection
             ncgd = "nix-collect-garbage -d"; # delete old generations + gc
@@ -100,19 +99,13 @@ in {
             # General cache
             ccc = "rm -rf ~/.cache/*"; # cache clean (careful!)
 
-            # Editors
+            # WSL interop aliases (clip, explorer, cmd, powershell, notepad,
+            # nrs) live in home/linux.nix, gated to the WSL machine.
+          }
+          # Editors -- only when the Nix-managed LazyVim wrapper exists
+          // lib.optionalAttrs config.my.vim.enable {
             vim = "lvim";
             vi = "lvim";
-
-            # Windows interop -- /mnt/c is dropped from PATH for zsh perf
-            # (FSH command-existence checks per keystroke walk PATH and
-            # stat each /mnt/c entry over the 9P bridge). Alias the few
-            # .exes actually used so habit-typing keeps working.
-            clip = "/mnt/c/WINDOWS/system32/clip.exe";
-            explorer = "/mnt/c/WINDOWS/explorer.exe";
-            cmd = "/mnt/c/WINDOWS/system32/cmd.exe";
-            powershell = "/mnt/c/WINDOWS/system32/WindowsPowerShell/v1.0/powershell.exe";
-            notepad = "/mnt/c/WINDOWS/system32/notepad.exe";
           }
           // cfg.extraAliases;
 
@@ -120,7 +113,9 @@ in {
           enable = true;
           plugins = ["git" "z"] ++ cfg.extraOhMyZshPlugins;
           extraConfig = ''
-            zstyle ':omz:update' mode auto
+            # oh-my-zsh comes from the read-only Nix store; self-update can
+            # never succeed, so disable it instead of letting it no-op.
+            zstyle ':omz:update' mode disabled
             ENABLE_CORRECTION="true"
             COMPLETION_WAITING_DOTS="true"
           '';
