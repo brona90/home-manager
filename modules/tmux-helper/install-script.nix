@@ -11,8 +11,15 @@ pkgs.writeShellApplication {
   # pkgs.sudo is Linux-only; on macOS we rely on /usr/bin/sudo via the
   # inherited PATH (writeShellApplication's default inheritPath = true).
   runtimeInputs = [pkgs.coreutils];
+  # writeShellApplication injects `set -euo pipefail` itself.
   text = ''
-    set -euo pipefail
+    # Darwin-only by intent: install(1) below uses `-g wheel`, and the whole
+    # point is a stable path/cdhash for BeyondTrust EPM on macOS.
+    if [ "$(uname -s)" != "Darwin" ]; then
+      echo "tmux-helper-install is macOS-only (uses -o root -g wheel); refusing to run on $(uname -s)." >&2
+      exit 1
+    fi
+
     HELPER=${helperPackage}/bin/tmux-helper
     DEST=/usr/local/bin/tmux-helper
 

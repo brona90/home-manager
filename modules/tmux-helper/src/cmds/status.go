@@ -1,6 +1,7 @@
 package cmds
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -46,12 +47,18 @@ func statusUptimeFmt() error {
 	return nil
 }
 
-// statusUserHost: when invoked with `pane_id pane_pid`, walks the pane's
-// process tree for ssh/mosh and emits user@host[:port]. Falls back to local
-// user@host if no ssh chain is found or args are missing.
+// statusUserHost: when invoked with `pane_id pane_pid [server_pid]`, walks
+// the pane's process tree for ssh/mosh and emits user@host[:port]. Falls back
+// to local user@host if no ssh chain is found or args are missing. The third
+// arg is #{pid} (the tmux server pid) from the status format, used as a
+// stable cache key.
 func statusUserHost(args []string) error {
 	if len(args) >= 2 {
-		if conn := detectPaneSSH(args[0], args[1]); conn != nil {
+		serverPIDArg := ""
+		if len(args) >= 3 {
+			serverPIDArg = args[2]
+		}
+		if conn := detectPaneSSH(args[0], args[1], serverPIDArg); conn != nil {
 			u := conn.User
 			if u == "" {
 				u = localUser()
@@ -78,8 +85,8 @@ func localUser() string {
 
 // detectPaneSSH returns the ssh connection a pane is currently on, or nil
 // if the pane is local. Uses a 30s file cache keyed by (server_pid, pane_id).
-func detectPaneSSH(paneID, panePIDStr string) *ssh.Connection {
-	serverPID := os.Getppid()
+func detectPaneSSH(paneID, panePIDStr, serverPIDStr string) *ssh.Connection {
+	serverPID := resolveServerPID(serverPIDStr)
 	if cached, hit := ssh.Read(serverPID, paneID); hit {
 		return cached
 	}
@@ -98,6 +105,9 @@ func detectPaneSSH(paneID, panePIDStr string) *ssh.Connection {
 	}
 	argsStr, err := system.ProcessArgs(sshPID)
 	if err != nil || argsStr == "" {
+		// Negative-cache so a flaky/hung ps doesn't trigger a full re-walk
+		// on every status refresh.
+		_ = ssh.Write(serverPID, paneID, nil)
 		return nil
 	}
 	parts := strings.Fields(argsStr)
@@ -105,13 +115,35 @@ func detectPaneSSH(paneID, panePIDStr string) *ssh.Connection {
 		_ = ssh.Write(serverPID, paneID, nil)
 		return nil
 	}
-	conn, err := ssh.Detect(parts[1:])
+	// strings.Fields flattens shell quoting; if the command line visibly
+	// contained quotes/escapes, the reconstructed argv is unreliable, so
+	// don't let ssh.Detect fall back to guessing the host from it.
+	argvReliable := !strings.ContainsAny(argsStr, `'"\`)
+	conn, err := ssh.Detect(parts[1:], argvReliable)
 	if err != nil {
 		_ = ssh.Write(serverPID, paneID, nil)
 		return nil
 	}
 	_ = ssh.Write(serverPID, paneID, conn)
 	return conn
+}
+
+// resolveServerPID turns the #{pid} format arg into the tmux server pid.
+// When the arg is missing/garbled (older format string still cached on the
+// server), fall back to asking tmux directly, and only then to Getppid()
+// (which equals the server pid only while `sh -c` exec-optimizes).
+func resolveServerPID(arg string) int {
+	if pid, err := strconv.Atoi(strings.TrimSpace(arg)); err == nil && pid > 0 {
+		return pid
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), system.ExecTimeout)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "tmux", "display-message", "-p", "#{pid}").Output(); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil && pid > 0 {
+			return pid
+		}
+	}
+	return os.Getppid()
 }
 
 // statusGitBranch emits the current git branch when the pane's cwd is in a
@@ -126,7 +158,9 @@ func statusGitBranch(args []string) error {
 	if cwd == "" {
 		return nil
 	}
-	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")
+	ctx, cancel := context.WithTimeout(context.Background(), system.ExecTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil // Not a repo, or git missing -- silently empty.
@@ -150,13 +184,32 @@ func statusNixShell() error {
 	return nil
 }
 
+// llmNames are the LLM tool process names that light up the 🤖 indicator.
+var llmNames = []string{"claude", "aider", "cursor", "copilot", "ollama"}
+
+// llmNameFromComm normalizes a ps comm value and returns the matching LLM
+// tool name, or "" if none.
+//
+// On darwin `ps -o comm=` prints the full executable path, so take the
+// basename FIRST. Then accommodate Nix-wrapped binaries: a Nix-wrapped
+// `claude` shows up as ".claude-wrapped" (or "/nix/store/.../.claude-wrapped"
+// on darwin) -- strip the leading "." and trailing "-wrapped" before checking
+// against the known list. Prefix match catches "claude-code",
+// "ollama-server", etc.
+func llmNameFromComm(comm string) string {
+	c := filepath.Base(strings.ToLower(comm))
+	c = strings.TrimPrefix(c, ".")
+	c = strings.TrimSuffix(c, "-wrapped")
+	for _, name := range llmNames {
+		if c == name || strings.HasPrefix(c, name+"-") {
+			return name
+		}
+	}
+	return ""
+}
+
 // statusLLM walks the pane's process tree (arg[0] = #{pane_pid}) and emits
 // an indicator when claude/aider/cursor/copilot/ollama is in the chain.
-//
-// Match logic accommodates Nix-wrapped binaries: a Nix-wrapped `claude`
-// shows up in ps with comm=".claude-wrapped" rather than the bare name.
-// We strip the leading "." and trailing "-wrapped", then check against the
-// known list. Substring match catches "claude-code", "ollama-server", etc.
 func statusLLM(args []string) error {
 	if len(args) == 0 {
 		return nil
@@ -169,17 +222,10 @@ func statusLLM(args []string) error {
 	if err != nil {
 		return nil
 	}
-	known := []string{"claude", "aider", "cursor", "copilot", "ollama"}
 	for _, pid := range system.DescendantsOf(tree, panePID) {
-		comm := strings.ToLower(tree[pid].Comm)
-		comm = strings.TrimPrefix(comm, ".")
-		comm = strings.TrimSuffix(comm, "-wrapped")
-		comm = filepath.Base(comm)
-		for _, name := range known {
-			if comm == name || strings.HasPrefix(comm, name+"-") {
-				fmt.Printf(" 🤖 %s", name)
-				return nil
-			}
+		if name := llmNameFromComm(tree[pid].Comm); name != "" {
+			fmt.Printf(" 🤖 %s", name)
+			return nil
 		}
 	}
 	return nil

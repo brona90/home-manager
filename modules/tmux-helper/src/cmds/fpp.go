@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"tmux-helper/internal/shellquote"
 	"tmux-helper/internal/tmux"
 )
 
@@ -15,6 +16,6 @@ func Fpp(args []string) error {
 	if _, err := exec.LookPath("fpp"); err != nil {
 		return tmux.Run("display-message", "fpp not on PATH (install facebook-pathpicker)")
 	}
-	cmd := fmt.Sprintf("tmux capture-pane -p -t %q | fpp", paneID)
+	cmd := fmt.Sprintf("tmux capture-pane -p -t %s | fpp", shellquote.Quote(paneID))
 	return tmux.Run("new-window", "-c", cwd, "sh", "-c", cmd)
 }

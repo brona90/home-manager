@@ -29,6 +29,8 @@ func ReadBattery() (Battery, error) {
 	statusRaw, _ := os.ReadFile(filepath.Join(dir, "status"))
 	st := strings.TrimSpace(string(statusRaw))
 	// "Full" reads as charging so the icon flips to plug, not battery.
-	charging := st == "Charging" || st == "Full"
+	// "Not charging" means plugged in but held below a battery-care
+	// threshold -- on AC, matching darwin's "AC attached" semantics.
+	charging := st == "Charging" || st == "Full" || st == "Not charging"
 	return Battery{Present: true, Percent: pct, Charging: charging}, nil
 }

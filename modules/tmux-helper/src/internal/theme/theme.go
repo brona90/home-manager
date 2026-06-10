@@ -106,19 +106,18 @@ func (t Themes) SetCommands(name, helperBin string) ([][]string, error) {
 }
 
 func paletteCommands(p Palette, helperBin string) [][]string {
-	style := func(spec string) string { return spec }
 	cmds := [][]string{
-		{"set-option", "-g", "pane-border-style", style("fg=" + p.PaneBorder)},
-		{"set-option", "-g", "pane-active-border-style", style("fg=" + p.PaneActiveBorder)},
-		{"set-option", "-g", "message-style", style(fmt.Sprintf("fg=%s,bg=%s,bold", p.MessageFg, p.MessageBg))},
-		{"set-option", "-g", "message-command-style", style(fmt.Sprintf("fg=%s,bg=%s,bold", p.MessageCommandFg, p.MessageCommandBg))},
-		{"set-window-option", "-g", "mode-style", style(fmt.Sprintf("fg=%s,bg=%s,bold", p.ModeFg, p.ModeBg))},
-		{"set-option", "-g", "status-style", style(fmt.Sprintf("fg=%s,bg=%s,none", p.StatusFg, p.StatusBg))},
-		{"set-window-option", "-g", "window-status-style", style(fmt.Sprintf("fg=%s,bg=%s,none", p.WindowFg, p.WindowBg))},
-		{"set-window-option", "-g", "window-status-current-style", style(fmt.Sprintf("fg=%s,bg=%s,bold", p.WindowCurrentFg, p.WindowCurrentBg))},
+		{"set-option", "-g", "pane-border-style", "fg=" + p.PaneBorder},
+		{"set-option", "-g", "pane-active-border-style", "fg=" + p.PaneActiveBorder},
+		{"set-option", "-g", "message-style", fmt.Sprintf("fg=%s,bg=%s,bold", p.MessageFg, p.MessageBg)},
+		{"set-option", "-g", "message-command-style", fmt.Sprintf("fg=%s,bg=%s,bold", p.MessageCommandFg, p.MessageCommandBg)},
+		{"set-window-option", "-g", "mode-style", fmt.Sprintf("fg=%s,bg=%s,bold", p.ModeFg, p.ModeBg)},
+		{"set-option", "-g", "status-style", fmt.Sprintf("fg=%s,bg=%s,none", p.StatusFg, p.StatusBg)},
+		{"set-window-option", "-g", "window-status-style", fmt.Sprintf("fg=%s,bg=%s,none", p.WindowFg, p.WindowBg)},
+		{"set-window-option", "-g", "window-status-current-style", fmt.Sprintf("fg=%s,bg=%s,bold", p.WindowCurrentFg, p.WindowCurrentBg)},
 		{"set-window-option", "-g", "window-status-activity-style", p.WindowActivityAttr},
-		{"set-window-option", "-g", "window-status-bell-style", style(fmt.Sprintf("fg=%s,%s", p.WindowBellFg, p.WindowBellAttr))},
-		{"set-window-option", "-g", "window-status-last-style", style(fmt.Sprintf("fg=%s,none", p.WindowLastFg))},
+		{"set-window-option", "-g", "window-status-bell-style", fmt.Sprintf("fg=%s,%s", p.WindowBellFg, p.WindowBellAttr)},
+		{"set-window-option", "-g", "window-status-last-style", fmt.Sprintf("fg=%s,none", p.WindowLastFg)},
 		{"set-window-option", "-g", "clock-mode-colour", p.ClockColor},
 	}
 
@@ -126,8 +125,13 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	//   seg1 (Primary, bold): " ❐ #S [git/nix/llm] "
 	//   seg2 (Secondary):     " | "  -- thin separator block
 	//   seg3 (Tertiary):      " ↑ uptime "
+	//
+	// tmux expands #{...} formats BEFORE handing the #() job to `sh -c`, so
+	// any user-influenceable string (pane_current_path: a hostile directory
+	// name from a tarball/clone) must use the #{q:...} quoting modifier or
+	// it is shell injection executed on every status refresh.
 	statusLeft := fmt.Sprintf(
-		`#[fg=%s,bg=%s,bold] ❐ #S#(%s status git-branch #{pane_current_path})#(%s status nix-shell)#(%s status llm #{pane_pid}) #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑ #(%s status uptime-fmt) `,
+		`#[fg=%s,bg=%s,bold] ❐ #S#(%s status git-branch #{q:pane_current_path})#(%s status nix-shell)#(%s status llm #{pane_pid}) #[fg=%s,bg=%s,nobold] | #[fg=%s,bg=%s]↑ #(%s status uptime-fmt) `,
 		p.StatusLeftPrimaryFg, p.StatusLeftPrimaryBg,
 		helperBin, helperBin, helperBin,
 		p.StatusLeftSecondaryFg, p.StatusLeftSecondaryBg,
@@ -145,7 +149,7 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	// are applied to each heart character. This is the canonical pattern
 	// gpakosz/.tmux uses for its battery_bar.
 	statusRight := fmt.Sprintf(
-		"#{?client_prefix,#[fg=%s,bg=%s,bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold]#(%s status battery) #[fg=%s,bg=%s,nobold] %%R  %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid})#{?#{==:#{user},root},#[blink] !,} ",
+		"#{?client_prefix,#[fg=%s,bg=%s,bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold]#(%s status battery) #[fg=%s,bg=%s,nobold] %%R  %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid} #{pid})#{?#{==:#{user},root},#[blink] !,} ",
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // prefix indicator (red block, matches 🔒)
 		p.StatusFg, p.StatusBg,                     // pairing
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // synchronized

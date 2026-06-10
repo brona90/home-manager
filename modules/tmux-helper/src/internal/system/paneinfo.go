@@ -1,11 +1,18 @@
 package system
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// ExecTimeout bounds every status-path external command so a hung ps/pmset
+// can't freeze the tmux status bar.
+const ExecTimeout = 2 * time.Second
 
 type Process struct {
 	PID  int
@@ -14,7 +21,9 @@ type Process struct {
 }
 
 func PsTree() (map[int]Process, error) {
-	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,comm=").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), ExecTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "pid=,ppid=,comm=").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps: %w", err)
 	}
@@ -53,12 +62,15 @@ func DescendantsOf(tree map[int]Process, root int) []int {
 	return out
 }
 
+// FindSSH returns the first ssh/mosh-client descendant of root. On darwin
+// `ps -o comm=` prints the full executable path (unlike Linux's bare name),
+// so compare against the basename.
 func FindSSH(tree map[int]Process, root int) int {
 	for _, pid := range DescendantsOf(tree, root) {
 		if pid == root {
 			continue
 		}
-		switch tree[pid].Comm {
+		switch filepath.Base(tree[pid].Comm) {
 		case "ssh", "mosh-client":
 			return pid
 		}
@@ -67,9 +79,11 @@ func FindSSH(tree map[int]Process, root int) int {
 }
 
 func ProcessArgs(pid int) (string, error) {
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "args=").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), ExecTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "args=").Output()
 	if err != nil {
-		return "", nil
+		return "", fmt.Errorf("ps -p %d: %w", pid, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

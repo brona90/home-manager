@@ -103,7 +103,10 @@
   bind -r C-S-L swap-window -t +1 \; select-window -t +1
 
   # Maximize-pane (gpakosz prefix-+: break-pane out, restore on second press)
-  bind + run-shell "${helperBin} maximize-pane #{session_name} #{pane_id}"
+  # NB: run-shell expands #{...} BEFORE handing the line to sh -c, so any
+  # user-influenceable value (session names, pane paths) must use the
+  # #{q:...} quoting modifier or it is shell injection.
+  bind + run-shell "${helperBin} maximize-pane #{q:session_name} #{pane_id}"
 
   # Mouse toggle
   bind m run-shell "${helperBin} toggle-mouse"
@@ -128,9 +131,9 @@
   bind -n C-k run-shell "${helperBin} navigate up"
   bind -n C-l run-shell "${helperBin} navigate right"
 
-  # File picker / urlview (Phase 7)
-  bind F run-shell "${helperBin} fpp #{pane_id} #{pane_current_path}"
-  bind U run-shell "${helperBin} urlview #{pane_id} #{pane_current_path}"
+  # File picker / urlview (Phase 7). #{q:...}: see maximize-pane note.
+  bind F run-shell "${helperBin} fpp #{pane_id} #{q:pane_current_path}"
+  bind U run-shell "${helperBin} urlview #{pane_id} #{q:pane_current_path}"
 
   # Copy mode
   bind Enter copy-mode

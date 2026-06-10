@@ -5,9 +5,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
+	"tmux-helper/internal/shellquote"
 	"tmux-helper/internal/tmux"
 )
 
@@ -32,6 +34,7 @@ func OpenFile(_ []string) error {
 	if !ok {
 		return tmux.Run("display-message", "open-file: no path found in selection")
 	}
+	file = expandTilde(file)
 
 	args := []string{"-n"}
 	if line > 0 {
@@ -53,13 +56,35 @@ func OpenFile(_ []string) error {
 		// the $EDITOR fallback rather than just bailing.
 	}
 
+	// $EDITOR fallback: copy-pipe gives us no tty, and $EDITOR may be a
+	// multi-word command line ("emacsclient -t --alternate-editor ..."), so
+	// host the editor in a fresh tmux window where the shell parses $EDITOR
+	// and the file path is single-quote-escaped against word splitting and
+	// metacharacters.
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
 	}
-	cmd := exec.Command(editor, file)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	cmdline := editor
+	if line > 0 {
+		// vi/vim/nvim/emacsclient all accept +LINE before the file.
+		cmdline += fmt.Sprintf(" +%d", line)
+	}
+	cmdline += " " + shellquote.Quote(file)
+	return tmux.Run("new-window", cmdline)
+}
+
+// expandTilde resolves a leading ~/ (or bare ~) against the current user's
+// home directory. Nothing downstream (emacsclient, exec) expands ~ for us.
+func expandTilde(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~"))
 }
 
 // fileRefRe matches a path-like token followed by optional :line[:col].

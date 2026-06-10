@@ -4,12 +4,14 @@
 package clipboard
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"unicode/utf16"
 )
 
 // ErrNoBackend means no usable clipboard tool was found on PATH for the
@@ -95,8 +97,30 @@ func Copy(r io.Reader) error {
 	if err != nil {
 		return err
 	}
+	// clip.exe interprets plain input in the OEM codepage, mangling any
+	// non-ASCII UTF-8. It handles BOM-prefixed UTF-16LE correctly, so
+	// transcode before piping (dependency-free: stdlib unicode/utf16).
+	if b.Name == "clip.exe" {
+		data, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		r = bytes.NewReader(encodeUTF16LEBOM(data))
+	}
 	cmd := exec.Command(b.Argv[0], b.Argv[1:]...)
 	cmd.Stdin = r
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// encodeUTF16LEBOM converts UTF-8 bytes to UTF-16LE with a leading BOM.
+// Invalid UTF-8 sequences become U+FFFD, matching Go's rune decoding.
+func encodeUTF16LEBOM(data []byte) []byte {
+	units := utf16.Encode([]rune(string(data)))
+	out := make([]byte, 0, 2*len(units)+2)
+	out = append(out, 0xFF, 0xFE) // UTF-16LE BOM
+	for _, u := range units {
+		out = append(out, byte(u), byte(u>>8))
+	}
+	return out
 }

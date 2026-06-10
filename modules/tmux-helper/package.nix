@@ -10,7 +10,8 @@ buildGoModule rec {
 
   src = ./src;
 
-  # Filled in after first build attempt prints the real hash.
+  # tmux-helper has zero Go module dependencies, so there is nothing to
+  # vendor; null is the correct permanent value (not a placeholder).
   vendorHash = null;
 
   env.CGO_ENABLED = "0";

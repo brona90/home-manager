@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"tmux-helper/internal/shellquote"
 	"tmux-helper/internal/tmux"
 )
 
@@ -59,7 +60,8 @@ func popup(title, listCmd string, action func(string) error) error {
 
 func pickerSessions() error {
 	return popup("session", "tmux list-sessions -F '#{session_name}'", func(name string) error {
-		return tmux.Run("switch-client", "-t", name)
+		// "=" forces an exact target match; bare names are prefix-matched.
+		return tmux.Run("switch-client", "-t", "="+name)
 	})
 }
 
@@ -68,7 +70,7 @@ func pickerWindows() error {
 		"tmux list-windows -a -F '#{session_name}:#{window_index} #{window_name}'",
 		func(line string) error {
 			target := strings.Fields(line)[0]
-			return tmux.Run("select-window", "-t", target)
+			return tmux.Run("select-window", "-t", "="+target)
 		})
 }
 
@@ -77,7 +79,7 @@ func pickerPanes() error {
 		"tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{pane_current_command} #{pane_title}'",
 		func(line string) error {
 			target := strings.Fields(line)[0]
-			return tmux.Run("select-pane", "-t", target)
+			return tmux.Run("select-pane", "-t", "="+target)
 		})
 }
 
@@ -91,23 +93,37 @@ func pickerProjects() error {
 	}
 	var labeled []string
 	for _, r := range roots {
+		// Tab/newline in a path would break the label\tpath line protocol;
+		// such paths are pathological -- skip them.
+		if strings.ContainsAny(r, "\t\n") {
+			continue
+		}
 		labeled = append(labeled, filepath.Base(r)+"\t"+r)
 	}
-	listCmd := "printf '%s\n' " + strings.Join(quoteAll(labeled), " ")
+	if len(labeled) == 0 {
+		return tmux.Run("display-message", "no projects found")
+	}
+	listCmd := "printf '%s\n' " + strings.Join(shellquote.QuoteAll(labeled), " ")
 	return popup("project", listCmd, func(line string) error {
 		parts := strings.SplitN(line, "\t", 2)
 		if len(parts) != 2 {
 			return fmt.Errorf("malformed picker line: %q", line)
 		}
-		name, root := parts[0], parts[1]
-		if err := tmux.Run("switch-client", "-t", name); err == nil {
+		name, root := sanitizeSessionName(parts[0]), parts[1]
+		if err := tmux.Run("switch-client", "-t", "="+name); err == nil {
 			return nil
 		}
 		if err := tmux.Run("new-session", "-d", "-s", name, "-c", root); err != nil {
 			return err
 		}
-		return tmux.Run("switch-client", "-t", name)
+		return tmux.Run("switch-client", "-t", "="+name)
 	})
+}
+
+// sanitizeSessionName makes a directory basename safe for `new-session -s`:
+// tmux rejects session names containing "." or ":".
+func sanitizeSessionName(name string) string {
+	return strings.NewReplacer(".", "_", ":", "_").Replace(name)
 }
 
 func projectRoots() ([]string, error) {
@@ -179,12 +195,4 @@ func scanFallbackRoots(home string) []string {
 		}
 	}
 	return out
-}
-
-func quoteAll(items []string) []string {
-	q := make([]string, len(items))
-	for i, s := range items {
-		q[i] = `'` + strings.ReplaceAll(s, `'`, `'"'"'`) + `'`
-	}
-	return q
 }

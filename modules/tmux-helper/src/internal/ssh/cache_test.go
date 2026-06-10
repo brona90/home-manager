@@ -1,7 +1,9 @@
 package ssh
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -46,26 +48,54 @@ func TestMissOnNoFile(t *testing.T) {
 func TestExpiry(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", dir)
-	if err := Write(42, "%7", &Connection{Host: "x"}); err != nil {
+	// Construct the entry payload directly with a backdated ComputedAt --
+	// no byte surgery on the serialized timestamp (which was TZ- and
+	// New-Year's-flaky).
+	path := cachePath(42, "%7")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Backdate the file's mtime won't help since we read computed_at from
-	// the entry payload. Mutate the payload directly.
-	path := cachePath(42, "%7")
-	data, _ := os.ReadFile(path)
-	// Cheap surgery: replace today's RFC3339 timestamp with a year-ago one.
-	old := time.Now().UTC().Format("2006")
-	tagged := []byte(string(data))
-	for i, b := range tagged {
-		if b == '"' && i+5 < len(tagged) && string(tagged[i+1:i+5]) == old {
-			// Replace the year digits.
-			copy(tagged[i+1:i+5], []byte("2000"))
-			break
-		}
+	e := entry{Host: "x", IsSSH: true, ComputedAt: time.Now().Add(-CacheTTL - time.Second)}
+	data, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_ = os.WriteFile(path, tagged, 0o600)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	got, hit := Read(42, "%7")
 	if hit || got != nil {
 		t.Errorf("expected miss after TTL, got hit=%v conn=%+v", hit, got)
+	}
+}
+
+func TestPrune(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+	// Seed a stale entry under a dead server pid dir.
+	stale := cachePath(41, "%1")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * pruneAge)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh Write should sweep the stale entry and its now-empty dir.
+	if err := Write(42, "%2", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale entry not pruned: stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(stale)); !os.IsNotExist(err) {
+		t.Errorf("empty stale dir not pruned: stat err = %v", err)
+	}
+	// The fresh entry must survive.
+	if _, hit := Read(42, "%2"); !hit {
+		t.Error("fresh entry pruned or unreadable")
 	}
 }

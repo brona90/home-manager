@@ -3,6 +3,7 @@
 package system
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -12,7 +13,9 @@ import (
 // ReadBattery shells out to pmset -g batt and parses the InternalBattery
 // line. Desktop Macs print no InternalBattery and we return Present=false.
 func ReadBattery() (Battery, error) {
-	out, err := exec.Command("pmset", "-g", "batt").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), ExecTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "pmset", "-g", "batt").Output()
 	if err != nil {
 		return Battery{}, fmt.Errorf("pmset: %w", err)
 	}

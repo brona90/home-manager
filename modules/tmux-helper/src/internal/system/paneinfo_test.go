@@ -45,6 +45,30 @@ func TestFindSSH_NoMatch(t *testing.T) {
 	}
 }
 
+// On darwin, ps -o comm= prints the full executable path rather than the
+// bare program name; FindSSH must match on the basename.
+func TestFindSSH_DarwinFullPathComm(t *testing.T) {
+	tree := map[int]Process{
+		10: {PID: 10, PPID: 1, Comm: "/opt/homebrew/bin/tmux"},
+		20: {PID: 20, PPID: 10, Comm: "/bin/zsh"},
+		30: {PID: 30, PPID: 20, Comm: "/usr/bin/ssh"},
+	}
+	if got := FindSSH(tree, 10); got != 30 {
+		t.Errorf("got %d, want 30 (darwin full-path comm)", got)
+	}
+}
+
+func TestFindSSH_DarwinFullPathMosh(t *testing.T) {
+	tree := map[int]Process{
+		10: {PID: 10, PPID: 1, Comm: "/opt/homebrew/bin/tmux"},
+		20: {PID: 20, PPID: 10, Comm: "/bin/zsh"},
+		30: {PID: 30, PPID: 20, Comm: "/nix/store/abc123-mosh-1.4.0/bin/mosh-client"},
+	}
+	if got := FindSSH(tree, 10); got != 30 {
+		t.Errorf("got %d, want 30 (darwin full-path mosh-client)", got)
+	}
+}
+
 func TestFindSSH_Mosh(t *testing.T) {
 	tree := map[int]Process{
 		10: {PID: 10, PPID: 1, Comm: "tmux"},

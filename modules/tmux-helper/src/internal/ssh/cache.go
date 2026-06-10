@@ -12,6 +12,10 @@ import (
 
 const CacheTTL = 30 * time.Second
 
+// pruneAge is how long stale cache entries (dead panes, dead servers, orphaned
+// temp files) survive before Write sweeps them, keeping the cache dir bounded.
+const pruneAge = time.Hour
+
 type entry struct {
 	User       string    `json:"user"`
 	Host       string    `json:"host"`
@@ -67,9 +71,62 @@ func Write(serverPID int, paneID string, conn *Connection) error {
 	if err != nil {
 		return err
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// Write to a unique temp file then rename: concurrent status jobs for the
+	// same pane each get their own temp file, so they can't corrupt each other.
+	f, err := os.CreateTemp(filepath.Dir(p), ".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	prune(CacheRoot())
+	return nil
+}
+
+// prune removes cache files older than pruneAge and any directories left
+// empty, so the cache root can't grow without bound across server restarts
+// and pane churn. Best-effort: errors are ignored.
+func prune(root string) {
+	cutoff := time.Now().Add(-pruneAge)
+	dirs, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, d.Name())
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		remaining := len(files)
+		for _, f := range files {
+			info, err := f.Info()
+			if err != nil {
+				continue
+			}
+			if info.ModTime().Before(cutoff) {
+				if os.Remove(filepath.Join(dir, f.Name())) == nil {
+					remaining--
+				}
+			}
+		}
+		if remaining == 0 {
+			_ = os.Remove(dir)
+		}
+	}
 }

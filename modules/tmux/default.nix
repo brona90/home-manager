@@ -33,18 +33,8 @@ in {
     enable = lib.mkEnableOption "tmux configuration (helper-driven)";
 
     theme.preset = lib.mkOption {
-      type = lib.types.enum [
-        "molokai"
-        "gpakosz"
-        "catppuccin-mocha"
-        "tokyonight"
-        "gruvbox"
-        "rose-pine"
-        "nord"
-        "dracula"
-        "solarized-dark"
-        "kanagawa"
-      ];
+      # Derived from the data so every palette in themes.nix is settable.
+      type = lib.types.enum (builtins.attrNames themes);
       default = "molokai";
       description = ''
         Default tmux color palette to apply at conf load. Switchable at

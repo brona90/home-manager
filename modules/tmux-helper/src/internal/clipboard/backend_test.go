@@ -1,6 +1,7 @@
 package clipboard
 
 import (
+	"bytes"
 	"errors"
 	"os/exec"
 	"testing"
@@ -59,6 +60,28 @@ func TestDetect(t *testing.T) {
 			}
 			if b.Name != tt.wantName {
 				t.Errorf("got %q, want %q", b.Name, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestEncodeUTF16LEBOM(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []byte
+	}{
+		{"empty", "", []byte{0xFF, 0xFE}},
+		{"ascii", "ab", []byte{0xFF, 0xFE, 'a', 0x00, 'b', 0x00}},
+		{"latin accent", "é", []byte{0xFF, 0xFE, 0xE9, 0x00}},
+		{"cjk", "中", []byte{0xFF, 0xFE, 0x2D, 0x4E}},
+		{"emoji surrogate pair", "😀", []byte{0xFF, 0xFE, 0x3D, 0xD8, 0x00, 0xDE}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := encodeUTF16LEBOM([]byte(tt.in))
+			if !bytes.Equal(got, tt.want) {
+				t.Errorf("encodeUTF16LEBOM(%q) = % X, want % X", tt.in, got, tt.want)
 			}
 		})
 	}
