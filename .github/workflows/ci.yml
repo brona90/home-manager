@@ -154,12 +154,17 @@ jobs:
             connect-timeout = 30
             download-attempts = 5
 
-      # This job PUSHES to cachix (has authToken)
+      # This job PUSHES to cachix (has authToken). skipPush disables the
+      # action's post-run drain, which FAILS the whole job when a single
+      # upload stalls past its timeout (seen with the large fresh doom/emacs
+      # closure). The explicit best-effort push step below replaces it: a
+      # cache push must never fail CI after a successful build.
       - uses: cachix/cachix-action@v17
         with:
           name: ${{ env.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           extraPullNames: nix-community,emacs
+          skipPush: true
 
       - name: Free disk space
         if: runner.os == 'Linux'
@@ -173,6 +178,11 @@ jobs:
           # -L (print-build-logs) so a hanging derivation surfaces its actual
           # build phase output instead of just "building '...drv'..." silence.
           nix build -L '.#homeConfigurations."${{ matrix.config }}".activationPackage'
+
+      - name: Push closure to Cachix (best effort)
+        # Never fail CI over a cache upload; the build already succeeded.
+        continue-on-error: true
+        run: nix path-info -r ./result | cachix push "${{ env.CACHIX_CACHE }}"
           echo "Build complete - artifacts pushed to cachix automatically"
 
   docker-build:
