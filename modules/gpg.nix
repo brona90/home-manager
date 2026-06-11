@@ -149,6 +149,95 @@ in {
           systemctl --user start gpg-win-bridge
           echo "Done — bridge restarted"
         }
+
+        # gpg-win-setup: tune the Windows Gpg4win agent's PIN cache.
+        #
+        # Ensures default-cache-ttl 28800 (8h idle, matching the WSL agent above) and max-cache-ttl 86400
+        # (24h absolute) in %APPDATA%\gnupg\gpg-agent.conf. Gpg4win's default
+        # PIN cache is only ~10 minutes (default-cache-ttl 600), which made
+        # batch signing (rebases, multi-commit sessions) re-prompt for the
+        # PIN constantly. Idempotent and safe to re-run: only the two TTL
+        # keys are replaced/appended; every other line is preserved.
+        gpg-win-setup() {
+          local gpg4win="/mnt/c/Program Files/GnuPG/bin"
+
+          if [[ ! -x "$gpg4win/gpg-connect-agent.exe" ]]; then
+            echo "gpg-win-setup: Gpg4win not found at $gpg4win" >&2
+            return 1
+          fi
+
+          local winuser
+          winuser=$(/mnt/c/Windows/System32/cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n')
+          if [[ -z "$winuser" ]]; then
+            echo "gpg-win-setup: could not determine the Windows username" >&2
+            return 1
+          fi
+
+          local gnupg_dir="/mnt/c/Users/$winuser/AppData/Roaming/gnupg"
+          local conf="$gnupg_dir/gpg-agent.conf"
+          if ! mkdir -p "$gnupg_dir"; then
+            echo "gpg-win-setup: cannot create $gnupg_dir" >&2
+            return 1
+          fi
+          [[ -f "$conf" ]] || touch "$conf"
+
+          local old_default old_max
+          old_default=$(awk '{sub(/\r$/, "")} $1 == "default-cache-ttl" {v = $2} END {print v}' "$conf")
+          old_max=$(awk '{sub(/\r$/, "")} $1 == "max-cache-ttl" {v = $2} END {print v}' "$conf")
+
+          # Rewrite via a temp file in the same directory so the swap is a
+          # plain rename on the 9P mount; fall back to cp+rm if mv fails
+          # there. No partial writes ever land in gpg-agent.conf itself.
+          local tmp
+          tmp=$(mktemp "$gnupg_dir/.gpg-agent.conf.XXXXXX") || return 1
+          awk '
+            {sub(/\r$/, "")}
+            $1 == "default-cache-ttl" {print "default-cache-ttl 28800"; d = 1; next}
+            $1 == "max-cache-ttl" {print "max-cache-ttl 86400"; m = 1; next}
+            {print}
+            END {
+              if (!d) print "default-cache-ttl 28800"
+              if (!m) print "max-cache-ttl 86400"
+            }
+          ' "$conf" >"$tmp" || {
+            rm -f "$tmp"
+            echo "gpg-win-setup: failed to rewrite config" >&2
+            return 1
+          }
+
+          if cmp -s "$conf" "$tmp"; then
+            rm -f "$tmp"
+            echo "gpg-win-setup: already configured ($conf)"
+            return 0
+          fi
+
+          if ! mv -f "$tmp" "$conf" 2>/dev/null; then
+            if ! cp "$tmp" "$conf"; then
+              rm -f "$tmp"
+              echo "gpg-win-setup: failed to update $conf" >&2
+              return 1
+            fi
+            rm -f "$tmp"
+          fi
+
+          echo "Updated $conf:"
+          echo "  default-cache-ttl: ''${old_default:-unset (gpg4win default 600)} -> 7200"
+          echo "  max-cache-ttl:     ''${old_max:-unset} -> 86400"
+
+          # gpg-agent only reads its conf at startup, so restart it to apply.
+          # This is the same kill sequence gpg-restart uses; it drops the PIN
+          # cache, but the user invokes gpg-win-setup deliberately, never
+          # mid-signing, so an inline restart is safe here.
+          echo "Restarting Windows gpg-agent to apply..."
+          "$gpg4win/gpg-connect-agent.exe" "SCD KILLSCD" /bye 2>/dev/null || true
+          "$gpg4win/gpg-connect-agent.exe" killagent /bye 2>/dev/null || true
+          if "$gpg4win/gpg-connect-agent.exe" "GETINFO version" /bye >/dev/null 2>&1; then
+            echo "Done — new cache TTLs are active (run gpg-restart if signing misbehaves)"
+          else
+            echo "Windows gpg-agent did not respond — run gpg-restart to reset agent and bridge" >&2
+            return 1
+          fi
+        }
       '';
 
       home = {
