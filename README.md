@@ -168,8 +168,12 @@ This repo is designed to be easily forked:
 ├── config.nix             # User & repo configuration (edit this!)
 ├── home/                  # Home Manager profiles
 │   ├── common.nix         # Shared across all systems
-│   ├── linux.nix          # Linux-specific
-│   └── darwin.nix         # macOS-specific
+│   ├── linux.nix          # Linux-specific (platform-generic)
+│   ├── darwin.nix         # macOS-specific (platform-generic + shared brew-sync)
+│   └── hosts/             # Machine-specific layers (mapped via users.*.hosts in config.nix)
+│       ├── wsl.nix        # gfoster's WSL box: build farm, GPG bridge, /mnt/c aliases
+│       ├── personal-mac.nix  # Personal MacBooks: Homebrew lists
+│       └── corp-mac.nix   # Corporate Mac: Homebrew lists + Zscaler bypass
 ├── hosts/                 # NixOS configurations
 │   ├── common/            # Shared NixOS settings
 │   └── wsl/               # WSL-specific config

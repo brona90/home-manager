@@ -1,9 +1,33 @@
-# Personal git identity overrides (copy to config.local.nix, which is gitignored)
-# Values here are merged over the git section of config.nix at build time.
+# Local configuration overrides (copy to config.local.nix, which is gitignored)
+#
+# config.local.nix is recursively merged over config.nix at flake eval time:
+#   - nested attribute sets merge key-by-key, so only specify what you change
+#   - lists and scalar values REPLACE the base value wholesale (no concat —
+#     e.g. overriding `users` or a brew list replaces the entire list)
+#
+# Any key in config.nix can be overridden. Common examples below; delete the
+# sections you don't need.
 {
+  # Personal git identity — keeps real values out of the committed config.nix
   git = {
     userName = "Your Name";
     userEmail = "you@example.com";
     signingKey = "YOUR_GPG_KEY_ID"; # output of: gpg --list-secret-keys --keyid-format LONG
   };
+
+  # Repository settings, e.g. point CI/bootstrap/Docker at your own fork:
+  # repo = {
+  #   owner = "yourname";
+  #   dockerHubUser = "yourname";
+  #   cachixCache = "yourcache";
+  #   cachixPublicKey = "yourcache.cachix.org-1:...";
+  # };
+
+  # Replace a host module's Homebrew lists (consumed by home/hosts/<host>.nix;
+  # lists replace, not concat — copy the full default list from the host file
+  # and edit):
+  # hosts.personal-mac.brew = {
+  #   casks = ["iterm2" "rectangle"];
+  #   formulas = ["displayplacer"];
+  # };
 }

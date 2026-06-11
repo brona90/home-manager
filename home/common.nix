@@ -89,9 +89,9 @@ in {
         cachix # Nix binary cache
         texlive.combined.scheme-medium
       ]
-      # Skip lilypond on macOS - installed via Homebrew formula on Darwin (darwin.nix)
+      # Skip lilypond on macOS - installed via Homebrew formula on Darwin (home/hosts/*-mac.nix)
       ++ lib.optionals (!pkgs.stdenv.isDarwin) [lilypond];
-    # calibre: GUI app — installed via Homebrew cask on macOS (darwin.nix);
+    # calibre: GUI app — installed via Homebrew cask on macOS (home/hosts/personal-mac.nix);
     # Nix build broken on Linux (qtbase6-setup-hook missing qmake)
   };
 }

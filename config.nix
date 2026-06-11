@@ -20,20 +20,42 @@
   };
 
   # User configurations
+  #
+  # `hosts` (optional) maps a system to a host module under
+  # home/hosts/<name>.nix. Host modules carry machine-specific config that
+  # doesn't belong in the generic platform profiles (home/linux.nix,
+  # home/darwin.nix): Homebrew package lists, distributed-build farms, WSL
+  # interop, corporate network workarounds, etc. A system with no mapping
+  # gets only the generic platform profile.
+  #
+  # Forks: add your own files under home/hosts/ and point these mappings at
+  # them, or drop the `hosts` attribute entirely. Host-internal data (e.g.
+  # the Homebrew lists) can also be overridden without editing tracked files
+  # via config.local.nix — see config.local.nix.example.
+  #
+  # NOTE: home/hosts/ (home-manager host layer) is unrelated to the
+  # top-level hosts/ directory, which holds NixOS system configurations.
   users = [
     {
       username = "gfoster";
       systems = ["x86_64-linux" "x86_64-darwin" "aarch64-darwin"];
+      hosts = {
+        "x86_64-linux" = "wsl"; # NixOS-WSL box: build farm, GPG bridge, /mnt/c aliases
+        "x86_64-darwin" = "personal-mac"; # Intel MacBook
+        "aarch64-darwin" = "personal-mac"; # Apple Silicon MacBook
+      };
     }
     {
       # Corporate/AD account username — numeric usernames are valid on macOS
       username = "888973";
       systems = ["aarch64-darwin"];
+      hosts."aarch64-darwin" = "corp-mac"; # corporate Mac: Zscaler bypass, work apps
     }
     # Add more users/systems:
     # {
     #   username = "alice";
     #   systems = [ "x86_64-linux" "aarch64-darwin" ];
+    #   hosts."aarch64-darwin" = "alices-mac"; # -> home/hosts/alices-mac.nix
     # }
   ];
 
