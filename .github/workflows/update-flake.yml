@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write # unpin-tracker step comments on the tracking issue
 
 # Fork-friendly: Use repository variables or fall back to defaults
 env:
@@ -18,6 +19,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      # Unpin tracker: nixpkgs is temporarily pinned in flake.nix (rev
+      # 8c3cede7) because nixos-unstable lacks nixpkgs PR #529355 (merge
+      # commit 95e9e11e), which fixes the darwin emacs 30.2 build. Once the
+      # channel contains that commit, ping the tracking issue so the pin gets
+      # removed. Best effort: must never fail the workflow.
+      - name: Check whether the nixpkgs pin can be removed
+        continue-on-error: true
+        env:
+          # github.token (not FLAKE_UPDATE_TOKEN): the fine-grained PAT has no
+          # Issues permission, and issue comments don't need to trigger CI.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FIX_COMMIT=95e9e11e1ccfa01bd43c64072f63accfe4a49372
+          ISSUE_TITLE="Unpin nixpkgs once nixos-unstable contains 95e9e11e"
+          MARKER="<!-- nixpkgs-unpin-ready -->"
+
+          STATUS=$(gh api "repos/NixOS/nixpkgs/compare/${FIX_COMMIT}...nixos-unstable" --jq .status || true)
+          echo "nixos-unstable vs ${FIX_COMMIT}: ${STATUS:-unknown}"
+          if [ "$STATUS" != "ahead" ] && [ "$STATUS" != "identical" ]; then
+            echo "Fix not in nixos-unstable yet; keeping the pin."
+            exit 0
+          fi
+
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$ISSUE_TITLE\" in:title" \
+            --json number --jq '.[0].number // empty' || true)
+          if [ -z "$ISSUE" ]; then
+            echo "No open tracking issue titled '$ISSUE_TITLE'; nothing to do."
+            exit 0
+          fi
+
+          # Comment only once: skip if a previous run already pinged the issue.
+          if gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" \
+              --json comments --jq '.comments[].body' | grep -qF "$MARKER"; then
+            echo "Issue #$ISSUE already notified; skipping."
+            exit 0
+          fi
+
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$MARKER
+          nixos-unstable now contains \`${FIX_COMMIT}\` (compare status: \`${STATUS}\`). The temporary nixpkgs pin in \`flake.nix\` can be removed — see the issue body for what to change."
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -55,9 +97,34 @@ jobs:
       # token when unset (PR is still created, but relies on the validation
       # step above). See .github/SETUP.md for setup instructions.
       - uses: DeterminateSystems/update-flake-lock@v28
+        id: update-flake
         with:
           token: ${{ secrets.FLAKE_UPDATE_TOKEN || github.token }}
           pr-title: "flake.lock: update inputs"
           pr-labels: |
             dependencies
             automated
+
+      # Auto-merge: once the PR's required checks (Lint, Flake Check,
+      # Evaluate Darwin Configurations — enforced via branch protection on
+      # master) pass, GitHub squash-merges it without human intervention.
+      # Guarded twice:
+      #   - step `if`: skip when the action created/updated no PR this run
+      #   - in-script: skip without failing when FLAKE_UPDATE_TOKEN is absent.
+      #     A GITHUB_TOKEN-created PR triggers no CI, so its required checks
+      #     would never report and auto-merge would just sit pending anyway.
+      - name: Enable auto-merge on the flake-update PR
+        if: >-
+          steps.update-flake.outputs.pull-request-number != '' &&
+          (steps.update-flake.outputs.pull-request-operation == 'created' ||
+           steps.update-flake.outputs.pull-request-operation == 'updated')
+        env:
+          GH_TOKEN: ${{ secrets.FLAKE_UPDATE_TOKEN }}
+          PR_URL: ${{ steps.update-flake.outputs.pull-request-url }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::FLAKE_UPDATE_TOKEN not configured — skipping auto-merge for $PR_URL"
+            exit 0
+          fi
+          gh pr merge --auto --squash "$PR_URL"
+          echo "Auto-merge (squash) enabled on $PR_URL"

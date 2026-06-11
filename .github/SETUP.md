@@ -107,7 +107,7 @@ lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
 | `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck, actionlint |
 | `check` | After lint | `nix flake check` + `nix build --dry-run` eval of the Linux config |
 | `eval-darwin` | After lint (pushes/PRs) | `nix build --dry-run` eval of all Darwin configs in `config.nix`; x86_64-darwin via Rosetta 2 (`extra-platforms`) |
-| `build-home` | Merge to master | Builds home configs (x86_64-linux + both aarch64-darwin); pushes to Cachix if token set. x86_64-darwin is eval-only (no hosted Intel macOS runners) |
+| `build-home` | Merge to master | Builds home configs (x86_64-linux + both aarch64-darwin); pushes to Cachix if token set. x86_64-darwin is eval-only (no hosted Intel macOS runners). The Cachix push is filtered: only paths *not* already signed by cache.nixos.org are uploaded (no point mirroring thousands of upstream paths) |
 | `docker-build` | After build-home | Builds Docker image, loads it, smoke-tests it locally, and only then pushes to Docker Hub if token set |
 | `docker-test` | After docker-build | Pulls the pushed image from Docker Hub and verifies it runs; reports "skipped — no token" in the job summary if `DOCKERHUB_TOKEN` is unset |
 
@@ -125,7 +125,42 @@ The update workflow (`.github/workflows/update-flake.yml`) runs weekly: it updat
 4. Add it as a repository secret named `FLAKE_UPDATE_TOKEN` (Settings → Secrets and variables → Actions → Secrets)
 5. Also store it in sops (`sops secrets/secrets.yaml`, key `flake_update_token`) — GitHub secrets are write-only, so the sops copy is the recovery source
 
-Without the PAT the workflow still works (the validation step gates the update), but the created PR will show no checks.
+Without the PAT the workflow still works (the validation step gates the update), but the created PR will show no checks and will **not** be auto-merged.
+
+### Auto-merge for flake-update PRs
+
+After creating/updating the PR, the workflow runs `gh pr merge --auto --squash` with `FLAKE_UPDATE_TOKEN`, so the PR merges itself once its required checks pass — no human in the loop for routine lock bumps. The step is skipped gracefully when no PR was created this run or when `FLAKE_UPDATE_TOKEN` is unset (a `GITHUB_TOKEN`-created PR triggers no CI, so its required checks would never report anyway).
+
+Auto-merge only waits for checks because of branch protection (below); two repo-side settings make it work:
+
+1. Repo setting **Allow auto-merge** (`gh repo edit <owner>/<repo> --enable-auto-merge`)
+2. Branch protection on `master` requiring the PR-context checks
+
+### Branch protection on `master`
+
+Protection requires exactly the three checks that run in PR context — `Lint`, `Flake Check`, `Evaluate Darwin Configurations` (`build-home` and the docker jobs are push-gated and must *not* be listed, or auto-merge would wait forever). Applied with:
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/branches/master/protection --input - <<'EOF'
+{
+  "required_status_checks": {
+    "strict": false,
+    "contexts": ["Lint", "Flake Check", "Evaluate Darwin Configurations"]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+EOF
+```
+
+**`enforce_admins: false` is load-bearing:** the repo owner routinely pushes directly to `master`, and with admin enforcement off, none of the protection rules apply to admins — direct pushes keep working exactly as before. The required checks only constrain PRs (i.e. the automated flake-update PRs) and non-admin pushes. Do not flip `enforce_admins` on without rethinking the direct-push workflow.
+
+### nixpkgs unpin tracker
+
+`flake.nix` temporarily pins nixpkgs to rev `8c3cede7` because nixos-unstable does not yet contain nixpkgs PR #529355 (merge commit `95e9e11e`), which fixes the darwin emacs 30.2 build. Tracking issue: [#1](https://github.com/brona90/home-manager/issues/1).
+
+Each weekly run of `update-flake.yml` checks `gh api repos/NixOS/nixpkgs/compare/95e9e11e...nixos-unstable --jq .status`; when the channel contains the fix (`ahead`/`identical`), it comments once on the tracking issue that the pin can be removed. The step is best-effort (`continue-on-error`) and never fails the workflow.
 
 **Disaster recovery:** all Actions secrets and variables can be replayed from
 sops-decrypted files with one command (defined in `modules/sops.nix`):

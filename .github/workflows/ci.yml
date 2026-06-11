@@ -185,8 +185,20 @@ jobs:
       - name: Push closure to Cachix (best effort)
         # Never fail CI over a cache upload; the build already succeeded.
         continue-on-error: true
-        run: nix path-info -r ./result | cachix push "${{ env.CACHIX_CACHE }}"
-          echo "Build complete - artifacts pushed to cachix automatically"
+        # Only push paths NOT already signed by cache.nixos.org — pushing the
+        # raw closure uploads thousands of upstream paths for nothing.
+        # `nix path-info --json` output shape differs across nix versions:
+        # nix >= 2.19 emits an object keyed by store path, older versions an
+        # array of {path, ...} objects; the jq below normalizes both.
+        run: |
+          nix path-info -r ./result --json | jq -r '
+            (if type == "object" then to_entries | map(.value + {path: .key}) else . end)
+            | .[]
+            | select(((.signatures // []) | map(startswith("cache.nixos.org")) | any) | not)
+            | .path' \
+            | tee /tmp/cachix-paths.txt \
+            | cachix push "${{ env.CACHIX_CACHE }}"
+          echo "Pushed $(grep -c . /tmp/cachix-paths.txt || true) paths not already signed by cache.nixos.org"
 
   docker-build:
     name: Build & Push Docker
