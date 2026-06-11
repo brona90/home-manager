@@ -50,9 +50,12 @@
     ...
   }: let
     # Read user configuration.
-    # config.local.nix (gitignored) can override any key — typically used for
-    # git identity (userName, userEmail, signingKey) on personal machines so
-    # those values don't have to live in the committed config.nix.
+    # config.local.nix (gitignored) is recursively merged over config.nix:
+    # nested attribute sets merge key-by-key, so you only specify the leaves
+    # you want to change; lists and scalar values REPLACE the base value
+    # wholesale (recursiveUpdate semantics — no list concatenation, e.g.
+    # overriding `users` replaces the whole list). Typical uses: git
+    # identity, repo/cachix settings, a host module's Homebrew lists.
     # See config.local.nix.example for the format.
     userConfig = let
       base = import ./config.nix;
@@ -61,10 +64,7 @@
         then import ./config.local.nix
         else {};
     in
-      base
-      // {
-        git = (base.git or {}) // (local.git or {});
-      };
+      nixpkgs.lib.recursiveUpdate base local;
     repoConfig = userConfig.repo;
     gitConfig = userConfig.git;
 
@@ -116,6 +116,9 @@
     mkHomeConfiguration = {
       system,
       username,
+      # Host module name resolved from the users.*.hosts mapping in
+      # config.nix; null means "generic platform profile only".
+      host ? null,
     }: let
       pkgs = pkgsFor system;
       homeDirectory = homeDirectoryFor {inherit system username;};
@@ -149,10 +152,11 @@
               ./home/darwin.nix
               ./modules/zscaler-bypass.nix
               ./modules/displayplacer.nix
-              # Zscaler bypass routes only on corporate machines (user 888973)
-              {my.zscalerBypass.enable = username == "888973";}
             ]
           )
+          # Machine-specific layer (Homebrew lists, build farm, WSL interop,
+          # Zscaler bypass, ...) — see the users.*.hosts mapping in config.nix.
+          ++ nixpkgs.lib.optional (host != null) (./home/hosts + "/${host}.nix")
           ++ [
             {
               home = {
@@ -190,6 +194,7 @@
                 "${user.username}@${system}" = mkHomeConfiguration {
                   inherit system;
                   inherit (user) username;
+                  host = (user.hosts or {}).${system} or null;
                 };
               }
           ) {}
@@ -276,6 +281,15 @@
                   inherit pkgs homeDirectory username;
                   homeConfiguration = homeConfigs.${configKey};
                   imageName = dockerImageName;
+                  stream = true;
+                };
+                # Slim rescue-shell image: zsh + tmux + git + core CLI, no
+                # home-manager closure (editors/LSPs). ~240MB vs multi-GB.
+                # Usage: $(nix build .#dockerImageSlim --print-out-paths) | docker load
+                dockerImageSlim = import ./lib/docker-image.nix {
+                  inherit pkgs homeDirectory username;
+                  profile = "slim";
+                  imageName = "${dockerImageName}-slim";
                   stream = true;
                 };
               }
@@ -411,28 +425,64 @@
     checks = forAllSystems (
       system: let
         pkgs = pkgsFor system;
-      in {
-        tmux-helper-build = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+      in
+        {
+          tmux-helper-build = pkgs.callPackage ./modules/tmux-helper/package.nix {};
 
-        # Runs go vet across the helper sources. buildGoModule's checkPhase
-        # already runs go test, but vet only fires for packages with _test.go
-        # files; this check exercises every package regardless.
-        tmux-helper-vet =
-          pkgs.runCommand "tmux-helper-vet" {
-            nativeBuildInputs = [pkgs.go];
-          } ''
-            export HOME=$TMPDIR
-            export GOCACHE=$TMPDIR/go-build
-            # Match package.nix: helper is built CGO_ENABLED=0, so vet (which
-            # otherwise resolves runtime/cgo and demands gcc) must match.
-            export CGO_ENABLED=0
-            cp -r ${./modules/tmux-helper/src} src
-            chmod -R u+w src
-            cd src
-            go vet ./...
+          # Runs go vet across the helper sources. buildGoModule's checkPhase
+          # already runs go test, but vet only fires for packages with _test.go
+          # files; this check exercises every package regardless.
+          tmux-helper-vet =
+            pkgs.runCommand "tmux-helper-vet" {
+              nativeBuildInputs = [pkgs.go];
+            } ''
+              export HOME=$TMPDIR
+              export GOCACHE=$TMPDIR/go-build
+              # Match package.nix: helper is built CGO_ENABLED=0, so vet (which
+              # otherwise resolves runtime/cgo and demands gcc) must match.
+              export CGO_ENABLED=0
+              cp -r ${./modules/tmux-helper/src} src
+              chmod -R u+w src
+              cd src
+              go vet ./...
+              touch $out
+            '';
+        }
+        # Regression guards for resolved review findings. Pure-eval +
+        # trivial builds; defined once on x86_64-linux (the guarded content
+        # is identical across systems). `nix flake check` fails if any
+        # future change reintroduces these.
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") (let
+          user = userForSystem system;
+          settingsText =
+            homeConfigs."${user.username}@${system}".config.home.file.".claude/settings.json".text;
+        in {
+          # 1. Claude Code must never attribute itself in commits/PRs, and
+          #    emacs_eval (arbitrary elisp = arbitrary shell) must never be
+          #    auto-allowed.
+          claude-settings-guards =
+            pkgs.runCommand "claude-settings-guards" {
+              nativeBuildInputs = [pkgs.jq];
+              settings = settingsText;
+              passAsFile = ["settings"];
+            } ''
+              jq -e '.attribution == {commit: "", pr: ""}' "$settingsPath" >/dev/null \
+                || { echo 'GUARD: settings.json attribution must be {commit: "", pr: ""}'; exit 1; }
+              jq -e '(.permissions.allow // []) | index("mcp__emacs__emacs_eval") == null' "$settingsPath" >/dev/null \
+                || { echo 'GUARD: mcp__emacs__emacs_eval must not be auto-allowed'; exit 1; }
+              touch $out
+            '';
+
+          # 2. The docker terminal must never bind-mount ~/.ssh (it holds the
+          #    sops-decrypted private key); SSH is agent-forwarding only.
+          docker-terminal-no-ssh-mount = pkgs.runCommand "docker-terminal-no-ssh-mount" {} ''
+            if grep -q '\$HOME/\.ssh:' ${./modules/docker-terminal.nix} ${./lib/docker-test-app.nix}; then
+              echo 'GUARD: ~/.ssh must not be bind-mounted into containers'
+              exit 1
+            fi
             touch $out
           '';
-      }
+        })
     );
   };
 }
