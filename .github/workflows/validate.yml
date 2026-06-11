@@ -64,10 +64,13 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
             sandbox = false
+      # Pull from OUR cache too — build-home pushes the full doom/home
+      # closure there; without it this job rebuilds emacs packages from
+      # source every run and routinely blows the 45-min timeout.
       - uses: cachix/cachix-action@v17
         with:
-          name: nix-community
-          extraPullNames: emacs
+          name: ${{ env.CACHIX_CACHE }}
+          extraPullNames: nix-community,emacs
       - name: Find Darwin configuration
         id: config
         run: |
