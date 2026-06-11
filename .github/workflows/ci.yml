@@ -125,6 +125,9 @@ jobs:
     # Run on push to main/master (not PRs) to populate cache
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     strategy:
+      # One config's transient failure (e.g. a 503 from a package host)
+      # must not cancel the sibling builds.
+      fail-fast: false
       matrix:
         include:
           - config: gfoster@x86_64-linux
