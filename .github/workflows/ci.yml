@@ -220,8 +220,11 @@ jobs:
       
       - name: Build Docker image
         run: |
-          nix build .#dockerImage
-          docker load < result
+          # Streamed variant: pipes layers straight into the docker daemon.
+          # The tar.gz dockerImage blew the runner's disk during layer
+          # assembly (closure + tar scratch + archive simultaneously).
+          nix build .#dockerImageStream
+          ./result | docker load
 
       # Smoke test runs against the locally loaded image BEFORE any push,
       # so a broken image never reaches Docker Hub.

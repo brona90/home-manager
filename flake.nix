@@ -269,6 +269,15 @@
                   homeConfiguration = homeConfigs.${configKey};
                   imageName = dockerImageName;
                 };
+                # CI variant: executable that streams the image tarball to
+                # stdout for `./result | docker load` — no tar.gz in the
+                # store, no layer-assembly scratch (runner disk pressure).
+                dockerImageStream = import ./lib/docker-image.nix {
+                  inherit pkgs homeDirectory username;
+                  homeConfiguration = homeConfigs.${configKey};
+                  imageName = dockerImageName;
+                  stream = true;
+                };
               }
               else {}
             )

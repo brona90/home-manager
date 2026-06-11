@@ -8,6 +8,10 @@
   gid ? 1000,
   imageName ? "home-manager",
   imageTag ? "latest",
+  # stream = true emits a script that writes the image tarball to stdout
+  # (pipe into `docker load`) instead of materializing a tar.gz in the
+  # store — roughly halves peak disk usage, which matters on CI runners.
+  stream ? false,
 }: let
   inherit (homeConfiguration) activationPackage;
   homePath = "${activationPackage}/home-path";
@@ -71,8 +75,12 @@
       exec "${homePath}/bin/zsh"
     '';
   };
+  mkImage =
+    if stream
+    then pkgs.dockerTools.streamLayeredImage
+    else pkgs.dockerTools.buildLayeredImage;
 in
-  pkgs.dockerTools.buildLayeredImage {
+  mkImage {
     name = imageName;
     tag = imageTag;
 
