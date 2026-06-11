@@ -2,7 +2,13 @@
   description = "Reproducible Home Manager and NixOS configurations";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # TEMPORARY PIN (2026-06-10): nixos-unstable (a799d3e3) carries nixpkgs
+    # commit 04b2b505 which breaks the darwin emacs 30.2 build (C23 bool in
+    # ObjC units; nixpkgs#529554, fixed by #529355 / 95e9e11e). This
+    # nixpkgs-unstable rev contains the fix and has cached darwin binaries.
+    # Revert to "github:NixOS/nixpkgs/nixos-unstable" once the channel
+    # advances past 95e9e11e.
+    nixpkgs.url = "github:NixOS/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
 
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -16,23 +22,7 @@
 
     doom-emacs = {
       url = "github:marienz/nix-doom-emacs-unstraightened";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        # Pin emacs-overlay: emacs 30.2 from emacs-overlay b18d638b fails to
-        # compile on darwin (C23 'true' in lisp.h via nsterm.o/nsfns.o with
-        # the darwin stdenv clang). Pinned 2026-06-10; remove this pin once
-        # upstream emacs-overlay/nixpkgs build on darwin again.
-        emacs-overlay = {
-          url = "github:nix-community/emacs-overlay/c7704e4387f66c07a9ce2c76f5081848c61a3f1c";
-          # Preserve upstream's wiring: unstraightened points emacs-overlay's
-          # nixpkgs inputs at itself (follows = "") so no extra nixpkgs is
-          # fetched.
-          inputs = {
-            nixpkgs.follows = "doom-emacs";
-            nixpkgs-stable.follows = "doom-emacs";
-          };
-        };
-      };
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     sops-nix = {
