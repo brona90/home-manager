@@ -3,6 +3,7 @@
   config,
   lib,
   pkgs,
+  userConfig,
   ...
 }: let
   cfg = config.my.sops;
@@ -48,6 +49,7 @@ in {
               "${secretsDir}/github_token.tmp" \
               "${secretsDir}/dockerhub_token.tmp" \
               "${secretsDir}/cachix_token.tmp" \
+              "${secretsDir}/flake_update_token.tmp" \
               "${secretsDir}/porkbun_api_key.tmp" \
               "${secretsDir}/porkbun_secret_key.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" \
@@ -77,6 +79,12 @@ in {
               if ${pkgs.sops}/bin/sops -d --extract '["cachix_token"]' "${secretsFile}" > "${secretsDir}/cachix_token.tmp" 2>/dev/null; then
                 chmod 0400 "${secretsDir}/cachix_token.tmp"
                 mv -f "${secretsDir}/cachix_token.tmp" "${secretsDir}/cachix_token"
+              fi
+
+              # Decrypt flake_update_token (GitHub PAT for update-flake.yml CI)
+              if ${pkgs.sops}/bin/sops -d --extract '["flake_update_token"]' "${secretsFile}" > "${secretsDir}/flake_update_token.tmp" 2>/dev/null; then
+                chmod 0400 "${secretsDir}/flake_update_token.tmp"
+                mv -f "${secretsDir}/flake_update_token.tmp" "${secretsDir}/flake_update_token"
               fi
 
               # Decrypt Porkbun API credentials
@@ -139,6 +147,7 @@ in {
         GITHUB_TOKEN_FILE = "${secretsDir}/github_token";
         DOCKERHUB_TOKEN_FILE = "${secretsDir}/dockerhub_token";
         CACHIX_TOKEN_FILE = "${secretsDir}/cachix_token";
+        FLAKE_UPDATE_TOKEN_FILE = "${secretsDir}/flake_update_token";
         PORKBUN_API_KEY_FILE = "${secretsDir}/porkbun_api_key";
         PORKBUN_SECRET_KEY_FILE = "${secretsDir}/porkbun_secret_key";
       };
@@ -159,6 +168,9 @@ in {
         };
         cachix_token = {
           path = "${secretsDir}/cachix_token";
+        };
+        flake_update_token = {
+          path = "${secretsDir}/flake_update_token";
         };
         "porkbun/api_key" = {
           path = "${secretsDir}/porkbun_api_key";
@@ -193,12 +205,14 @@ in {
       export GITHUB_TOKEN_FILE="${secretsDir}/github_token"
       export DOCKERHUB_TOKEN_FILE="${secretsDir}/dockerhub_token"
       export CACHIX_TOKEN_FILE="${secretsDir}/cachix_token"
+      export FLAKE_UPDATE_TOKEN_FILE="${secretsDir}/flake_update_token"
       export PORKBUN_API_KEY_FILE="${secretsDir}/porkbun_api_key"
       export PORKBUN_SECRET_KEY_FILE="${secretsDir}/porkbun_secret_key"
 
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       cachix-token() { cat "$CACHIX_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+      flake-update-token() { cat "$FLAKE_UPDATE_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       porkbun-api-key() { cat "$PORKBUN_API_KEY_FILE" 2>/dev/null || echo "Secret not available"; }
       porkbun-secret-key() { cat "$PORKBUN_SECRET_KEY_FILE" 2>/dev/null || echo "Secret not available"; }
 
@@ -210,6 +224,27 @@ in {
         else
           echo "Cachix token not available"
         fi
+      }
+
+      # Replay all GitHub Actions secrets/variables from sops-decrypted
+      # files. GitHub secrets are write-only, so a deleted/recreated repo
+      # loses them; this restores everything in one command.
+      repo-secrets-restore() {
+        local repo="''${1:-${userConfig.repo.owner}/${userConfig.repo.name}}"
+        local rc=0
+        for pair in \
+          "CACHIX_AUTH_TOKEN:$CACHIX_TOKEN_FILE" \
+          "DOCKERHUB_TOKEN:$DOCKERHUB_TOKEN_FILE" \
+          "FLAKE_UPDATE_TOKEN:$FLAKE_UPDATE_TOKEN_FILE"; do
+          local name="''${pair%%:*}" file="''${pair#*:}"
+          if [ -s "$file" ]; then
+            gh secret set "$name" --repo "$repo" < "$file" && echo "✓ $name" || rc=1
+          else
+            echo "✗ $name: no decrypted secret at $file" >&2; rc=1
+          fi
+        done
+        gh variable set DOCKERHUB_USERNAME --repo "$repo" --body "${userConfig.repo.dockerHubUser}" && echo "✓ DOCKERHUB_USERNAME" || rc=1
+        return $rc
       }
     '';
   };

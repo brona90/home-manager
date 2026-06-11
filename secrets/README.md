@@ -10,6 +10,8 @@
 # github_token: ghp_xxxxxxxxxxxxxxxxxxxx
 # dockerhub_token: dckr_pat_xxxxxxxxxxxxxxxxxxxx
 # cachix_token: your-cachix-auth-token
+# flake_update_token: github_pat_xxxx   # fine-grained PAT for update-flake.yml
+#                                       # (contents + pull-requests: write)
 # porkbun:
 #   api_key: pk1_xxxxxxxxxxxxxxxxxxxx
 #   secret_key: sk1_xxxxxxxxxxxxxxxxxxxx

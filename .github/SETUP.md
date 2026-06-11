@@ -123,8 +123,18 @@ The update workflow (`.github/workflows/update-flake.yml`) runs weekly: it updat
 2. Resource owner: you; Repository access: only this repo
 3. Permissions: **Contents: Read and write**, **Pull requests: Read and write**
 4. Add it as a repository secret named `FLAKE_UPDATE_TOKEN` (Settings → Secrets and variables → Actions → Secrets)
+5. Also store it in sops (`sops secrets/secrets.yaml`, key `flake_update_token`) — GitHub secrets are write-only, so the sops copy is the recovery source
 
 Without the PAT the workflow still works (the validation step gates the update), but the created PR will show no checks.
+
+**Disaster recovery:** all Actions secrets and variables can be replayed from
+sops-decrypted files with one command (defined in `modules/sops.nix`):
+
+```bash
+repo-secrets-restore            # restores CACHIX_AUTH_TOKEN, DOCKERHUB_TOKEN,
+                                # FLAKE_UPDATE_TOKEN, DOCKERHUB_USERNAME
+repo-secrets-restore owner/repo # target a fork
+```
 
 ## Using the Docker Image
 
