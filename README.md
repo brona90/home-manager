@@ -8,7 +8,7 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 |------|-------------|
 | [Doom Emacs](https://github.com/doomemacs/doomemacs) | Emacs distribution with sensible defaults via [nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened) |
 | [LazyVim](https://www.lazyvim.org/) | Neovim setup with lazy.nvim plugin manager |
-| [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 38 keybinds, 10 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~1200 LOC). |
+| [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 38 keybinds, 25 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~2,100 LOC). |
 | [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `zsh-fast-syntax-highlighting`, `zsh-history-substring-search` |
 | [Starship](https://starship.rs/) | Fast, customizable shell prompt |
 | [mise](https://mise.jdx.dev/) | Polyglot runtime manager. Used **per-project only** via `direnv use_mise` -- the global zsh integration is intentionally off (5+ s/prompt cost on WSL). Globally needed runtimes live in nixpkgs (`home.packages`). |
@@ -82,7 +82,7 @@ This repo is designed to be easily forked:
 | Command | Description |
 |---------|-------------|
 | `hms`   | Home Manager switch (rebuild config) |
-| `nrs`   | NixOS rebuild switch |
+| `nrs`   | NixOS rebuild switch (WSL host only — defined in `home/hosts/wsl.nix`) |
 | `em`    | Emacs (GUI, uses daemon) |
 | `emt`   | Emacs terminal |
 | `lvim`  | LazyVim |
@@ -146,6 +146,8 @@ This repo is designed to be easily forked:
 | `gpl`   | git pull |
 | `gf`    | git fetch |
 | `gb`    | git branch |
+| `gm`    | git merge |
+| `gr`    | git remote -v |
 
 ### GPG / YubiKey (WSL)
 
@@ -479,6 +481,7 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 - `github_token` - GitHub API token
 - `dockerhub_token` - Docker Hub token
 - `cachix_token` - Cachix auth token (for pushing to the binary cache)
+- `flake_update_token` - GitHub fine-grained PAT so weekly flake-update PRs trigger CI and auto-merge (see [.github/SETUP.md](.github/SETUP.md))
 - `porkbun/api_key` - Porkbun DNS API key
 - `porkbun/secret_key` - Porkbun DNS API secret key
 - `ssh/id_rsa` - SSH private key (synced to `~/.ssh/id_rsa`)
