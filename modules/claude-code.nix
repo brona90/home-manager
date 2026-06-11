@@ -115,6 +115,12 @@
   };
 
   settings = {
+    # No agent attribution in commit messages or PR bodies (no
+    # Co-Authored-By trailers, no "Generated with Claude Code" footers).
+    attribution = {
+      commit = "";
+      pr = "";
+    };
     statusLine = {
       type = "command";
       command = "${statusLineScript}/bin/claude-statusline";
