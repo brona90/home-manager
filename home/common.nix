@@ -86,6 +86,7 @@ in {
         aspellDicts.en
         ispell
         eza # modern ls replacement (exa fork)
+        rsync # GNU rsync; macOS ships openrsync, which lacks --info=progress2
         cachix # Nix binary cache
         texlive.combined.scheme-medium
       ]
