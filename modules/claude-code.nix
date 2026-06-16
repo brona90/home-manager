@@ -31,6 +31,42 @@
     '';
   };
 
+  # uv runs the PEP-723 self-contained MCP servers under ~/claude-kg and ~/searxng.
+  uv = "${config.home.homeDirectory}/.local/bin/uv";
+
+  # MCP servers Claude Code should load at USER scope. Claude reads these only from
+  # ~/.claude.json — never from settings.json — and that file is a mutable runtime
+  # store we can't own with home.file. So an activation script (below) merges this
+  # set into ~/.claude.json on every switch, which also refreshes Nix-store command
+  # paths (porkbun) on each rebuild.
+  managedMcpServers = {
+    # Local knowledge-graph shared memory (Qdrant + local Ollama embeddings).
+    claude-kg = {
+      type = "stdio";
+      command = uv;
+      args = ["run" "--quiet" "${config.home.homeDirectory}/claude-kg/kg_server.py"];
+    };
+    # Private web search via a local SearXNG instance.
+    searxng = {
+      type = "stdio";
+      command = uv;
+      args = ["run" "--quiet" "${config.home.homeDirectory}/searxng/search_server.py"];
+      env = {SEARXNG_URL = "http://localhost:8888";};
+    };
+    # Emacs integration; binary from the user nix profile (stable path across rebuilds).
+    emacs = {
+      type = "stdio";
+      command = "${config.home.homeDirectory}/.nix-profile/bin/emacs-mcp-server";
+    };
+    # Porkbun DNS. API credential setup is a later task; the server command is wired now.
+    porkbun = {
+      type = "stdio";
+      command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
+    };
+  };
+  managedMcpServersFile =
+    pkgs.writeText "claude-mcp-servers.json" (builtins.toJSON managedMcpServers);
+
   # claude-powerline ships fully bundled (no runtime npm dependencies), so we
   # pin the tarball and run it with node directly: the statusline re-runs on
   # every conversation update, where per-call npx resolution is too slow.
@@ -95,11 +131,9 @@
       "pyright-lsp@${marketplace}" = true;
       "typescript-lsp@${marketplace}" = true;
     };
-    mcpServers = {
-      porkbun = {
-        command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
-      };
-    };
+    # MCP servers are NOT configured here — Claude Code ignores `mcpServers` in
+    # settings.json. They are merged into ~/.claude.json by the claudeMcpServers
+    # activation script (see managedMcpServers above).
     permissions = {
       allow = [
         "Bash(gh run view *)"
@@ -141,6 +175,19 @@
           ];
         }
       ];
+      # At session end, distill durable facts from the transcript into the
+      # claude-kg knowledge graph (local Ollama backend by default; free, no agent).
+      SessionEnd = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "${config.home.homeDirectory}/claude-kg/hooks/capture_memory.sh";
+              timeout = 15;
+            }
+          ];
+        }
+      ];
     };
   };
 in {
@@ -155,5 +202,23 @@ in {
 
     home.file.".claude/settings.json".text =
       builtins.toJSON settings;
+
+    # Claude Code loads user-scope MCP servers only from ~/.claude.json (a mutable
+    # runtime file), so we merge our managed set into it on activation instead of
+    # owning the file. Unmanaged servers already present are preserved; ours win on
+    # key conflict. Writes atomically via a temp file.
+    home.activation.claudeMcpServers = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      cj="$HOME/.claude.json"
+      ${pkgs.coreutils}/bin/test -e "$cj" || echo '{}' > "$cj"
+      tmp="$(${pkgs.coreutils}/bin/mktemp "$HOME/.claude.json.XXXXXX")"
+      if ${pkgs.jq}/bin/jq --slurpfile m ${managedMcpServersFile} \
+           '.mcpServers = ((.mcpServers // {}) + $m[0])' "$cj" > "$tmp"; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/mv "$tmp" "$cj"
+        echo "claude-mcp: merged managed MCP servers into ~/.claude.json"
+      else
+        ${pkgs.coreutils}/bin/rm -f "$tmp"
+        echo "claude-mcp: jq merge failed; ~/.claude.json left unchanged" >&2
+      fi
+    '';
   };
 }
