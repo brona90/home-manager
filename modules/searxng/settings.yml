@@ -1,0 +1,13 @@
+# claude-kg companion: local SearXNG for private web search via MCP.
+# Rendered to ~/.config/searxng/settings.yml at activation with a generated
+# secret_key substituted for __SECRET__ (kept out of the repo / nix store).
+use_default_settings: true
+server:
+  secret_key: "__SECRET__"
+  limiter: false # allow local programmatic JSON access
+  image_proxy: true
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json # the JSON API the MCP server uses

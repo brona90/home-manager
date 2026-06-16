@@ -143,6 +143,8 @@
             ./modules/docker-terminal.nix
             ./modules/emacs-mcp.nix
             ./modules/claude-code.nix
+            ./modules/claude-kg/default.nix
+            ./modules/searxng/default.nix
             ./home/common.nix
           ]
           ++ (

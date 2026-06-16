@@ -27,6 +27,11 @@ in {
   my = {
     gpg.forwardToWindows = true;
 
+    # Local AI infra lives on this box (Docker + Ollama): the claude-kg knowledge
+    # graph and the SearXNG private-search MCP server, both managed declaratively.
+    claudeKg.enable = true;
+    searxng.enable = true;
+
     # Windows interop -- /mnt/c is dropped from PATH for zsh perf
     # (FSH command-existence checks per keystroke walk PATH and
     # stat each /mnt/c entry over the 9P bridge). Alias the few

@@ -31,41 +31,13 @@
     '';
   };
 
-  # uv runs the PEP-723 self-contained MCP servers under ~/claude-kg and ~/searxng.
-  uv = "${config.home.homeDirectory}/.local/bin/uv";
-
-  # MCP servers Claude Code should load at USER scope. Claude reads these only from
-  # ~/.claude.json — never from settings.json — and that file is a mutable runtime
-  # store we can't own with home.file. So an activation script (below) merges this
-  # set into ~/.claude.json on every switch, which also refreshes Nix-store command
-  # paths (porkbun) on each rebuild.
-  managedMcpServers = {
-    # Local knowledge-graph shared memory (Qdrant + local Ollama embeddings).
-    claude-kg = {
-      type = "stdio";
-      command = uv;
-      args = ["run" "--quiet" "${config.home.homeDirectory}/claude-kg/kg_server.py"];
-    };
-    # Private web search via a local SearXNG instance.
-    searxng = {
-      type = "stdio";
-      command = uv;
-      args = ["run" "--quiet" "${config.home.homeDirectory}/searxng/search_server.py"];
-      env = {SEARXNG_URL = "http://localhost:8888";};
-    };
-    # Emacs integration; binary from the user nix profile (stable path across rebuilds).
-    emacs = {
-      type = "stdio";
-      command = "${config.home.homeDirectory}/.nix-profile/bin/emacs-mcp-server";
-    };
-    # Porkbun DNS. API credential setup is a later task; the server command is wired now.
-    porkbun = {
-      type = "stdio";
-      command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
-    };
-  };
+  # Serialize the MCP servers contributed via my.claudeCode.mcpServers (this module
+  # sets porkbun; claude-kg/searxng/emacs modules add their own) for the activation
+  # merge below. Claude Code reads user-scope servers only from ~/.claude.json — never
+  # from settings.json — so we merge into that mutable runtime file on every switch,
+  # which also refreshes Nix-store command paths on each rebuild.
   managedMcpServersFile =
-    pkgs.writeText "claude-mcp-servers.json" (builtins.toJSON managedMcpServers);
+    pkgs.writeText "claude-mcp-servers.json" (builtins.toJSON cfg.mcpServers);
 
   # claude-powerline ships fully bundled (no runtime npm dependencies), so we
   # pin the tarball and run it with node directly: the statusline re-runs on
@@ -131,9 +103,9 @@
       "pyright-lsp@${marketplace}" = true;
       "typescript-lsp@${marketplace}" = true;
     };
-    # MCP servers are NOT configured here — Claude Code ignores `mcpServers` in
-    # settings.json. They are merged into ~/.claude.json by the claudeMcpServers
-    # activation script (see managedMcpServers above).
+    # MCP servers are NOT set here — Claude Code ignores `mcpServers` in
+    # settings.json. They are declared via my.claudeCode.mcpServers (by this and
+    # other modules) and merged into ~/.claude.json by the activation script below.
     permissions = {
       allow = [
         "Bash(gh run view *)"
@@ -175,17 +147,18 @@
           ];
         }
       ];
-      # At session end, distill durable facts from the transcript into the
-      # claude-kg knowledge graph (local Ollama backend by default; free, no agent).
+    }
+    // lib.optionalAttrs (cfg.sessionEndCommands != []) {
+      # Run each contributed SessionEnd command (e.g. claude-kg auto-capture).
       SessionEnd = [
         {
-          hooks = [
-            {
+          hooks =
+            map (cmd: {
               type = "command";
-              command = "${config.home.homeDirectory}/claude-kg/hooks/capture_memory.sh";
+              command = cmd;
               timeout = 15;
-            }
-          ];
+            })
+            cfg.sessionEndCommands;
         }
       ];
     };
@@ -193,6 +166,22 @@
 in {
   options.my.claudeCode = {
     enable = lib.mkEnableOption "Claude Code settings and hooks";
+
+    mcpServers = lib.mkOption {
+      type = lib.types.attrsOf lib.types.anything;
+      default = {};
+      description = ''
+        User-scope MCP servers to merge into ~/.claude.json on activation. Other
+        modules contribute entries (e.g. claude-kg, searxng, emacs-mcp); this module
+        adds porkbun.
+      '';
+    };
+
+    sessionEndCommands = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = "Commands run as Claude Code SessionEnd hooks (one hook each).";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -202,6 +191,12 @@ in {
 
     home.file.".claude/settings.json".text =
       builtins.toJSON settings;
+
+    # This module owns the porkbun DNS MCP server (its wrapper is defined above).
+    my.claudeCode.mcpServers.porkbun = {
+      type = "stdio";
+      command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
+    };
 
     # Claude Code loads user-scope MCP servers only from ~/.claude.json (a mutable
     # runtime file), so we merge our managed set into it on activation instead of

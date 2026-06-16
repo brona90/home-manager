@@ -43,5 +43,11 @@ in {
 
   config = lib.mkIf cfg.enable {
     home.packages = [mcpServer];
+
+    # Register as a user-scope MCP server with Claude Code (merged into ~/.claude.json).
+    my.claudeCode.mcpServers.emacs = {
+      type = "stdio";
+      command = "${mcpServer}/bin/emacs-mcp-server";
+    };
   };
 }
