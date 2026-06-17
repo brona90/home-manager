@@ -36,45 +36,47 @@ in {
       ${pkgs.coreutils}/bin/mkdir -p "${dataDir}/qdrant" "${dataDir}/snapshots"
     '';
 
-    systemd.user.services.qdrant = {
-      Unit = {
-        Description = "Qdrant vector DB for claude-kg";
-        After = ["network-online.target"];
+    systemd.user = {
+      services.qdrant = {
+        Unit = {
+          Description = "Qdrant vector DB for claude-kg";
+          After = ["network-online.target"];
+        };
+        Service = {
+          Type = "exec";
+          ExecStartPre = "-${cfg.dockerBin} rm -f claude-kg-qdrant";
+          ExecStart = ''
+            ${cfg.dockerBin} run --rm --name claude-kg-qdrant \
+              -p 6333:6333 -p 6334:6334 \
+              -v ${dataDir}/qdrant:/qdrant/storage \
+              -v ${dataDir}/snapshots:/qdrant/snapshots \
+              -e QDRANT__TELEMETRY_DISABLED=true \
+              ${cfg.image}
+          '';
+          ExecStop = "${cfg.dockerBin} stop claude-kg-qdrant";
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
+        Install.WantedBy = ["default.target"];
       };
-      Service = {
-        Type = "exec";
-        ExecStartPre = "-${cfg.dockerBin} rm -f claude-kg-qdrant";
-        ExecStart = ''
-          ${cfg.dockerBin} run --rm --name claude-kg-qdrant \
-            -p 6333:6333 -p 6334:6334 \
-            -v ${dataDir}/qdrant:/qdrant/storage \
-            -v ${dataDir}/snapshots:/qdrant/snapshots \
-            -e QDRANT__TELEMETRY_DISABLED=true \
-            ${cfg.image}
-        '';
-        ExecStop = "${cfg.dockerBin} stop claude-kg-qdrant";
-        Restart = "on-failure";
-        RestartSec = 5;
-      };
-      Install.WantedBy = ["default.target"];
-    };
 
-    # Daily snapshot of all collections (replaces the old crontab entry).
-    systemd.user.services.kg-snapshot = {
-      Unit.Description = "claude-kg Qdrant snapshot + prune";
-      Service = {
-        Type = "oneshot";
-        Environment = "CLAUDE_KG_DATA_DIR=${dataDir}";
-        ExecStart = "${pkg}/bin/kg-snapshot";
+      # Daily snapshot of all collections (replaces the old crontab entry).
+      services.kg-snapshot = {
+        Unit.Description = "claude-kg Qdrant snapshot + prune";
+        Service = {
+          Type = "oneshot";
+          Environment = "CLAUDE_KG_DATA_DIR=${dataDir}";
+          ExecStart = "${pkg}/bin/kg-snapshot";
+        };
       };
-    };
-    systemd.user.timers.kg-snapshot = {
-      Unit.Description = "Daily claude-kg snapshot";
-      Timer = {
-        OnCalendar = "*-*-* 03:17:00";
-        Persistent = true;
+      timers.kg-snapshot = {
+        Unit.Description = "Daily claude-kg snapshot";
+        Timer = {
+          OnCalendar = "*-*-* 03:17:00";
+          Persistent = true;
+        };
+        Install.WantedBy = ["timers.target"];
       };
-      Install.WantedBy = ["timers.target"];
     };
   };
 }

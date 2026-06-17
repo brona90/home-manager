@@ -120,48 +120,49 @@
         "mcp__emacs__emacs_show_diff"
       ];
     };
-    hooks = {
-      PermissionRequest = [
-        {
-          matcher = "Edit|Write";
-          hooks = [
-            {
-              type = "command";
-              # Write via temp file + mv in the same directory so input.json
-              # appears atomically and readers never see a partial write.
-              command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && t=$(mktemp \"$d/input.XXXXXX\") && cat > \"$t\" && mv \"$t\" \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
-              timeout = 10;
-            }
-          ];
-        }
-      ];
-      PostToolUse = [
-        {
-          matcher = "Edit|Write";
-          hooks = [
-            {
-              type = "command";
-              command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; emacsclient --eval '(claude-diff-dismiss)'";
-              timeout = 5;
-            }
-          ];
-        }
-      ];
-    }
-    // lib.optionalAttrs (cfg.sessionEndCommands != []) {
-      # Run each contributed SessionEnd command (e.g. claude-kg auto-capture).
-      SessionEnd = [
-        {
-          hooks =
-            map (cmd: {
-              type = "command";
-              command = cmd;
-              timeout = 15;
-            })
-            cfg.sessionEndCommands;
-        }
-      ];
-    };
+    hooks =
+      {
+        PermissionRequest = [
+          {
+            matcher = "Edit|Write";
+            hooks = [
+              {
+                type = "command";
+                # Write via temp file + mv in the same directory so input.json
+                # appears atomically and readers never see a partial write.
+                command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && t=$(mktemp \"$d/input.XXXXXX\") && cat > \"$t\" && mv \"$t\" \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
+                timeout = 10;
+              }
+            ];
+          }
+        ];
+        PostToolUse = [
+          {
+            matcher = "Edit|Write";
+            hooks = [
+              {
+                type = "command";
+                command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; emacsclient --eval '(claude-diff-dismiss)'";
+                timeout = 5;
+              }
+            ];
+          }
+        ];
+      }
+      // lib.optionalAttrs (cfg.sessionEndCommands != []) {
+        # Run each contributed SessionEnd command (e.g. claude-kg auto-capture).
+        SessionEnd = [
+          {
+            hooks =
+              map (cmd: {
+                type = "command";
+                command = cmd;
+                timeout = 15;
+              })
+              cfg.sessionEndCommands;
+          }
+        ];
+      };
   };
 in {
   options.my.claudeCode = {
@@ -185,35 +186,36 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    # The module that enables Claude Code also owns the CLI package
-    # (previously duplicated in home/linux.nix and home/darwin.nix).
-    home.packages = [pkgs.claude-code];
-
-    home.file.".claude/settings.json".text =
-      builtins.toJSON settings;
-
     # This module owns the porkbun DNS MCP server (its wrapper is defined above).
     my.claudeCode.mcpServers.porkbun = {
       type = "stdio";
       command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
     };
 
-    # Claude Code loads user-scope MCP servers only from ~/.claude.json (a mutable
-    # runtime file), so we merge our managed set into it on activation instead of
-    # owning the file. Unmanaged servers already present are preserved; ours win on
-    # key conflict. Writes atomically via a temp file.
-    home.activation.claudeMcpServers = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      cj="$HOME/.claude.json"
-      ${pkgs.coreutils}/bin/test -e "$cj" || echo '{}' > "$cj"
-      tmp="$(${pkgs.coreutils}/bin/mktemp "$HOME/.claude.json.XXXXXX")"
-      if ${pkgs.jq}/bin/jq --slurpfile m ${managedMcpServersFile} \
-           '.mcpServers = ((.mcpServers // {}) + $m[0])' "$cj" > "$tmp"; then
-        $DRY_RUN_CMD ${pkgs.coreutils}/bin/mv "$tmp" "$cj"
-        echo "claude-mcp: merged managed MCP servers into ~/.claude.json"
-      else
-        ${pkgs.coreutils}/bin/rm -f "$tmp"
-        echo "claude-mcp: jq merge failed; ~/.claude.json left unchanged" >&2
-      fi
-    '';
+    home = {
+      # The module that enables Claude Code also owns the CLI package
+      # (previously duplicated in home/linux.nix and home/darwin.nix).
+      packages = [pkgs.claude-code];
+
+      file.".claude/settings.json".text = builtins.toJSON settings;
+
+      # Claude Code loads user-scope MCP servers only from ~/.claude.json (a mutable
+      # runtime file), so we merge our managed set into it on activation instead of
+      # owning the file. Unmanaged servers already present are preserved; ours win on
+      # key conflict. Writes atomically via a temp file.
+      activation.claudeMcpServers = lib.hm.dag.entryAfter ["writeBoundary"] ''
+        cj="$HOME/.claude.json"
+        ${pkgs.coreutils}/bin/test -e "$cj" || echo '{}' > "$cj"
+        tmp="$(${pkgs.coreutils}/bin/mktemp "$HOME/.claude.json.XXXXXX")"
+        if ${pkgs.jq}/bin/jq --slurpfile m ${managedMcpServersFile} \
+             '.mcpServers = ((.mcpServers // {}) + $m[0])' "$cj" > "$tmp"; then
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/mv "$tmp" "$cj"
+          echo "claude-mcp: merged managed MCP servers into ~/.claude.json"
+        else
+          ${pkgs.coreutils}/bin/rm -f "$tmp"
+          echo "claude-mcp: jq merge failed; ~/.claude.json left unchanged" >&2
+        fi
+      '';
+    };
   };
 }
