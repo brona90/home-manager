@@ -137,6 +137,7 @@
             ./modules/btop.nix
             ./modules/vim/default.nix
             ./modules/emacs/default.nix
+            ./modules/emacs-doctor/default.nix
             ./modules/tmux/default.nix
             ./modules/tmux-helper/default.nix
             ./modules/sops.nix
@@ -177,6 +178,7 @@
                     doomLocalDir = "~/.local/share/nix-doom";
                   };
                 };
+                emacsDoctor.enable = true;
                 zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup'';
                 zsh.extraAliases.hmn = ''home-manager news --flake "$HOME/.config/home-manager#${username}@${system}"'';
               };
@@ -255,6 +257,11 @@
         perUserPackages
         // {
           tmux-helper = pkgs.callPackage ./modules/tmux-helper/package.nix {};
+        }
+        # emacs-doctor is Linux-only (systemd/proc/WSLg); expose it only there
+        # so darwin `nix flake check` doesn't try to build an unsupported pkg.
+        // nixpkgs.lib.optionalAttrs isLinux {
+          emacs-doctor = pkgs.callPackage ./modules/emacs-doctor/package.nix {};
         }
         // (
           if user != null

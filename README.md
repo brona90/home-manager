@@ -85,6 +85,7 @@ This repo is designed to be easily forked:
 | `nrs`   | NixOS rebuild switch (WSL host only — defined in `home/hosts/wsl.nix`) |
 | `em`    | Emacs (GUI, uses daemon) |
 | `emt`   | Emacs terminal |
+| `emacs-doctor` | Inspect/reset/monitor the Emacs daemon + WSL health (`status`, `reset`, `gui-probe`, `watch`) — Linux only |
 | `lvim`  | LazyVim |
 | `dev-disk` | Show disk usage for Nix, Docker, mise, etc. |
 | `dev-clean` | Interactive cleanup of all dev tools |
@@ -344,6 +345,38 @@ emacs --debug-init
 # Check what packages are installed
 nix path-info -rsh $(which emacs) | sort -hk2 | tail -20
 ```
+
+#### `emacs-doctor` — daemon health & recovery
+
+The daemon is owned by the `emacs` systemd **user** unit. The failure mode to know
+about: a stray standalone `emacs --daemon` can grab the server socket, the managed
+`--fg-daemon` can then never bind it, and `Restart=on-failure` relaunches it forever —
+pegging a CPU core and making both Emacs *and* every other GUI app feel slow (CPU
+starvation, not graphics). Tell-tale: `NRestarts` climbing and `ActiveState=activating`
+that never reaches `active`.
+
+`emacs-doctor` (Linux only) inspects and recovers this:
+
+```bash
+emacs-doctor status        # daemon state + orphan/socket-squat detection,
+                           # plus WSL load, top CPU, GPU/GL health
+emacs-doctor reset         # recover to ONE clean systemd-managed daemon.
+                           # Refuses if any buffer is unsaved (see below).
+emacs-doctor reset --force # same, but discard unsaved changes
+emacs-doctor gui-probe     # measure real GUI launch latency (opens xeyes briefly)
+emacs-doctor watch [secs]  # re-run status on an interval (default 5s)
+```
+
+`reset` will **not** discard unsaved work — if any file buffer is modified it lists them
+and aborts (use `--force` to override). It stops the service, kills orphan daemons,
+clears stale sockets (`$XDG_RUNTIME_DIR/emacs/server`), `reset-failed`s, and starts a
+single clean daemon.
+
+Two safeguards in `modules/emacs/` prevent the deadlock from forming: the `em`/`emt`
+wrappers start the *managed* unit (`systemctl --user start emacs`) instead of spawning a
+competing `emacs --daemon`, and the unit itself clears a stale socket on `ExecStartPre`
+and bounds its restart loop (`StartLimitBurst`) so a real failure surfaces as a stopped
+service instead of a silent CPU drain.
 
 ## LazyVim
 

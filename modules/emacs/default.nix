@@ -6,16 +6,33 @@
 }: let
   cfg = config.my.emacs;
 
+  # Bring up a daemon if none is answering. On Linux the daemon is owned by the
+  # systemd user unit, so we start *that* rather than spawning a raw `emacs
+  # --daemon`: two daemons racing for the same server socket deadlocks the unit
+  # into a crash loop (the standalone one squats the socket, `--fg-daemon` can
+  # never bind it, Restart=on-failure relaunches forever, pegging a core).
+  # `emacs --daemon` stays only as the fallback for hosts without the unit
+  # (e.g. macOS, or daemon.enable = false). After starting, wait for the socket
+  # to accept connections since Doom can take several seconds to load.
+  ensureDaemon = ''
+    if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
+      echo "Starting Emacs daemon..."
+      ${
+      if pkgs.stdenv.isLinux
+      then "systemctl --user start emacs 2>/dev/null || ${cfg.package}/bin/emacs --daemon || true"
+      else "${cfg.package}/bin/emacs --daemon || true"
+    }
+      for _ in $(seq 1 100); do
+        ${cfg.package}/bin/emacsclient -n -e t >/dev/null 2>&1 && break
+        sleep 0.1
+      done
+    fi
+  '';
+
   emacsClientWrapper = pkgs.writeShellApplication {
     name = "em";
     text = ''
-      if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
-        echo "Starting Emacs daemon..."
-        # || true: daemon start may fail if another instance just raced us here;
-        # emacsclient below will connect to whichever daemon won.
-        ${cfg.package}/bin/emacs --daemon || true
-      fi
-
+      ${ensureDaemon}
       if [ -t 0 ] && [ -z "''${DISPLAY:-}" ] && [ -z "''${WAYLAND_DISPLAY:-}" ]; then
         exec ${cfg.package}/bin/emacsclient -t "$@"
       else
@@ -27,10 +44,7 @@
   emacsClientTerminal = pkgs.writeShellApplication {
     name = "emt";
     text = ''
-      if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
-        echo "Starting Emacs daemon..."
-        ${cfg.package}/bin/emacs --daemon || true
-      fi
+      ${ensureDaemon}
       exec ${cfg.package}/bin/emacsclient -t "$@"
     '';
   };
@@ -82,6 +96,23 @@ in {
         if pkgs.stdenv.isLinux
         then true
         else "graphical";
+    };
+
+    # Harden the systemd-managed daemon against the socket-squat deadlock:
+    #   - ExecStartPre clears a stale server socket so a clean (re)start always
+    #     wins the socket path (`%t` = $XDG_RUNTIME_DIR, e.g. /run/user/1000).
+    #   - StartLimitBurst/RestartSec bound the restart loop: if it fails 3x in
+    #     60s it stops in `failed` state (visible) instead of relaunching every
+    #     ~100ms and burning a CPU core indefinitely.
+    systemd.user.services.emacs = lib.mkIf (cfg.daemon.enable && pkgs.stdenv.isLinux) {
+      Service = {
+        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/server";
+        RestartSec = 5;
+      };
+      Unit = {
+        StartLimitIntervalSec = 60;
+        StartLimitBurst = 3;
+      };
     };
 
     home.sessionVariables = {
