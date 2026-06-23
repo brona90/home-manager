@@ -327,6 +327,33 @@ With nix-doom-emacs-unstraightened:
 - No network access needed after initial build
 - Rollback is trivial (previous generations)
 
+### Org Agenda & Google Calendar (org-gcal)
+
+The org config wires up an agenda + capture workflow and two-way Google
+Calendar sync. Agenda files (`inbox.org`, `todo.org`, `projects.org`, and the
+`gcal*.org` calendars) live in `~/org/`; capture templates (`SPC X`) drop todos,
+notes, and calendar events into the right file, and the TODO lifecycle is
+`TODO → NEXT → WAIT → DONE/CANCELLED`.
+
+[`org-gcal`](https://github.com/kidd/org-gcal.el) syncs those `gcal*.org` files
+against Google Calendar. OAuth credentials are managed via sops (never in the
+repo): `org_gcal/client_id` and `org_gcal/client_secret` are decrypted to
+`~/.config/sops-nix/secrets/` on `hms`. The OAuth **token store** is encrypted
+with a dedicated passphrase-less GPG key (`org_gcal/gpg_private_key`, imported
+with full ownertrust on activation) so it decrypts with zero pinentry prompts.
+
+First-time setup (once):
+
+1. Create a Google Cloud OAuth client (type "Desktop app") with the Calendar
+   API enabled; add your Google account as a Test user.
+2. Store the credentials in sops:
+   ```bash
+   sops set secrets/secrets.yaml '["org_gcal"]["client_id"]'     '"...id..."'
+   sops set secrets/secrets.yaml '["org_gcal"]["client_secret"]' '"...secret..."'
+   ```
+3. `hms`, then in Emacs run `M-x org-gcal-sync` and complete the browser auth
+   once.
+
 ### Troubleshooting Doom Emacs
 
 ```bash
@@ -521,6 +548,9 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 - `ssh/id_rsa_pub` - SSH public key
 - `gpg/private_key` - GPG private key (for commit signing)
 - `gpg/public_key` - GPG public key
+- `org_gcal/client_id` - Google OAuth client id for org-gcal calendar sync
+- `org_gcal/client_secret` - Google OAuth client secret for org-gcal
+- `org_gcal/gpg_private_key` - passphrase-less GPG key encrypting the org-gcal OAuth token store (prompt-free decrypt)
 
 ### Edit secrets
 
