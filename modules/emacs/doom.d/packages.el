@@ -12,6 +12,7 @@
 (package! org-roam)              ; Zettelkasten note-taking
 (package! org-journal)           ; Daily journaling
 (package! org-drawio)
+(package! org-gcal)              ; Two-way sync between org files and Google Calendar
 (package! deft)                  ; Quick note search (ui/deft module disabled in init.el)
 
 ;;; Editing enhancements

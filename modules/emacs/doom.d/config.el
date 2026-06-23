@@ -231,6 +231,157 @@ open PDF buffers it produces."
 ;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/org/")
 
+;; ─────────────────────────────────────────────────────────────────────
+;; Org foundation: agenda, capture, TODO workflow
+;; ─────────────────────────────────────────────────────────────────────
+(after! org
+  ;; Which files the agenda (SPC o a) scans. Deliberately a curated list
+  ;; rather than the whole ~/org dir, so old scratch/learning files don't
+  ;; pollute the agenda. Add files here as you create them.
+  (setq org-agenda-files
+        (mapcar (lambda (f) (expand-file-name f org-directory))
+                '("inbox.org" "todo.org" "projects.org"
+                  "gcal.org" "gcal-louis.org" "gcal-cog.org")))
+
+  ;; A simple, legible task lifecycle. The letters in (..) are fast-select
+  ;; keys; @ = prompt for a note, ! = timestamp the state change.
+  (setq org-todo-keywords
+        '((sequence "TODO(t)" "NEXT(n)" "WAIT(w@/!)" "|" "DONE(d)" "CANCELLED(c@)")))
+  (setq org-log-done 'time          ; stamp CLOSED: when a task is finished
+        org-log-into-drawer t)      ; tuck state-change logs into a :LOGBOOK:
+
+  ;; Refile: move a captured item into todo.org / projects.org with SPC m r.
+  (setq org-refile-targets '((org-agenda-files :maxlevel . 3))
+        org-refile-use-outline-path 'file
+        org-outline-path-complete-in-steps nil)
+
+  ;; Capture templates (SPC X, or `org-capture'). Each drops a new entry
+  ;; into the right file so you never lose a thought.
+  (setq org-capture-templates
+        '(("t" "Todo -> inbox" entry
+           (file+headline "inbox.org" "Inbox")
+           "* TODO %?\n%U\n%i" :empty-lines 1)
+          ("n" "Note -> inbox" entry
+           (file+headline "inbox.org" "Inbox")
+           "* %?\n%U\n%i" :empty-lines 1)
+          ("e" "Event -> personal calendar (syncs to Google)" entry
+           (file+headline "gcal.org" "brona90@gmail.com")
+           "* %?\n%^T\n" :empty-lines 1)))
+
+  ;; Daily dashboard: `SPC o a' then `d' = one screen with the next 3 days of
+  ;; calendar/scheduled/deadlines, then your NEXT actions, then what you're
+  ;; waiting on.
+  (setq org-agenda-custom-commands
+        '(("d" "Daily dashboard"
+           ((agenda "" ((org-agenda-span 3)
+                        (org-agenda-start-day "0d") ; pin to today (global default is "-3d")
+                        (org-deadline-warning-days 14)
+                        (org-agenda-overriding-header "Next 3 days")))
+            (todo "NEXT" ((org-agenda-overriding-header "Next actions")))
+            (todo "WAIT" ((org-agenda-overriding-header "Waiting on"))))))))
+
+;; ─────────────────────────────────────────────────────────────────────
+;; org-gcal: two-way Google Calendar <-> org sync
+;; ─────────────────────────────────────────────────────────────────────
+;; FIRST-TIME SETUP (one time):
+;;   1. Create a Google Cloud OAuth client (type "Desktop app") with the
+;;      Calendar API enabled; add brona90@gmail.com as a Test user.
+;;   2. Store the credentials in sops (encrypted, reproducible):
+;;        sops set secrets/secrets.yaml '["org_gcal"]["client_id"]'     '"...id..."'
+;;        sops set secrets/secrets.yaml '["org_gcal"]["client_secret"]' '"...secret..."'
+;;      sops-nix (modules/sops.nix) decrypts them on `hms` to
+;;      ~/.config/sops-nix/secrets/org_gcal_client_{id,secret}.
+;; After `hms`: open an org file, run M-x org-gcal-sync (or SPC m G s) and
+;; complete the browser auth once.
+(use-package! org-gcal
+  :after org
+  :commands (org-gcal-sync org-gcal-fetch org-gcal-post-at-point)
+  :config
+  ;; Client id/secret come from sops-nix (decrypted to ~/.config/sops-nix/secrets/).
+  ;; See modules/sops.nix (org_gcal/*) and the encrypted secrets/secrets.yaml.
+  (let ((dir (expand-file-name "~/.config/sops-nix/secrets/")))
+    (cl-flet ((slurp (f)
+                (let ((p (expand-file-name f dir)))
+                  (when (file-readable-p p)
+                    (string-trim (with-temp-buffer (insert-file-contents p)
+                                                   (buffer-string)))))))
+      (when-let ((id (slurp "org_gcal_client_id")))     (setq org-gcal-client-id id))
+      (when-let ((sec (slurp "org_gcal_client_secret"))) (setq org-gcal-client-secret sec))))
+  ;; org-gcal registers its oauth2-auto provider at load time, but the creds
+  ;; above are set AFTER load — so re-register now or auth fails with
+  ;; "oauth2-auto: Unknown provider: org-gcal".
+  (when (and org-gcal-client-id org-gcal-client-secret)
+    (org-gcal-reload-client-id-secret))
+  ;; Keep the OAuth token store in a writable home path (the Nix store is RO).
+  (setq org-gcal-token-file (expand-file-name "~/.config/org-gcal/token.plstore"))
+  ;; Encrypt the OAuth token store to a DEDICATED passphrase-less GPG key
+  ;; (050C…1930, uid "org-gcal-token", private key managed in sops and imported by
+  ;; modules/sops.nix). Because that key has NO passphrase, gpg-agent decrypts it
+  ;; with ZERO prompts on every read — while the main signing key (0DF8…0FC6) stays
+  ;; passphrase-protected. This is why a fetch no longer asks for a passphrase.
+  (setq plstore-encrypt-to '("050C399D3A6B013DD2C93F899BC379782DFE1930"))
+  ;; Move the oauth2-auto refresh-token store OUT of ~/.cache/doom (which
+  ;; `doom clean` wipes, forcing a re-auth) into a stable home path.
+  (when (boundp 'oauth2-auto-plstore)
+    (setq oauth2-auto-plstore (expand-file-name "~/.config/org-gcal/oauth2-auto.plist")))
+  ;; Keep the org files small. org-gcal expands recurring events into one entry
+  ;; per instance, so the fetch window is the main size lever. Past events beyond
+  ;; the window are moved to <file>_archive (auto-archive) rather than bloating the
+  ;; live file. 14 days back + 45 forward is plenty for the agenda.
+  (setq org-gcal-up-days 14
+        org-gcal-down-days 45
+        org-gcal-auto-archive t)
+  ;; calendar-id  ->  org file. Two-way: editing these headings pushes to Google.
+  ;; NOTE: gcal-cog.org maps to the "COG" calendar — a Google Apps Script-populated
+  ;; mirror of the Cognizant calendar. Treat it READ-ONLY: pull with `org-gcal-fetch'
+  ;; (SPC m G f) and don't edit its headings (edits would hit the mirror, not the
+  ;; real Cognizant calendar). (Work calendar was deleted upstream — removed here.)
+  (setq org-gcal-fetch-file-alist
+        '(("brona90@gmail.com" . "~/org/gcal.org")
+          ("oe0etoam5k8o95sqd1qnisio44@group.calendar.google.com" . "~/org/gcal-louis.org")
+          ("140a3ad65e2a46fe9a58a74035d2e489482e704c008622767304b36ca33c4b47@group.calendar.google.com" . "~/org/gcal-cog.org")))
+  ;; org-gcal populates buffers but never saves them (that's what made COG look
+  ;; empty). Chain a save onto every fetch/sync so events always land on disk.
+  (defun my/org-gcal-save-buffers (&optional result)
+    "Save modified org-gcal-managed buffers (live gcal*.org files + their _archive)."
+    (dolist (b (buffer-list))
+      (with-current-buffer b
+        (when (and buffer-file-name
+                   (string-match-p "/org/gcal.*\\.org\\(_archive\\)?\\'" buffer-file-name)
+                   (buffer-modified-p))
+          (save-buffer))))
+    result)
+  (defun my/org-gcal--save-after (orig &rest args)
+    "Around-advice: save org-gcal buffers once the (async) ORIG completes."
+    (let ((d (apply orig args)))
+      (if (and (fboundp 'deferred-p) (deferred-p d))
+          (deferred:nextc d #'my/org-gcal-save-buffers)
+        (my/org-gcal-save-buffers)
+        d)))
+  (advice-add 'org-gcal-sync  :around #'my/org-gcal--save-after)
+  (advice-add 'org-gcal-fetch :around #'my/org-gcal--save-after))
+
+;; org-gcal keys under the org localleader: SPC m G (s)ync / (f)etch / (p)ost.
+(map! :after org
+      :localleader
+      :map org-mode-map
+      (:prefix ("G" . "gcal")
+       :desc "Sync (fetch + push)" "s" #'org-gcal-sync
+       :desc "Fetch (pull only)"   "f" #'org-gcal-fetch
+       :desc "Post event at point" "p" #'org-gcal-post-at-point))
+
+;; Auto-fetch the calendars in the background: ~90s after the daemon starts, then
+;; every 30 min. The auto-save advice above writes the results to disk, so the
+;; agenda stays current with no manual `SPC m G f'. Adjust the interval below.
+(defun my/org-gcal-fetch-safe ()
+  "Background-fetch Google Calendar if org-gcal is configured."
+  (when (and (require 'org-gcal nil t) (bound-and-true-p org-gcal-client-id))
+    (org-gcal-fetch)))
+(defvar my/org-gcal-fetch-timer nil "Repeating timer for background Google Calendar fetch.")
+(when (timerp my/org-gcal-fetch-timer) (cancel-timer my/org-gcal-fetch-timer))
+(setq my/org-gcal-fetch-timer
+      (run-at-time 90 (* 30 60) #'my/org-gcal-fetch-safe))
+
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.

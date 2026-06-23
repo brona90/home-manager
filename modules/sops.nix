@@ -52,6 +52,9 @@ in {
               "${secretsDir}/flake_update_token.tmp" \
               "${secretsDir}/porkbun_api_key.tmp" \
               "${secretsDir}/porkbun_secret_key.tmp" \
+              "${secretsDir}/org_gcal_client_id.tmp" \
+              "${secretsDir}/org_gcal_client_secret.tmp" \
+              "${secretsDir}/org_gcal_gpg_private_key.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" \
               "${secretsDir}/gpg_private_key.tmp" \
@@ -98,6 +101,22 @@ in {
                 mv -f "${secretsDir}/porkbun_secret_key.tmp" "${secretsDir}/porkbun_secret_key"
               fi
 
+              # Decrypt org-gcal OAuth credentials
+              if ${pkgs.sops}/bin/sops -d --extract '["org_gcal"]["client_id"]' "${secretsFile}" > "${secretsDir}/org_gcal_client_id.tmp" 2>/dev/null; then
+                chmod 0400 "${secretsDir}/org_gcal_client_id.tmp"
+                mv -f "${secretsDir}/org_gcal_client_id.tmp" "${secretsDir}/org_gcal_client_id"
+              fi
+
+              if ${pkgs.sops}/bin/sops -d --extract '["org_gcal"]["client_secret"]' "${secretsFile}" > "${secretsDir}/org_gcal_client_secret.tmp" 2>/dev/null; then
+                chmod 0400 "${secretsDir}/org_gcal_client_secret.tmp"
+                mv -f "${secretsDir}/org_gcal_client_secret.tmp" "${secretsDir}/org_gcal_client_secret"
+              fi
+
+              if ${pkgs.sops}/bin/sops -d --extract '["org_gcal"]["gpg_private_key"]' "${secretsFile}" > "${secretsDir}/org_gcal_gpg_private_key.tmp" 2>/dev/null; then
+                chmod 0600 "${secretsDir}/org_gcal_gpg_private_key.tmp"
+                mv -f "${secretsDir}/org_gcal_gpg_private_key.tmp" "${secretsDir}/org_gcal_gpg_private_key"
+              fi
+
               # Decrypt SSH keys - write directly, not via symlink
               if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["${cfg.sshKeyName}"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" 2>/dev/null; then
                 chmod 0600 "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp"
@@ -135,10 +154,17 @@ in {
         }
         // lib.optionalAttrs (!isDarwin) {
           importGpgKey = lib.hm.dag.entryAfter ["sops-nix"] ''
+            export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
             GPG_PRIVATE_KEY="${config.sops.secrets."gpg/private_key".path}"
             if [ -f "$GPG_PRIVATE_KEY" ]; then
-              export GNUPGHOME="${config.home.homeDirectory}/.gnupg"
               timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$GPG_PRIVATE_KEY" 2>/dev/null || true
+            fi
+            # Passphrase-less key that encrypts the org-gcal OAuth token store so it
+            # decrypts with zero prompts (see modules/emacs plstore-encrypt-to).
+            ORG_GCAL_KEY="${config.sops.secrets."org_gcal/gpg_private_key".path}"
+            if [ -f "$ORG_GCAL_KEY" ]; then
+              timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$ORG_GCAL_KEY" 2>/dev/null || true
+              echo "050C399D3A6B013DD2C93F899BC379782DFE1930:6:" | timeout 10 ${pkgs.gnupg}/bin/gpg --import-ownertrust 2>/dev/null || true
             fi
           '';
         };
@@ -177,6 +203,16 @@ in {
         };
         "porkbun/secret_key" = {
           path = "${secretsDir}/porkbun_secret_key";
+        };
+        "org_gcal/client_id" = {
+          path = "${secretsDir}/org_gcal_client_id";
+        };
+        "org_gcal/client_secret" = {
+          path = "${secretsDir}/org_gcal_client_secret";
+        };
+        "org_gcal/gpg_private_key" = {
+          path = "${secretsDir}/org_gcal_gpg_private_key";
+          mode = "0600";
         };
         "ssh/${cfg.sshKeyName}" = {
           path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}";
