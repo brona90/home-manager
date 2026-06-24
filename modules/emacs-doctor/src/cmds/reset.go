@@ -20,7 +20,9 @@ func Reset(args []string) error {
 
 	ui.Header("Emacs daemon reset")
 
-	if n, ok := daemon.UnsavedCount(); ok && n > 0 {
+	n, ok := daemon.UnsavedCount()
+	switch {
+	case ok && n > 0:
 		if !force {
 			ui.Bad(fmt.Sprintf("%d buffer(s) have unsaved changes — refusing to reset.", n))
 			if files := daemon.UnsavedFiles(); files != "" && files != "nil" {
@@ -30,6 +32,18 @@ func Reset(args []string) error {
 			return fmt.Errorf("%d unsaved buffer(s)", n)
 		}
 		ui.Warn(fmt.Sprintf("%d unsaved buffer(s) — proceeding due to --force (changes will be LOST).", n))
+	case !ok && len(daemon.DaemonProcs()) > 0:
+		// A daemon process exists but isn't answering emacsclient, so we can't
+		// read its buffers — we cannot rule out unsaved work. Don't silently
+		// kill it; require --force. (When no daemon exists at all we fall
+		// through and proceed: there's nothing to lose, and reset's job is to
+		// bring one back up.)
+		if !force {
+			ui.Bad("a daemon process is running but not answering emacsclient — cannot check for unsaved buffers.")
+			ui.Info("Re-run with --force if you accept possibly losing unsaved work.")
+			return fmt.Errorf("unsaved state unknown (daemon not answering)")
+		}
+		ui.Warn("daemon not answering; proceeding due to --force (unsaved work may be LOST).")
 	}
 
 	ui.Info("stopping emacs.service ...")
@@ -60,11 +74,11 @@ func Reset(args []string) error {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	if daemon.Answers() {
-		ui.OK("daemon is up and answering")
-	} else {
+	if !daemon.Answers() {
 		ui.Bad("daemon started but not answering yet — journalctl --user -u emacs -e")
+		_ = Status(nil)
+		return fmt.Errorf("daemon not answering after restart")
 	}
-
+	ui.OK("daemon is up and answering")
 	return Status(nil)
 }

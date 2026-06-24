@@ -70,9 +70,21 @@ func atoiOr(s string, def int) int {
 // ---------------------------------------------------------------- processes
 
 // IsDaemonCmdline reports whether a /proc/<pid>/cmdline (NUL-separated)
-// belongs to an Emacs daemon (--daemon or --fg-daemon).
+// belongs to an Emacs daemon. It matches the exact daemon flag as its own
+// argument — NOT a substring — so a normal `emacs -nw ~/daemon-notes.org` or
+// `--init-directory=/etc/daemon/` is never misclassified (and never killed by
+// reset). Emacs accepts --daemon, --bg-daemon, --fg-daemon, each optionally
+// with an =NAME suffix.
 func IsDaemonCmdline(raw []byte) bool {
-	return strings.Contains(string(raw), "daemon")
+	for _, f := range strings.Split(string(raw), "\x00") {
+		if f == "--daemon" || f == "--bg-daemon" || f == "--fg-daemon" ||
+			strings.HasPrefix(f, "--daemon=") ||
+			strings.HasPrefix(f, "--bg-daemon=") ||
+			strings.HasPrefix(f, "--fg-daemon=") {
+			return true
+		}
+	}
+	return false
 }
 
 // pgrepEmacs returns PIDs whose comm is exactly "emacs" (never matches this

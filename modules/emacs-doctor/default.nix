@@ -16,9 +16,12 @@
 
   raw = pkgs.callPackage ./package.nix {};
 
-  # Wrap so the system tools the binary shells out to are always on PATH, and
-  # `emacsclient` is the daemon's own. nvidia-smi is WSL-provided (not in the
-  # closure) and resolved at runtime by the tool itself.
+  # Wrap so the system tools the binary actually shells out to are always on
+  # PATH, and `emacsclient` is the daemon's own. The exec'd commands are:
+  # emacsclient (emacsPackage), systemctl (systemd), pgrep/ps/free (procps),
+  # xeyes/xwininfo. nvidia-smi is WSL-provided (not in the closure) and the
+  # tool resolves it at runtime. Everything else is done via Go stdlib
+  # (os.Remove, runtime.NumCPU, os.ReadFile), so no coreutils/grep/awk needed.
   wrapped =
     pkgs.runCommand "emacs-doctor" {
       nativeBuildInputs = [pkgs.makeWrapper];
@@ -29,9 +32,6 @@
         emacsPackage
         pkgs.systemd
         pkgs.procps
-        pkgs.coreutils
-        pkgs.gnugrep
-        pkgs.gawk
         pkgs.xeyes
         pkgs.xwininfo
       ]}

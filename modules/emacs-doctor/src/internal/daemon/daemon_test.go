@@ -31,7 +31,13 @@ func TestIsDaemonCmdline(t *testing.T) {
 	}{
 		{"fg-daemon", "/nix/store/x/emacs\x00--init-directory=/y\x00--fg-daemon\x00", true},
 		{"daemon", "/nix/store/x/emacs\x00--daemon\x00", true},
+		{"named bg-daemon", "/nix/store/x/emacs\x00--bg-daemon=mysrv\x00", true},
+		{"named daemon", "/nix/store/x/emacs\x00--daemon=foo\x00", true},
 		{"plain editor", "/nix/store/x/emacs\x00-nw\x00file.txt\x00", false},
+		// Regression: substring "daemon" in a file/dir arg must NOT match,
+		// or reset would SIGKILL an interactive Emacs editing such a file.
+		{"editor of daemon-named file", "/nix/store/x/emacs\x00-nw\x00/home/me/daemon-notes.org\x00", false},
+		{"init-directory with daemon in path", "/nix/store/x/emacs\x00--init-directory=/etc/daemon/\x00-nw\x00f\x00", false},
 		{"empty", "", false},
 	}
 	for _, tt := range tests {
