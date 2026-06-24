@@ -26,5 +26,14 @@
 (package! web-mode)              ; HTML/CSS/JS (lang/web module disabled in init.el)
 (package! dockerfile-mode)       ; Dockerfiles
 
+;;; Disabled module packages
+;; android-mode ships with Doom's `:lang java` module but is only useful for
+;; Android development (SDK/emulator integration), which we don't do. Its source
+;; lives on codeberg.org, which intermittently 504s during the Darwin CI eval —
+;; nix-doom-emacs-unstraightened fetches every source uncached via IFD
+;; (allowSubstitutes = false), so a transient codeberg outage breaks the build.
+;; Disabling it removes that dependency without affecting JDT/Java LSP.
+(package! android-mode :disable t)
+
 ;;; Themes and UI
 (package! rainbow-delimiters)    ; Color-coded parentheses
