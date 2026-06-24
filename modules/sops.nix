@@ -164,6 +164,15 @@ in {
             ORG_GCAL_KEY="${config.sops.secrets."org_gcal/gpg_private_key".path}"
             if [ -f "$ORG_GCAL_KEY" ]; then
               timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$ORG_GCAL_KEY" 2>/dev/null || true
+              # Ownertrust :6: (ultimate) marks the key VALID so gpg encrypts to it
+              # non-interactively (prompt-free token-store decryption). DELIBERATE
+              # TRADEOFF: ultimate also makes it a trusted introducer, and the key is
+              # passphrase-less + certify-capable — i.e. an always-unlocked CA for
+              # THIS keyring. Accepted because nothing here verifies signatures against
+              # ~/.gnupg (git signing uses the YubiKey key; nix doesn't use it), so the
+              # blast radius is nil today. To fully close it later: regenerate as an
+              # encryption-subkey-only key (no certify secret present), keeping :6: for
+              # validity. Do NOT drop to :3: — that reintroduces the encryption prompt.
               echo "050C399D3A6B013DD2C93F899BC379782DFE1930:6:" | timeout 10 ${pkgs.gnupg}/bin/gpg --import-ownertrust 2>/dev/null || true
             fi
           '';
