@@ -17,6 +17,7 @@ Usage (via the `kg` wrapper on PATH, or `uv run kg_cli.py`):
   kg dupes [threshold]
   kg merge "<source>" "<target>"
   kg delete "<name>"
+  kg forget "<name>" "<substring>" ["<substring2>" ...]
 """
 import json
 import sys
@@ -60,6 +61,8 @@ def main(argv: list[str]) -> int:
         print(kg.kg_merge(rest[0], rest[1]))
     elif cmd == "delete":
         print(kg.kg_delete_entity(rest[0]))
+    elif cmd == "forget":
+        print(kg.kg_forget_observations(rest[0], rest[1:]))
     else:
         print(f"unknown command: {cmd}\n{__doc__}")
         return 1

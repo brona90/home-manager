@@ -9,7 +9,7 @@ enabled via `my.claudeKg.enable` (set on the WSL host).
 - **`package.nix`** — builds a pure `python3.withPackages [mcp httpx]` env (no `uv`) and
   installs to `$PATH`:
   - `kg-server` — the MCP server (entities/relations/documents over Qdrant).
-  - `kg` — terminal CLI (`kg stats|recall|search|get|list|add|relate|dupes|merge|delete`).
+  - `kg` — terminal CLI (`kg stats|recall|search|get|list|add|relate|dupes|merge|delete|forget`).
   - `kg-capture` — local-model fact extractor (Ollama).
   - `kg-capture-hook` — the SessionEnd hook (local backend by default).
   - `kg-snapshot` — Qdrant snapshot + prune (run by the timer).
@@ -45,3 +45,18 @@ tail -f ~/.local/share/claude-kg/capture.log
 
 Capture backend: `CLAUDE_KG_CAPTURE_BACKEND=local` (default, free, local Ollama) or
 `claude` (headless Claude, higher quality, costs tokens).
+
+## Retraction (changing your mind)
+
+Capture is **append-only** — `kg_add_observations` never removes facts, so a reversed
+decision leaves the old observation alongside the new one (the newer timestamp wins on
+recall, but the stale fact can still surface). To actually retract:
+
+```bash
+kg forget "<entity>" "<substring>" ["<substring2>" ...]   # drop matching observations, re-embed
+kg delete "<entity>"                                       # remove the whole entity + edges
+```
+
+`kg forget` keeps the entity and re-embeds it from the surviving observations, so recall
+stops returning the dropped facts. Matching is case-insensitive substring. There is no
+automatic contradiction detection in the capture hook — retraction is deliberate.

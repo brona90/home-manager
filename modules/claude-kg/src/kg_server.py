@@ -509,6 +509,34 @@ def kg_delete_entity(name: str) -> str:
     return f"Deleted entity '{name}' and its relations."
 
 
+@mcp.tool()
+def kg_forget_observations(name: str, substrings: list[str]) -> str:
+    """Retract observations from an entity by case-insensitive substring match, then re-embed.
+
+    Use this when a fact is wrong or superseded (the user changed their mind). Every
+    observation whose text contains ANY of `substrings` (case-insensitive) is dropped;
+    the rest are kept and the entity is re-embedded so recall reflects the change.
+    The entity itself survives even if all its observations are removed — use
+    kg_delete_entity to remove the entity entirely.
+    """
+    _ensure_collections()
+    payload = _retrieve_entity(name)
+    if payload is None:
+        return f"No entity named '{name}'."
+    etype = payload.get("type", "unknown")
+    existing = _coerce_obs(payload.get("observations", []))
+    needles = [s.lower() for s in substrings if s.strip()]
+    if not needles:
+        return "No substrings given; nothing forgotten."
+    kept = [o for o in existing if not any(n in o["text"].lower() for n in needles)]
+    removed = [o["text"] for o in existing if o not in kept]
+    if not removed:
+        return f"No observation on '{name}' matched {needles}; nothing forgotten."
+    _store_entity(name, etype, kept)
+    listed = "; ".join(removed)
+    return f"Forgot {len(removed)} observation(s) from '{name}' (now {len(kept)} total): {listed}"
+
+
 # --------------------------------------------------------------------------- #
 # document RAG tools (separate collection from the curated graph)
 # --------------------------------------------------------------------------- #
