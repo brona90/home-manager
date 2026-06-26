@@ -71,7 +71,10 @@ commands:
                     detection, system load, GPU/GL, GUI hint (default)
   reset [--force]   recover to one clean systemd-managed daemon. Refuses if any
                     buffer is unsaved unless --force (which discards them).
-  gui-probe         measure real GUI launch latency (briefly opens xeyes)
+  gui-probe [-- cmd...]
+                    time a real GUI app's launch→first-window (e.g.
+                    'gui-probe -- emacsclient -c'); no cmd = xeyes X11 floor.
+                    Reports load average — the dominant factor on WSL.
   watch [seconds]   re-run status on an interval (default 5s)
   version           print version
   help              show this help

@@ -390,9 +390,16 @@ emacs-doctor status        # daemon state + orphan/socket-squat detection,
 emacs-doctor reset         # recover to ONE clean systemd-managed daemon.
                            # Refuses if any buffer is unsaved (see below).
 emacs-doctor reset --force # same, but discard unsaved changes
-emacs-doctor gui-probe     # measure real GUI launch latency (opens xeyes briefly)
+emacs-doctor gui-probe -- emacsclient -c   # time a real app's launch→first window
+emacs-doctor gui-probe     # no cmd: xeyes X11 round-trip floor + load average
 emacs-doctor watch [secs]  # re-run status on an interval (default 5s)
 ```
+
+GUI launch time on WSL is dominated by system load and one-time per-session
+costs (cold fontconfig/GL/GStreamer plugin caches, D-Bus service activation), so
+`gui-probe` reports the load average and, given a real command, measures its
+actual launch→first-window time rather than a trivial `xeyes` client (which skips
+all the toolkit init that makes real apps slow).
 
 `reset` will **not** discard unsaved work — if any file buffer is modified it lists them
 and aborts (use `--force` to override). It stops the service, kills orphan daemons,
