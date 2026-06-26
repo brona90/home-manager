@@ -2,13 +2,7 @@
   description = "Reproducible Home Manager and NixOS configurations";
 
   inputs = {
-    # TEMPORARY PIN (2026-06-10): nixos-unstable (a799d3e3) carries nixpkgs
-    # commit 04b2b505 which breaks the darwin emacs 30.2 build (C23 bool in
-    # ObjC units; nixpkgs#529554, fixed by #529355 / 95e9e11e). This
-    # nixpkgs-unstable rev contains the fix and has cached darwin binaries.
-    # Revert to "github:NixOS/nixpkgs/nixos-unstable" once the channel
-    # advances past 95e9e11e.
-    nixpkgs.url = "github:NixOS/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -85,7 +79,7 @@
         inherit system;
         config = {
           allowUnfree = true;
-          # sbcl-2.6.3 is marked broken on darwin in the pinned nixpkgs.
+          # sbcl is marked broken on darwin in nixpkgs-unstable.
           # It's pulled into the home-manager activation eval (transitively
           # via emacs lisp packages) so the eval refuses outright. "ignore"
           # lets eval proceed; if a subsequent build actually invokes sbcl
