@@ -40,6 +40,14 @@
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # TEMPORARY (2026-06-27): pin mise on Darwin only. nixos-unstable's mise
+    # 2026.6.11 fails its Rust test suite on the macOS CI runner
+    # (oci::layer ...preserve_metadata_dir... panics), breaking the Darwin home
+    # build. This is the last channel rev that built mise green (2026.6.0); see
+    # pinMiseOnDarwin. Remove this input + the overlay once the channel's mise
+    # builds on Darwin again. Linux tracks the channel (mise builds fine there).
+    nixpkgs-mise.url = "github:NixOS/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
   };
 
   outputs = {
@@ -50,6 +58,7 @@
     sops-nix,
     claude-code,
     git-hooks,
+    nixpkgs-mise,
     ...
   }: let
     # Read user configuration.
@@ -83,6 +92,13 @@
         direnv = prev.direnv.overrideAttrs (_: {doCheck = false;});
       };
 
+    # See the nixpkgs-mise input: source mise from a known-good rev on Darwin
+    # only, sidestepping the failing test in the channel's current mise.
+    pinMiseOnDarwin = _final: prev:
+      nixpkgs.lib.optionalAttrs prev.stdenv.isDarwin {
+        mise = nixpkgs-mise.legacyPackages.${prev.stdenv.hostPlatform.system}.mise;
+      };
+
     pkgsFor = system:
       import nixpkgs {
         inherit system;
@@ -105,6 +121,7 @@
           doom-emacs.overlays.default
           claude-code.overlays.default
           skipDirenvChecksOnDarwin
+          pinMiseOnDarwin
         ];
       };
 
