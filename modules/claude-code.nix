@@ -162,6 +162,36 @@
               cfg.sessionEndCommands;
           }
         ];
+      }
+      // lib.optionalAttrs (cfg.sessionStartCommands != []) {
+        # Contributed SessionStart commands (e.g. claude-kg recall primer). Each
+        # command's stdout is injected into the new session's context.
+        SessionStart = [
+          {
+            hooks =
+              map (cmd: {
+                type = "command";
+                command = cmd;
+                timeout = 15;
+              })
+              cfg.sessionStartCommands;
+          }
+        ];
+      }
+      // lib.optionalAttrs (cfg.userPromptSubmitCommands != []) {
+        # Contributed UserPromptSubmit commands (e.g. claude-kg per-prompt recall).
+        # Each command receives the prompt JSON on stdin and may inject context via stdout.
+        UserPromptSubmit = [
+          {
+            hooks =
+              map (cmd: {
+                type = "command";
+                command = cmd;
+                timeout = 20;
+              })
+              cfg.userPromptSubmitCommands;
+          }
+        ];
       };
   };
 in {
@@ -183,6 +213,33 @@ in {
       default = [];
       description = "Commands run as Claude Code SessionEnd hooks (one hook each).";
     };
+
+    sessionStartCommands = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = ''
+        Commands run as Claude Code SessionStart hooks (one hook each). Each
+        command's stdout is injected into the new session's context.
+      '';
+    };
+
+    userPromptSubmitCommands = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = ''
+        Commands run as Claude Code UserPromptSubmit hooks (one hook each). Each
+        receives the prompt JSON on stdin and may inject context via stdout.
+      '';
+    };
+
+    claudeMdSections = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [];
+      description = ''
+        Markdown sections contributed by modules; joined into the managed
+        ~/.claude/CLAUDE.md (user-scope global instructions). Empty = file unmanaged.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -198,6 +255,13 @@ in {
       packages = [pkgs.claude-code];
 
       file.".claude/settings.json".text = builtins.toJSON settings;
+
+      # Assemble ~/.claude/CLAUDE.md (user-scope global instructions) from sections
+      # contributed by modules (e.g. claude-kg, claude-specflow). Only managed when at
+      # least one section is contributed, so the file is untouched on hosts with none.
+      file.".claude/CLAUDE.md" = lib.mkIf (cfg.claudeMdSections != []) {
+        text = lib.concatStringsSep "\n\n" cfg.claudeMdSections;
+      };
 
       # Claude Code loads user-scope MCP servers only from ~/.claude.json (a mutable
       # runtime file), so we merge our managed set into it on activation instead of

@@ -23,6 +23,7 @@ in {
     dockerTerminal.enable = true;
     emacsMcp.enable = true;
     claudeCode.enable = true;
+    claudeSpecflow.enable = true;
   };
 
   # Manage ~/.config/nix/nix.conf declaratively.

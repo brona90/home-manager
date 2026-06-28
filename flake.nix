@@ -32,6 +32,22 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Pre-commit / pre-push git hooks (statix/deadnix/alejandra/shellcheck on
+    # commit, `nix flake check` on push). Installed into .git/hooks via the
+    # devShell shellHook, which direnv (.envrc) loads automatically.
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # TEMPORARY (2026-06-27): pin mise on Darwin only. nixos-unstable's mise
+    # 2026.6.11 fails its Rust test suite on the macOS CI runner
+    # (oci::layer ...preserve_metadata_dir... panics), breaking the Darwin home
+    # build. This is the last channel rev that built mise green (2026.6.0); see
+    # pinMiseOnDarwin. Remove this input + the overlay once the channel's mise
+    # builds on Darwin again. Linux tracks the channel (mise builds fine there).
+    nixpkgs-mise.url = "github:NixOS/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
   };
 
   outputs = {
@@ -41,6 +57,8 @@
     doom-emacs,
     sops-nix,
     claude-code,
+    git-hooks,
+    nixpkgs-mise,
     ...
   }: let
     # Read user configuration.
@@ -74,6 +92,13 @@
         direnv = prev.direnv.overrideAttrs (_: {doCheck = false;});
       };
 
+    # See the nixpkgs-mise input: source mise from a known-good rev on Darwin
+    # only, sidestepping the failing test in the channel's current mise.
+    pinMiseOnDarwin = _final: prev:
+      nixpkgs.lib.optionalAttrs prev.stdenv.isDarwin {
+        mise = nixpkgs-mise.legacyPackages.${prev.stdenv.hostPlatform.system}.mise;
+      };
+
     pkgsFor = system:
       import nixpkgs {
         inherit system;
@@ -96,7 +121,35 @@
           doom-emacs.overlays.default
           claude-code.overlays.default
           skipDirenvChecksOnDarwin
+          pinMiseOnDarwin
         ];
+      };
+
+    # git-hooks.nix config: fast lint on every commit, full `nix flake check`
+    # on push. The pre-push flake-check guard exists because a `--dry-run` of
+    # the home config does NOT evaluate nixosConfigurations/checks, so a
+    # nixpkgs/input bump can pass locally yet fail CI's `nix flake check`
+    # (e.g. the NixOS-WSL bootspec assertion). It is pre-push ONLY so it never
+    # runs inside a build sandbox, and is gated on flake/.nix changes so docs
+    # or script-only pushes skip the multi-minute check.
+    preCommitFor = system:
+      git-hooks.lib.${system}.run {
+        src = ./.;
+        hooks = {
+          statix.enable = true;
+          deadnix.enable = true;
+          alejandra.enable = true;
+          shellcheck.enable = true;
+          flake-check = {
+            enable = true;
+            name = "nix flake check";
+            entry = "nix flake check";
+            files = "(\\.nix|flake\\.lock)$";
+            pass_filenames = false;
+            stages = ["pre-push"];
+            language = "system";
+          };
+        };
       };
 
     homeDirectoryFor = {
@@ -138,6 +191,7 @@
             ./modules/docker-terminal.nix
             ./modules/emacs-mcp.nix
             ./modules/claude-code.nix
+            ./modules/claude-specflow.nix
             ./modules/claude-kg/default.nix
             ./modules/searxng/default.nix
             ./home/common.nix
@@ -423,6 +477,20 @@
             }}/bin/update-vim-plugins";
           };
         }
+    );
+
+    devShells = forAllSystems (
+      system: let
+        pkgs = pkgsFor system;
+        pre-commit = preCommitFor system;
+      in {
+        # `direnv allow` (or `nix develop`) installs the git hooks via this
+        # shellHook and keeps them current.
+        default = pkgs.mkShell {
+          inherit (pre-commit) shellHook;
+          buildInputs = pre-commit.enabledPackages;
+        };
+      }
     );
 
     checks = forAllSystems (
