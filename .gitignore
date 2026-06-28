@@ -5,6 +5,10 @@ config.local.nix
 result
 result-*
 
+# direnv + git-hooks.nix (auto-generated)
+.direnv/
+/.pre-commit-config.yaml
+
 # Nix garbage collection roots
 *.drv
 

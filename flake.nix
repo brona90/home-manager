@@ -32,6 +32,14 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Pre-commit / pre-push git hooks (statix/deadnix/alejandra/shellcheck on
+    # commit, `nix flake check` on push). Installed into .git/hooks via the
+    # devShell shellHook, which direnv (.envrc) loads automatically.
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -41,6 +49,7 @@
     doom-emacs,
     sops-nix,
     claude-code,
+    git-hooks,
     ...
   }: let
     # Read user configuration.
@@ -97,6 +106,33 @@
           claude-code.overlays.default
           skipDirenvChecksOnDarwin
         ];
+      };
+
+    # git-hooks.nix config: fast lint on every commit, full `nix flake check`
+    # on push. The pre-push flake-check guard exists because a `--dry-run` of
+    # the home config does NOT evaluate nixosConfigurations/checks, so a
+    # nixpkgs/input bump can pass locally yet fail CI's `nix flake check`
+    # (e.g. the NixOS-WSL bootspec assertion). It is pre-push ONLY so it never
+    # runs inside a build sandbox, and is gated on flake/.nix changes so docs
+    # or script-only pushes skip the multi-minute check.
+    preCommitFor = system:
+      git-hooks.lib.${system}.run {
+        src = ./.;
+        hooks = {
+          statix.enable = true;
+          deadnix.enable = true;
+          alejandra.enable = true;
+          shellcheck.enable = true;
+          flake-check = {
+            enable = true;
+            name = "nix flake check";
+            entry = "nix flake check";
+            files = "(\\.nix|flake\\.lock)$";
+            pass_filenames = false;
+            stages = ["pre-push"];
+            language = "system";
+          };
+        };
       };
 
     homeDirectoryFor = {
@@ -424,6 +460,20 @@
             }}/bin/update-vim-plugins";
           };
         }
+    );
+
+    devShells = forAllSystems (
+      system: let
+        pkgs = pkgsFor system;
+        pre-commit = preCommitFor system;
+      in {
+        # `direnv allow` (or `nix develop`) installs the git hooks via this
+        # shellHook and keeps them current.
+        default = pkgs.mkShell {
+          inherit (pre-commit) shellHook;
+          buildInputs = pre-commit.enabledPackages;
+        };
+      }
     );
 
     checks = forAllSystems (
