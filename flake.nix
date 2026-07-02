@@ -125,13 +125,11 @@
         ];
       };
 
-    # git-hooks.nix config: fast lint on every commit, full `nix flake check`
-    # on push. The pre-push flake-check guard exists because a `--dry-run` of
-    # the home config does NOT evaluate nixosConfigurations/checks, so a
-    # nixpkgs/input bump can pass locally yet fail CI's `nix flake check`
-    # (e.g. the NixOS-WSL bootspec assertion). It is pre-push ONLY so it never
-    # runs inside a build sandbox, and is gated on flake/.nix changes so docs
-    # or script-only pushes skip the multi-minute check.
+    # git-hooks.nix config: fast lint (statix/deadnix/alejandra/shellcheck) on
+    # every commit. No pre-push `nix flake check`: it takes minutes and holds the
+    # push connection open long enough that GitHub drops it (push times out). CI
+    # runs `nix flake check` on every push to the remote, and input/nixpkgs bumps
+    # are checked locally by hand before pushing (see the workflow notes).
     preCommitFor = system:
       git-hooks.lib.${system}.run {
         src = ./.;
@@ -140,15 +138,6 @@
           deadnix.enable = true;
           alejandra.enable = true;
           shellcheck.enable = true;
-          flake-check = {
-            enable = true;
-            name = "nix flake check";
-            entry = "nix flake check";
-            files = "(\\.nix|flake\\.lock)$";
-            pass_filenames = false;
-            stages = ["pre-push"];
-            language = "system";
-          };
         };
       };
 
