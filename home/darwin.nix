@@ -30,7 +30,8 @@ in {
 
       zsh.extraAliases = {
         ls = "ls -G"; # macOS ls uses -G for color
-        zscaler-stop = "sudo launchctl bootout system/com.zscaler.tray; sudo launchctl bootout system/com.zscaler.zfd; sudo launchctl bootout system/com.zscaler.tunnel";
+        # zscaler-stop is now a proper script in modules/zscaler-bypass.nix
+        # (enumerates live labels across the system + GUI launchd domains).
       };
     };
 

@@ -8,6 +8,7 @@
 #   zscaler-routes add subnet 10.0.0.0/8
 #   zscaler-routes remove example.com
 #   zscaler-routes list / search <pattern> / apply
+#   zscaler-stop                      Stop all Zscaler jobs (system + GUI domains)
 {
   config,
   lib,
@@ -312,6 +313,45 @@
     '';
   };
 
+  stopScript = pkgs.writeShellApplication {
+    name = "zscaler-stop";
+    text = ''
+      # Stop every loaded Zscaler job in BOTH the system and GUI domains.
+      # Labels are enumerated live, never hardcoded: Zscaler's network-extension
+      # label carries a version suffix, and the menu-bar agent (com.zscaler.tray)
+      # plus com.zscaler.zdp.agent live in the GUI domain -- NOT system/. The old
+      # `bootout system/com.zscaler.tray` alias therefore failed with the launchd
+      # error "Boot-out failed: 3: No such process" on every run.
+      uid=$(/usr/bin/id -u)
+
+      echo "System daemons:"
+      _sys=0
+      while IFS= read -r label; do
+        _sys=1
+        if /usr/bin/sudo /bin/launchctl bootout "system/$label" 2>/dev/null; then
+          echo "  stopped  system/$label"
+        else
+          echo "  skip     system/$label (already stopped)"
+        fi
+      done < <(/usr/bin/sudo /bin/launchctl list | /usr/bin/awk '$3 ~ /[Zz]scaler/ {print $3}')
+      if [[ "$_sys" -eq 0 ]]; then echo "  (none loaded)"; fi
+
+      echo "GUI agents (gui/$uid):"
+      _gui=0
+      while IFS= read -r label; do
+        _gui=1
+        if /bin/launchctl bootout "gui/$uid/$label" 2>/dev/null; then
+          echo "  stopped  gui/$uid/$label"
+        else
+          echo "  skip     gui/$uid/$label (already stopped)"
+        fi
+      done < <(/bin/launchctl list | /usr/bin/awk '$3 ~ /[Zz]scaler/ {print $3}')
+      if [[ "$_gui" -eq 0 ]]; then echo "  (none loaded)"; fi
+
+      echo "Done. Zscaler restarts on reboot or when the Zscaler app is relaunched."
+    '';
+  };
+
   plist = pkgs.writeText "${daemonLabel}.plist" ''
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -378,7 +418,7 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [bypassScript statusScript routesScript];
+    home.packages = [bypassScript statusScript routesScript stopScript];
 
     home.activation.zscalerBypass = lib.hm.dag.entryAfter ["writeBoundary"] ''
       _label="${daemonLabel}"
