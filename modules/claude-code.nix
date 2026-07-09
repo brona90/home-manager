@@ -99,9 +99,21 @@
       command = "${statusLineScript}/bin/claude-statusline";
     };
     enabledPlugins = {
+      # Language servers for the languages in daily use (go-to-def, refs,
+      # diagnostics). No first-party LSP exists for Nix/Fortran/Elisp/Bash.
       "lua-lsp@${marketplace}" = true;
       "pyright-lsp@${marketplace}" = true;
       "typescript-lsp@${marketplace}" = true;
+      "gopls-lsp@${marketplace}" = true;
+      # Claude-tooling authoring: this config builds MCP servers (claude-kg,
+      # searxng, porkbun), agents/commands (specflow), and hooks constantly.
+      "plugin-dev@${marketplace}" = true;
+      "mcp-server-dev@${marketplace}" = true;
+      "skill-creator@${marketplace}" = true;
+      # hookify ships its own SessionStart/PreToolUse/PostToolUse/Stop/
+      # UserPromptSubmit runners that execute in every session — enabled
+      # deliberately, not as a default.
+      "hookify@${marketplace}" = true;
     };
     # MCP servers are NOT set here — Claude Code ignores `mcpServers` in
     # settings.json. They are declared via my.claudeCode.mcpServers (by this and
