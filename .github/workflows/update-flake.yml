@@ -18,7 +18,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Unpin tracker: nixpkgs is temporarily pinned in flake.nix (rev
       # 8c3cede7) because nixos-unstable lacks nixpkgs PR #529355 (merge
