@@ -163,6 +163,68 @@ in {
           bindkey -M vicmd '^[OA' history-substring-search-up
           bindkey -M vicmd '^[OB' history-substring-search-down
 
+          # Size of a path, in human units.
+          # Uses `command du` deliberately: the interactive `du` alias adds
+          # `-d 2`, which conflicts with `-s` and makes du exit without
+          # printing anything. Bounded by a timeout so one slow path cannot
+          # stall the whole report.
+          _dd_size() {
+            # printf, never echo: zsh's echo eats a lone "-" as an option
+            # terminator and prints an empty line instead.
+            local target="$1" limit="$2" out cache cache_dir key now cached_at age
+            [ -n "$limit" ] || limit=8
+            [ -e "$target" ] || { printf '%s\n' "-"; return 0; }
+
+            cache_dir="$HOME/.cache/dev-disk"
+            key=$(printf '%s' "$target" | command tr -c 'A-Za-z0-9' '_')
+            cache="$cache_dir/$key"
+            command mkdir -p "$cache_dir" 2>/dev/null
+
+            # Fast path: measure directly if it fits in the budget.
+            out=$(command timeout "$limit" du -shx "$target" 2>/dev/null | command cut -f1)
+            if [ -n "$out" ]; then
+              printf '%s' "$out" > "$cache" 2>/dev/null
+              command rm -f "$cache.tmp" 2>/dev/null
+              printf '%s\n' "$out"
+              return 0
+            fi
+
+            # Too slow to measure inline. Serve the last known value and
+            # refresh out of band.
+            now=$(command date +%s)
+            cached_at=0
+            [ -f "$cache" ] && cached_at=$(command stat -c %Y "$cache" 2>/dev/null || echo 0)
+            age=$(( now - cached_at ))
+
+            # Refresh at most one du per target: with a cold cache, an
+            # unguarded branch spawns another walk over the same tree on every
+            # invocation and they pile up. The guard asks "is a du for this
+            # target actually alive?" rather than using a .tmp sentinel, which
+            # goes stale if its du is killed and wedges the target on
+            # "measuring…" until the file ages out.
+            if [ "$age" -gt 3600 ] && ! command pgrep -f "du -shx $target" >/dev/null 2>&1; then
+              # The fd redirections are load-bearing, not tidiness: this runs
+              # inside a $(...), and command substitution waits for every
+              # process holding the pipe open - a backgrounded job included.
+              # Without them the caller blocks on the very du walk this cache
+              # exists to avoid.
+              ( command du -shx "$target" 2>/dev/null | command cut -f1 > "$cache.tmp" \
+                  && command mv "$cache.tmp" "$cache" ) >/dev/null 2>&1 </dev/null &!
+            fi
+
+            if [ -s "$cache" ]; then
+              printf '%s' "$(command cat "$cache")"
+              if [ "$age" -gt 3600 ]; then
+                printf ' [%dh old, refreshing…]' "$(( age / 3600 ))"
+              else
+                printf ' [cached]'
+              fi
+              printf '\n'
+            else
+              printf '%s\n' "measuring in background…"
+            fi
+          }
+
           # Dev disk usage - pretty print disk usage for dev tools
           dev-disk() {
             _dev-disk-inner | less -R
@@ -178,6 +240,15 @@ in {
             local nc='\033[0m'
             local bold='\033[1m'
 
+            # All locals are declared once, here. Re-declaring an existing
+            # local mid-function makes zsh echo `name=value` to stdout, which
+            # is what leaked `rt_name=claude` / empty `cache_size` into the report.
+            local nix_size nix_paths hm_gens
+            local mise_install_size mise_cache_size mise_runtimes
+            local rt rt_name rt_vers rt_size
+            local doom_size nvim_data nvim_state nvim_cache
+            local cache_info cache_size human_size general_cache_size
+
             echo ""
             echo "''${bold}📦 Development Tools Disk Usage''${nc}"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -185,9 +256,8 @@ in {
 
             # Nix store
             if [ -d /nix/store ]; then
-              local nix_size nix_paths
-              nix_size=$(du -sh /nix/store 2>/dev/null | cut -f1)
-              nix_paths=$(ls /nix/store 2>/dev/null | wc -l | tr -d ' ')
+              nix_size=$(_dd_size /nix/store 5)
+              nix_paths=$(command ls /nix/store 2>/dev/null | command wc -l | tr -d ' ')
               echo "''${blue}❄  Nix Store''${nc}"
               echo "   Size:  ''${bold}$nix_size''${nc}"
               echo "   Paths: $nix_paths"
@@ -197,8 +267,7 @@ in {
 
             # Home Manager generations
             if [ -d ~/.local/state/nix/profiles ]; then
-              local hm_gens
-              hm_gens=$(ls ~/.local/state/nix/profiles/home-manager-*-link 2>/dev/null | wc -l | tr -d ' ')
+              hm_gens=$(command ls -d ~/.local/state/nix/profiles/home-manager-*-link 2>/dev/null | command wc -l | tr -d ' ')
               echo "''${green}🏠 Home Manager''${nc}"
               echo "   Generations: $hm_gens"
               echo "   Clean: ''${cyan}ncgd''${nc} (deletes old generations)"
@@ -217,20 +286,18 @@ in {
 
             # Mise (runtime versions)
             if [ -d ~/.local/share/mise ]; then
-              local mise_install_size mise_cache_size mise_runtimes
-              mise_install_size=$(du -sh ~/.local/share/mise/installs 2>/dev/null | cut -f1 || echo "0")
-              mise_cache_size=$(du -sh ~/.local/share/mise/cache 2>/dev/null | cut -f1 || echo "0")
-              mise_runtimes=$(ls ~/.local/share/mise/installs 2>/dev/null | wc -l | tr -d ' ')
+              mise_install_size=$(_dd_size ~/.local/share/mise/installs)
+              mise_cache_size=$(_dd_size ~/.local/share/mise/cache)
+              mise_runtimes=$(command ls ~/.local/share/mise/installs 2>/dev/null | command wc -l | tr -d ' ')
               echo "''${red}🔧 Mise''${nc}"
               echo "   Installs: ''${bold}$mise_install_size''${nc} ($mise_runtimes runtimes)"
               echo "   Cache:    $mise_cache_size"
               if [ -d ~/.local/share/mise/installs ]; then
                 for rt in ~/.local/share/mise/installs/*/; do
                   if [ -d "$rt" ]; then
-                    local rt_name rt_vers rt_size
                     rt_name=$(basename "$rt")
-                    rt_vers=$(ls "$rt" 2>/dev/null | wc -l | tr -d ' ')
-                    rt_size=$(du -sh "$rt" 2>/dev/null | cut -f1)
+                    rt_vers=$(command ls "$rt" 2>/dev/null | command wc -l | tr -d ' ')
+                    rt_size=$(_dd_size "$rt" 5)
                     echo "   - $rt_name: $rt_vers versions ($rt_size)"
                   fi
                 done
@@ -241,8 +308,7 @@ in {
 
             # Doom Emacs
             if [ -d ~/.local/share/nix-doom ]; then
-              local doom_size
-              doom_size=$(du -sh ~/.local/share/nix-doom 2>/dev/null | cut -f1)
+              doom_size=$(_dd_size ~/.local/share/nix-doom)
               echo "''${magenta}👿 Doom Emacs''${nc}"
               echo "   Size: ''${bold}$doom_size''${nc}"
               echo ""
@@ -250,10 +316,9 @@ in {
 
             # Neovim/LazyVim
             if [ -d ~/.local/share/nvim ] || [ -d ~/.local/state/nvim ] || [ -d ~/.cache/nvim ]; then
-              local nvim_data nvim_state nvim_cache
-              nvim_data=$(du -sh ~/.local/share/nvim 2>/dev/null | cut -f1 || echo "0")
-              nvim_state=$(du -sh ~/.local/state/nvim 2>/dev/null | cut -f1 || echo "0")
-              nvim_cache=$(du -sh ~/.cache/nvim 2>/dev/null | cut -f1 || echo "0")
+              nvim_data=$(_dd_size ~/.local/share/nvim)
+              nvim_state=$(_dd_size ~/.local/state/nvim)
+              nvim_cache=$(_dd_size ~/.cache/nvim)
               echo "''${green}📝 Neovim/LazyVim''${nc}"
               echo "   Data:  $nvim_data"
               echo "   State: $nvim_state"
@@ -271,21 +336,18 @@ in {
                 echo "   Auth: ''${yellow}Not authenticated''${nc} (run ''${cyan}cachix-auth''${nc})"
               fi
               # Check if cache is configured in nix.conf
-              if grep -qF "${cachixCache}.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
+              if command grep -qF "${cachixCache}.cachix.org" ~/.config/nix/nix.conf 2>/dev/null; then
                 echo "   Substituter: ''${green}Configured''${nc}"
               else
                 echo "   Substituter: ''${yellow}Not configured''${nc} (run ''${cyan}cachix use ${cachixCache}''${nc})"
               fi
               # Try to get cache size from API (requires auth)
               if [ -f ~/.config/cachix/cachix.dhall ]; then
-                local cache_info
-                cache_info=$(curl -s "https://app.cachix.org/api/v1/cache/${cachixCache}" 2>/dev/null)
+                cache_info=$(curl -s --max-time 5 "https://app.cachix.org/api/v1/cache/${cachixCache}" 2>/dev/null)
                 if [ -n "$cache_info" ]; then
-                  local cache_size
                   cache_size=$(echo "$cache_info" | jq -r '.size // empty' 2>/dev/null || echo "")
                   if [ -n "$cache_size" ]; then
                     # Convert bytes to human-readable (numfmt is GNU-only; awk is portable)
-                    local human_size
                     if command -v numfmt &>/dev/null; then
                       human_size=$(numfmt --to=iec-i --suffix=B "$cache_size" 2>/dev/null || echo "''${cache_size}B")
                     else
@@ -307,10 +369,9 @@ in {
 
             # General cache
             if [ -d ~/.cache ]; then
-              local cache_size
-              cache_size=$(du -sh ~/.cache 2>/dev/null | cut -f1)
+              general_cache_size=$(_dd_size ~/.cache 8)
               echo "''${cyan}💾 General Cache (~/.cache)''${nc}"
-              echo "   Size: ''${bold}$cache_size''${nc}"
+              echo "   Size: ''${bold}$general_cache_size''${nc}"
               echo "   Clean: ''${cyan}ccc''${nc} (careful!)"
               echo ""
             fi

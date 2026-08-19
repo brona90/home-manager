@@ -185,6 +185,8 @@ in {
         FLAKE_UPDATE_TOKEN_FILE = "${secretsDir}/flake_update_token";
         PORKBUN_API_KEY_FILE = "${secretsDir}/porkbun_api_key";
         PORKBUN_SECRET_KEY_FILE = "${secretsDir}/porkbun_secret_key";
+        CLOUDFLARE_ORRERY_TOKEN_FILE = "${secretsDir}/cloudflare_orrery_token";
+        CLOUDFLARE_TUNNEL_TOKEN_FILE = "${secretsDir}/cloudflare_tunnel_token";
       };
     };
 
@@ -212,6 +214,14 @@ in {
         };
         "porkbun/secret_key" = {
           path = "${secretsDir}/porkbun_secret_key";
+        };
+        # orrery_token: Pages + DNS + Access on the fosterthecode.com zone (CI uses it).
+        # tunnel_token: Cloudflare Tunnel:Edit only -- provisioning the warealien tunnel.
+        "cloudflare/orrery_token" = {
+          path = "${secretsDir}/cloudflare_orrery_token";
+        };
+        "cloudflare/tunnel_token" = {
+          path = "${secretsDir}/cloudflare_tunnel_token";
         };
         "org_gcal/client_id" = {
           path = "${secretsDir}/org_gcal_client_id";

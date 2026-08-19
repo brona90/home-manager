@@ -87,6 +87,44 @@
     '';
   };
 
+  # Hook commands are contributed by other modules (claude-kg today), and the
+  # right timeout is a property of the command, not of the event: the same
+  # script runs several times slower when Claude Code is running natively on
+  # Windows and reaches the hook through wsl.exe, which adds seconds of interop
+  # overhead on top of the native runtime. A single per-event literal cannot
+  # express that, so every contributed command carries its own budget. A bare
+  # command string is still accepted and takes the event's default timeout,
+  # which keeps every existing list-of-strings call site valid.
+  hookCommandType = defaultTimeout:
+    lib.types.coercedTo lib.types.str (command: {inherit command;})
+    (lib.types.submodule {
+      options = {
+        command = lib.mkOption {
+          type = lib.types.str;
+          description = "Command line Claude Code executes for this hook.";
+        };
+        timeout = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = defaultTimeout;
+          description = ''
+            Seconds Claude Code waits before killing the hook. Budget for the
+            slowest caller rather than the measured one: a hook that takes N
+            seconds natively takes roughly N plus 1 to 10 more when Claude Code
+            runs on Windows and invokes it through wsl.exe.
+          '';
+        };
+      };
+    });
+
+  # Every event renders its contributed commands the same way; only the list
+  # and the default timeout baked into its type differ.
+  hookEntries = commands:
+    map (c: {
+      type = "command";
+      inherit (c) command timeout;
+    })
+    commands;
+
   settings = {
     # No agent attribution in commit messages or PR bodies (no
     # Co-Authored-By trailers, no "Generated with Claude Code" footers).
@@ -163,47 +201,17 @@
       }
       // lib.optionalAttrs (cfg.sessionEndCommands != []) {
         # Run each contributed SessionEnd command (e.g. claude-kg auto-capture).
-        SessionEnd = [
-          {
-            hooks =
-              map (cmd: {
-                type = "command";
-                command = cmd;
-                timeout = 15;
-              })
-              cfg.sessionEndCommands;
-          }
-        ];
+        SessionEnd = [{hooks = hookEntries cfg.sessionEndCommands;}];
       }
       // lib.optionalAttrs (cfg.sessionStartCommands != []) {
         # Contributed SessionStart commands (e.g. claude-kg recall primer). Each
         # command's stdout is injected into the new session's context.
-        SessionStart = [
-          {
-            hooks =
-              map (cmd: {
-                type = "command";
-                command = cmd;
-                timeout = 15;
-              })
-              cfg.sessionStartCommands;
-          }
-        ];
+        SessionStart = [{hooks = hookEntries cfg.sessionStartCommands;}];
       }
       // lib.optionalAttrs (cfg.userPromptSubmitCommands != []) {
         # Contributed UserPromptSubmit commands (e.g. claude-kg per-prompt recall).
         # Each command receives the prompt JSON on stdin and may inject context via stdout.
-        UserPromptSubmit = [
-          {
-            hooks =
-              map (cmd: {
-                type = "command";
-                command = cmd;
-                timeout = 20;
-              })
-              cfg.userPromptSubmitCommands;
-          }
-        ];
+        UserPromptSubmit = [{hooks = hookEntries cfg.userPromptSubmitCommands;}];
       };
   };
 in {
@@ -221,26 +229,40 @@ in {
     };
 
     sessionEndCommands = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      type = lib.types.listOf (hookCommandType 15);
       default = [];
-      description = "Commands run as Claude Code SessionEnd hooks (one hook each).";
+      description = ''
+        Commands run as Claude Code SessionEnd hooks (one hook each). An entry is
+        either a bare command string, which gets the 15s default timeout, or an
+        attrset carrying a command and its own timeout in seconds.
+      '';
     };
 
     sessionStartCommands = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      type = lib.types.listOf (hookCommandType 15);
       default = [];
       description = ''
         Commands run as Claude Code SessionStart hooks (one hook each). Each
-        command's stdout is injected into the new session's context.
+        command's stdout is injected into the new session's context. An entry is
+        either a bare command string, which gets the 15s default timeout, or an
+        attrset carrying a command and its own timeout in seconds. 15s is only
+        safe for a hook that touches nothing but the local filesystem: the
+        wsl.exe crossing alone has been measured to add 9s to a hook that takes
+        under 7s natively, so anything that also talks to a service should state
+        its own timeout.
       '';
     };
 
     userPromptSubmitCommands = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      type = lib.types.listOf (hookCommandType 45);
       default = [];
       description = ''
         Commands run as Claude Code UserPromptSubmit hooks (one hook each). Each
-        receives the prompt JSON on stdin and may inject context via stdout.
+        receives the prompt JSON on stdin and may inject context via stdout. An
+        entry is either a bare command string, which gets the 45s default
+        timeout, or an attrset carrying a command and its own timeout in
+        seconds. The default is generous because this event blocks every turn on
+        work that may have to cold-start an embedding model.
       '';
     };
 
