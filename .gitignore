@@ -26,6 +26,18 @@ secrets/*.unencrypted.yaml
 *.age.key
 *.key
 
+# sops writes a timestamped backup beside the file it edits (secrets.yaml.bak-<epoch>).
+# Those are real encrypted secrets, often holding values since rotated, and they
+# are exactly what a wide `git add -A` sweeps up by accident.
+secrets/*.bak-*
+secrets/*.yaml.bak*
+
+# wrangler caches the Cloudflare account id/name into whatever directory it is
+# invoked from. This repo is not a wrangler project -- the directory appearing
+# here means wrangler ran with the wrong cwd -- but ignore it so the next stray
+# invocation cannot commit an account identifier.
+.wrangler/
+
 # Age private keys (NEVER commit these)
 keys.txt
 
