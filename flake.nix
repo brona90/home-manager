@@ -17,6 +17,32 @@
     doom-emacs = {
       url = "github:marienz/nix-doom-emacs-unstraightened";
       inputs.nixpkgs.follows = "nixpkgs";
+      # Dedupe against the promoted input below. Without this the lock keeps a
+      # second emacs-overlay node that drifts independently, so Doom and the
+      # vanilla build would resolve two different MELPA snapshots -- two full
+      # elisp closures, and packages that differ between the two flavors we
+      # are trying to compare.
+      inputs.emacs-overlay.follows = "emacs-overlay";
+    };
+
+    # Promoted from a transitive input of doom-emacs, which has been pulling it
+    # all along. Wanted directly for a MELPA/ELPA snapshot fresher than the
+    # channel's, and for the emacs-unstable* attributes when Emacs 31 is worth
+    # moving to.
+    #
+    # follows: emacs-overlay's own nixpkgs inputs are read ONLY by its
+    # packages/lib/hydraJobs outputs. overlays.default is a plain
+    # `final: prev:` taking everything from prev, so the follows target does
+    # not change a byte of what gets built -- it exists purely to keep the lock
+    # from gaining a third and fourth nixpkgs.
+    #
+    # It gets NO pinned counterpart for x86_64-darwin: emacs-overlay publishes
+    # a single rolling branch with no 26.05 equivalent. See the guard in
+    # `checks` for how that is kept honest.
+    emacs-overlay = {
+      url = "github:nix-community/emacs-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-stable.follows = "nixpkgs";
     };
 
     sops-nix = {
@@ -85,6 +111,7 @@
     nixpkgs-mise,
     nixpkgs-darwin-intel,
     home-manager-darwin-intel,
+    emacs-overlay,
     ...
   }: let
     # Read user configuration.
@@ -170,6 +197,11 @@
             allowDeprecatedx86_64Darwin = true;
           };
         overlays = [
+          # First: doom-emacs pulls emacsPackagesFor out of this same overlay
+          # by hand, so applying the whole thing here does not change the Doom
+          # closure -- it only makes the same package set reachable as
+          # pkgs.emacs.pkgs for the vanilla build.
+          emacs-overlay.overlays.default
           doom-emacs.overlays.default
           claude-code.overlays.default
           skipDirenvChecksOnDarwin
@@ -264,9 +296,28 @@
                 tmuxHelper.enable = true;
                 emacs = {
                   enable = true;
+                  # Daily driver. Stays "doom" until the vanilla config
+                  # graduates; flipping this one word moves vanilla onto the
+                  # DEFAULT socket and demotes Doom to `emacsclient -s doom`.
+                  # Rollback is the same word -- the two keep entirely separate
+                  # state (~/.local/share/nix-doom vs ~/.config/emacs).
+                  flavor = "doom";
                   package = pkgs.emacsWithDoom {
                     doomDir = ./modules/emacs/doom.d;
                     doomLocalDir = "~/.local/share/nix-doom";
+                  };
+                  vanilla = {
+                    # Second daemon on socket "vanilla", reachable as
+                    # `emacsclient -s vanilla` or the `emv`/`emvt` wrappers.
+                    # Same shape as tmux-experimental: a parallel instance that
+                    # never shadows the daily driver.
+                    #
+                    # Linux only: home-manager's systemd.enable defaults to
+                    # isLinux and drops the unit SILENTLY on darwin -- no
+                    # assertion, no warning. On macOS use
+                    # `nix run .#emacs-vanilla` instead.
+                    enable = isLinux;
+                    package = pkgs.callPackage ./modules/emacs/vanilla/package.nix {};
                   };
                 };
                 emacsDoctor.enable = true;
@@ -353,6 +404,10 @@
         # so darwin `nix flake check` doesn't try to build an unsupported pkg.
         // nixpkgs.lib.optionalAttrs isLinux {
           emacs-doctor = pkgs.callPackage ./modules/emacs-doctor/package.nix {};
+          # Linux-gated for the same reason as emacs-doctor: `nix flake check`
+          # runs under forAllSystems, and an ungated attribute makes it try to
+          # BUILD this on darwin.
+          emacs-vanilla = pkgs.callPackage ./modules/emacs/vanilla/package.nix {};
         }
         // (
           if user != null
@@ -468,6 +523,32 @@
                 exec tmux -L experimental -f ${conf} new-session
               '';
             }}/bin/tmux-experimental";
+          };
+
+          # Throwaway foreground Emacs for trying the vanilla config without
+          # an `hms`, mirroring `nix run .#tmux-experimental`.
+          #
+          # --init-directory points at a READ-ONLY store path deliberately:
+          # this run IS the test that early-init.el has redirected every
+          # writable path (eln-cache, custom.el, auto-save, recentf, transient)
+          # out of user-emacs-directory. If it tries to write into the store,
+          # the redirect is incomplete -- fix early-init.el, do not make the
+          # directory writable.
+          #
+          # No --daemon: it opens no server socket, so it cannot collide with
+          # either running daemon.
+          emacs-vanilla = let
+            vanilla = pkgs.callPackage ./modules/emacs/vanilla/package.nix {};
+          in {
+            type = "app";
+            meta.description = "Vanilla Emacs trial build, parallel to the Doom daily driver";
+            program = "${pkgs.writeShellApplication {
+              name = "emacs-vanilla";
+              text = ''
+                exec ${vanilla}/bin/emacs \
+                  --init-directory=${vanilla.configDir} "$@"
+              '';
+            }}/bin/emacs-vanilla";
           };
 
           update-vim-plugins = {

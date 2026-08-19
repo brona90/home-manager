@@ -11,7 +11,11 @@
   # to pkgs.emacs only when the emacs module is disabled.
   emacsPackage =
     if config.my.emacs.enable
-    then config.my.emacs.package
+    # primaryPackage, NOT package: `package` is always Doom. Reading it here
+    # would keep wrapping Doom's emacsclient after my.emacs.flavor flips to
+    # "vanilla", while the DEFAULT socket is served by the vanilla daemon --
+    # a version-skew failure with a confusing error.
+    then config.my.emacs.primaryPackage
     else pkgs.emacs;
 
   raw = pkgs.callPackage ./package.nix {};
