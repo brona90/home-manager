@@ -57,7 +57,7 @@ in {
     # systemd.user is Linux-only — home-manager errors if set on a non-Linux
     # host. Gate it so the module's cross-platform parts (MCP registration,
     # settings render) still work if it's ever enabled on a Mac.
-    systemd.user.services.searxng = lib.mkIf pkgs.stdenv.isLinux {
+    systemd.user.services.searxng = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       Unit = {
         Description = "SearXNG private web search (claude-kg companion)";
         After = ["network-online.target"];

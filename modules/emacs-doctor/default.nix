@@ -49,7 +49,7 @@ in {
   };
 
   # Linux-only: systemd user units + /proc + WSLg checks.
-  config = lib.mkIf (cfg.enable && pkgs.stdenv.isLinux) {
+  config = lib.mkIf (cfg.enable && pkgs.stdenv.hostPlatform.isLinux) {
     home.packages = [cfg.package];
   };
 }

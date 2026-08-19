@@ -33,7 +33,7 @@ buildGoModule rec {
   # runtime is meaningless for ad-hoc anyway -- it requires a real cert
   # to be enforced). Stick to flags ldid supports: --force, --sign -,
   # --identifier.
-  postInstall = lib.optionalString stdenv.isDarwin ''
+  postInstall = lib.optionalString stdenv.hostPlatform.isDarwin ''
     ${darwin.sigtool}/bin/codesign \
       --force \
       --sign - \
