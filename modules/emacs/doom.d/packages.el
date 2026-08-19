@@ -35,5 +35,24 @@
 ;; Disabling it removes that dependency without affecting JDT/Java LSP.
 (package! android-mode :disable t)
 
+;; org-pdftools ships with Doom's `:lang org` module (org+pdf-tools link
+;; integration). Emacs 30.2 ABORTS while native-compiling it on aarch64-darwin:
+;; the compile subprocess dies with SIGABRT and nixpkgs' elisp builder surfaces
+;; that as `Wrong type argument: number-or-marker-p, "Abort trap: 6"` -- it tried
+;; to use the crash message as an exit code. The failure cascades all the way up
+;; (org-pdftools -> emacs-with-packages -> doom-emacs -> home-manager-generation),
+;; so both Macs cannot build at all.
+;;
+;; It appeared with the 2026-08-19 flake.lock bump and is deterministic, not a
+;; flaky runner: it failed identically in the CI and Validate runs. Nothing in
+;; this config references org-pdftools -- it arrives only via the module -- and
+;; pdf-tools itself (`:tools pdf`) is unaffected, so disabling costs only the
+;; org-link-to-a-PDF-page integration.
+;;
+;; Deliberately a disable rather than a lock revert: the bump also carried the
+;; nixpkgs 26.11 move that the x86_64-darwin pin exists to absorb, and reverting
+;; it would undo a working automated update to dodge one broken package.
+(package! org-pdftools :disable t)
+
 ;;; Themes and UI
 (package! rainbow-delimiters)    ; Color-coded parentheses
