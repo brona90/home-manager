@@ -270,36 +270,35 @@ in {
     # Emacs here is 30+, so the directory stays writable and this daemon can
     # create its socket beside the primary's. Turning on socketActivation with
     # an Emacs older than 28 would silently break that.
-    systemd.user.services."emacs-${secondaryName}" =
-      lib.mkIf (secondary != null && cfg.daemon.enable && pkgs.stdenv.hostPlatform.isLinux) {
-        Unit = {
-          Description = "Emacs daemon (${secondaryName} flavor, socket '${secondary.serverName}')";
-          Documentation = "info:emacs man:emacs(1)";
-          # Deliberately the OPPOSITE of home-manager's primary unit, which
-          # sets X-RestartIfChanged = false so `hms` never eats the daily
-          # driver's unsaved buffers. This flavor is the one under active
-          # development: picking up a new config immediately is the point, and
-          # there are no precious buffers in it yet. Flip to false at
-          # graduation.
-          X-RestartIfChanged = true;
-          StartLimitIntervalSec = 60;
-          StartLimitBurst = 3;
-        };
-        Service = {
-          Type = "notify";
-          # `exec` so the sd_notify sender is MAINPID. home-manager's own unit
-          # omits it and gets away with it because sh -c execs a single
-          # command; extraArgs make this a multi-token command line, so being
-          # explicit is what stops a 90s TimeoutStartSec hang on every start.
-          ExecStart = ''${pkgs.runtimeShell} -l -c "exec ${secondary.package}/bin/emacs --fg-daemon=${secondary.serverName} ${lib.escapeShellArgs secondary.extraArgs}"'';
-          # ONE FILE -- see the primary unit's comment.
-          ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/${secondary.serverName}";
-          SuccessExitStatus = 15; # Emacs exits 15 on SIGTERM
-          Restart = "on-failure";
-          RestartSec = 5;
-        };
-        Install.WantedBy = ["default.target"];
+    systemd.user.services."emacs-${secondaryName}" = lib.mkIf (secondary != null && cfg.daemon.enable && pkgs.stdenv.hostPlatform.isLinux) {
+      Unit = {
+        Description = "Emacs daemon (${secondaryName} flavor, socket '${secondary.serverName}')";
+        Documentation = "info:emacs man:emacs(1)";
+        # Deliberately the OPPOSITE of home-manager's primary unit, which
+        # sets X-RestartIfChanged = false so `hms` never eats the daily
+        # driver's unsaved buffers. This flavor is the one under active
+        # development: picking up a new config immediately is the point, and
+        # there are no precious buffers in it yet. Flip to false at
+        # graduation.
+        X-RestartIfChanged = true;
+        StartLimitIntervalSec = 60;
+        StartLimitBurst = 3;
       };
+      Service = {
+        Type = "notify";
+        # `exec` so the sd_notify sender is MAINPID. home-manager's own unit
+        # omits it and gets away with it because sh -c execs a single
+        # command; extraArgs make this a multi-token command line, so being
+        # explicit is what stops a 90s TimeoutStartSec hang on every start.
+        ExecStart = ''${pkgs.runtimeShell} -l -c "exec ${secondary.package}/bin/emacs --fg-daemon=${secondary.serverName} ${lib.escapeShellArgs secondary.extraArgs}"'';
+        # ONE FILE -- see the primary unit's comment.
+        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/${secondary.serverName}";
+        SuccessExitStatus = 15; # Emacs exits 15 on SIGTERM
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = ["default.target"];
+    };
 
     # NOTE: `recursive = true` is load-bearing. Without it home-manager makes
     # ~/.config/emacs a single symlink INTO THE STORE, and Emacs can then never
