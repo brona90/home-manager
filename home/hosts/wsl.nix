@@ -32,6 +32,11 @@ in {
     claudeKg.enable = true;
     searxng.enable = true;
 
+    # The Orrery dashboard's MCP surface. WSL-only on purpose: it drives a
+    # working copy at ~/orrery and is local-only by construction, so the Macs
+    # have nothing for it to talk to.
+    orreryMcp.enable = true;
+
     # Windows interop -- /mnt/c is dropped from PATH for zsh perf
     # (FSH command-existence checks per keystroke walk PATH and
     # stat each /mnt/c entry over the 9P bridge). Alias the few

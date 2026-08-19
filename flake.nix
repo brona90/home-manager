@@ -184,6 +184,7 @@
             ./modules/claude-skills.nix
             ./modules/claude-kg/default.nix
             ./modules/searxng/default.nix
+            ./modules/orrery-mcp.nix
             ./home/common.nix
           ]
           ++ (
