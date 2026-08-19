@@ -48,6 +48,30 @@
     # pinMiseOnDarwin. Remove this input + the overlay once the channel's mise
     # builds on Darwin again. Linux tracks the channel (mise builds fine there).
     nixpkgs-mise.url = "github:NixOS/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
+
+    # x86_64-darwin pin. Nixpkgs 26.11 dropped the platform outright:
+    # legacyPackages.x86_64-darwin throws at the genAttrs level, so EVERY
+    # output instantiated for it fails at eval -- packages, apps, checks and
+    # devShells, not just the home configuration.
+    #
+    # config.allowDeprecatedx86_64Darwin = true is now a documented no-op. The
+    # live value is the string "force", and that only skips the eval throw: the
+    # x86_64 stdenv bootstrap files were deleted in nixpkgs#535508, so a forced
+    # eval still dies in stdenv. nixpkgs-26.05-darwin is the last supporting
+    # branch and is what upstream's own error message points at.
+    #
+    # HARD EXPIRY: 26.05 security support ends 2026-12-31. This pin buys the
+    # Intel MacBook time, it does not solve anything.
+    nixpkgs-darwin-intel.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
+
+    # Must move in lockstep with the pin above. home-manager master is written
+    # against 26.11 and removed x86_64-darwin from its own flakeExposed list in
+    # 1817fbe17; driving 26.05 pkgs with master's modules trips its
+    # releaseMismatch warning and is explicitly unsupported.
+    home-manager-darwin-intel = {
+      url = "github:nix-community/home-manager/release-26.05";
+      inputs.nixpkgs.follows = "nixpkgs-darwin-intel";
+    };
   };
 
   outputs = {
@@ -59,6 +83,8 @@
     claude-code,
     git-hooks,
     nixpkgs-mise,
+    nixpkgs-darwin-intel,
+    home-manager-darwin-intel,
     ...
   }: let
     # Read user configuration.
@@ -83,6 +109,24 @@
     allSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
     forAllSystems = nixpkgs.lib.genAttrs allSystems;
 
+    # Systems that cannot track the channel and are served by a pinned
+    # nixpkgs instead. Single source of truth: pkgsFor, the home-manager
+    # selection, the mise overlay and devShells all key off isPinned rather
+    # than testing the system string themselves, so adding or retiring a
+    # pinned platform is one edit here.
+    pinnedSystems = ["x86_64-darwin"];
+    isPinned = system: builtins.elem system pinnedSystems;
+
+    nixpkgsFor = system:
+      if isPinned system
+      then nixpkgs-darwin-intel
+      else nixpkgs;
+
+    homeManagerFor = system:
+      if isPinned system
+      then home-manager-darwin-intel
+      else home-manager;
+
     # Setting programs.direnv.package alone isn't enough: something else in
     # the activation closure still pulls vanilla pkgs.direnv and runs its
     # zsh test suite, which hangs the macOS-14 CI runner. Overriding via
@@ -94,34 +138,42 @@
 
     # See the nixpkgs-mise input: source mise from a known-good rev on Darwin
     # only, sidestepping the failing test in the channel's current mise.
-    pinMiseOnDarwin = _final: prev:
-      nixpkgs.lib.optionalAttrs prev.stdenv.isDarwin {
+    #
+    # Takes `system` so it can skip pinned platforms. Without that it fires on
+    # prev.stdenv.isDarwin for the pinned pkgs too and splices a THIRD nixpkgs
+    # into that closure, to work around a channel bug 26.05 never had.
+    pinMiseOnDarwin = system: _final: prev:
+      nixpkgs.lib.optionalAttrs (prev.stdenv.isDarwin && !(isPinned system)) {
         mise = nixpkgs-mise.legacyPackages.${prev.stdenv.hostPlatform.system}.mise;
       };
 
     pkgsFor = system:
-      import nixpkgs {
+      import (nixpkgsFor system) {
         inherit system;
-        config = {
-          allowUnfree = true;
-          # sbcl is marked broken on darwin in nixpkgs-unstable.
-          # It's pulled into the home-manager activation eval (transitively
-          # via emacs lisp packages) so the eval refuses outright. "ignore"
-          # lets eval proceed; if a subsequent build actually invokes sbcl
-          # we'll surface the real failure there instead of at eval-time.
-          problems.handlers.sbcl.broken = "ignore";
-          # Suppress the per-eval x86_64-darwin deprecation warning from
-          # nixpkgs (it fires on every flake check / hms on this Intel
-          # Mac). The deprecation is acknowledged -- 26.05 is the last
-          # release supporting x86_64-darwin -- and tracked separately
-          # from CI noise.
-          allowDeprecatedx86_64Darwin = true;
-        };
+        config =
+          {
+            allowUnfree = true;
+            # sbcl is marked broken on darwin in nixpkgs-unstable.
+            # It's pulled into the home-manager activation eval (transitively
+            # via emacs lisp packages) so the eval refuses outright. "ignore"
+            # lets eval proceed; if a subsequent build actually invokes sbcl
+            # we'll surface the real failure there instead of at eval-time.
+            # 26.05 ships pkgs/stdenv/generic/problems.nix as well, so this key
+            # is portable across both nixpkgs rather than 26.11-only.
+            problems.handlers.sbcl.broken = "ignore";
+          }
+          # Only meaningful on the pinned branch: 26.05 WARNS about the
+          # x86_64-darwin deprecation and this silences it. On 26.11 the same
+          # key does nothing whatsoever, so setting it there would be a comment
+          # that lies.
+          // nixpkgs.lib.optionalAttrs (isPinned system) {
+            allowDeprecatedx86_64Darwin = true;
+          };
         overlays = [
           doom-emacs.overlays.default
           claude-code.overlays.default
           skipDirenvChecksOnDarwin
-          pinMiseOnDarwin
+          (pinMiseOnDarwin system)
         ];
       };
 
@@ -161,7 +213,7 @@
       isDarwin = nixpkgs.lib.hasInfix "darwin" system;
       isLinux = !isDarwin;
     in
-      home-manager.lib.homeManagerConfiguration {
+      (homeManagerFor system).lib.homeManagerConfiguration {
         inherit pkgs;
         extraSpecialArgs = {inherit gitConfig userConfig;};
         modules =
@@ -473,14 +525,25 @@
     devShells = forAllSystems (
       system: let
         pkgs = pkgsFor system;
-        pre-commit = preCommitFor system;
       in {
         # `direnv allow` (or `nix develop`) installs the git hooks via this
         # shellHook and keeps them current.
-        default = pkgs.mkShell {
-          inherit (pre-commit) shellHook;
-          buildInputs = pre-commit.enabledPackages;
-        };
+        #
+        # Pinned systems get a bare shell. git-hooks.lib.<system> is built from
+        # legacyPackages.<system> of the FOLLOWED (channel) nixpkgs, so merely
+        # naming it for a dropped platform re-triggers the 26.11 throw no matter
+        # which nixpkgs pkgsFor returned. The hooks are a contributor
+        # convenience, not a build input, so the Intel Mac goes without.
+        default =
+          if isPinned system
+          then pkgs.mkShell {}
+          else
+            pkgs.mkShell (let
+              pre-commit = preCommitFor system;
+            in {
+              inherit (pre-commit) shellHook;
+              buildInputs = pre-commit.enabledPackages;
+            });
       }
     );
 
