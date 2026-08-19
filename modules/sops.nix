@@ -253,6 +253,8 @@ in {
       export FLAKE_UPDATE_TOKEN_FILE="${secretsDir}/flake_update_token"
       export PORKBUN_API_KEY_FILE="${secretsDir}/porkbun_api_key"
       export PORKBUN_SECRET_KEY_FILE="${secretsDir}/porkbun_secret_key"
+      export CLOUDFLARE_ORRERY_TOKEN_FILE="${secretsDir}/cloudflare_orrery_token"
+      export CLOUDFLARE_TUNNEL_TOKEN_FILE="${secretsDir}/cloudflare_tunnel_token"
 
       github-token() { cat "$GITHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       dockerhub-token() { cat "$DOCKERHUB_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
@@ -260,6 +262,42 @@ in {
       flake-update-token() { cat "$FLAKE_UPDATE_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
       porkbun-api-key() { cat "$PORKBUN_API_KEY_FILE" 2>/dev/null || echo "Secret not available"; }
       porkbun-secret-key() { cat "$PORKBUN_SECRET_KEY_FILE" 2>/dev/null || echo "Secret not available"; }
+      cloudflare-orrery-token() { cat "$CLOUDFLARE_ORRERY_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+      cloudflare-tunnel-token() { cat "$CLOUDFLARE_TUNNEL_TOKEN_FILE" 2>/dev/null || echo "Secret not available"; }
+
+      # `wrangler login` is the default auth path, and it writes a 23-scope
+      # OAuth grant to ~/.config/.wrangler/config/default.toml in PLAINTEXT --
+      # including connectivity:admin, secrets_store:write and
+      # email_sending:write, plus an offline_access refresh token that keeps
+      # minting access tokens until the grant is revoked server-side. That is
+      # strictly broader than the least-privilege API tokens in sops, and it
+      # silently supersedes them: the careful orrery/tunnel split stops being
+      # the privilege boundary the moment someone runs `wrangler login`.
+      #
+      # This wrapper feeds wrangler the scoped orrery token instead.
+      # CLOUDFLARE_API_TOKEN takes precedence over any stored OAuth grant, so
+      # the wrapper wins even if a stale login is still on disk.
+      #
+      # Scoped to one invocation rather than exported: an exported
+      # CLOUDFLARE_API_TOKEN is inherited by every child process for the life
+      # of the shell and lands in core dumps and /proc, which trades a
+      # 0600 file for a broader exposure.
+      #
+      # If a wrangler operation fails on permissions, that is the token being
+      # correctly narrow -- widen the token deliberately, do not fall back to
+      # `wrangler login`.
+      wrangler() {
+        if [ ! -s "$CLOUDFLARE_ORRERY_TOKEN_FILE" ]; then
+          echo "wrangler: no decrypted token at $CLOUDFLARE_ORRERY_TOKEN_FILE" >&2
+          echo "wrangler: run hms, or check sops-nix activation" >&2
+          return 1
+        fi
+        if command -v wrangler >/dev/null 2>&1; then
+          CLOUDFLARE_API_TOKEN="$(cat "$CLOUDFLARE_ORRERY_TOKEN_FILE")" command wrangler "$@"
+        else
+          CLOUDFLARE_API_TOKEN="$(cat "$CLOUDFLARE_ORRERY_TOKEN_FILE")" npx wrangler "$@"
+        fi
+      }
 
       # Authenticate cachix using stored token
       cachix-auth() {
