@@ -196,7 +196,7 @@ in {
     # systemd.user is Linux-only — home-manager errors if these are set on a
     # non-Linux host. Gate them so the module's cross-platform parts (the kg
     # CLI + MCP registration above) still work if it's ever enabled on a Mac.
-    systemd.user = lib.mkIf pkgs.stdenv.isLinux {
+    systemd.user = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       services.qdrant = {
         Unit = {
           Description = "Qdrant vector DB for claude-kg";

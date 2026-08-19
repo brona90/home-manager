@@ -15,7 +15,7 @@
   # flake app) so BeyondTrust EPM has a stable fingerprintable path. Else
   # use the /nix/store output directly.
   helperBin =
-    if cfg.preferSystemPath && pkgs.stdenv.isDarwin
+    if cfg.preferSystemPath && pkgs.stdenv.hostPlatform.isDarwin
     then "/usr/local/bin/tmux-helper"
     else "${config.my.tmuxHelper.package}/bin/tmux-helper";
 

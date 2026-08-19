@@ -275,7 +275,7 @@
       ast-grep
     ]
     ++ (
-      if pkgs.stdenv.isLinux
+      if pkgs.stdenv.hostPlatform.isLinux
       then [xclip wl-clipboard gcc]
       else []
     );
@@ -299,7 +299,7 @@
       terraform-ls
     ]
     ++ (
-      if pkgs.stdenv.isDarwin
+      if pkgs.stdenv.hostPlatform.isDarwin
       then []
       else [marksman]
     );
@@ -369,7 +369,7 @@
 
       # Set sqlite library path for sqlite.lua
       export LIBSQLITE="${pkgs.sqlite.out}/lib/libsqlite3${
-        if pkgs.stdenv.isDarwin
+        if pkgs.stdenv.hostPlatform.isDarwin
         then ".dylib"
         else ".so"
       }"

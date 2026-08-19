@@ -132,7 +132,7 @@
     # zsh test suite, which hangs the macOS-14 CI runner. Overriding via
     # pkgsFor ensures every consumer of pkgs.direnv gets the patched build.
     skipDirenvChecksOnDarwin = _final: prev:
-      nixpkgs.lib.optionalAttrs prev.stdenv.isDarwin {
+      nixpkgs.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {
         direnv = prev.direnv.overrideAttrs (_: {doCheck = false;});
       };
 
@@ -140,10 +140,10 @@
     # only, sidestepping the failing test in the channel's current mise.
     #
     # Takes `system` so it can skip pinned platforms. Without that it fires on
-    # prev.stdenv.isDarwin for the pinned pkgs too and splices a THIRD nixpkgs
+    # prev.stdenv.hostPlatform.isDarwin for the pinned pkgs too and splices a THIRD nixpkgs
     # into that closure, to work around a channel bug 26.05 never had.
     pinMiseOnDarwin = system: _final: prev:
-      nixpkgs.lib.optionalAttrs (prev.stdenv.isDarwin && !(isPinned system)) {
+      nixpkgs.lib.optionalAttrs (prev.stdenv.hostPlatform.isDarwin && !(isPinned system)) {
         mise = nixpkgs-mise.legacyPackages.${prev.stdenv.hostPlatform.system}.mise;
       };
 

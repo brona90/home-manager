@@ -18,7 +18,7 @@
     if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
       echo "Starting Emacs daemon..."
       ${
-      if pkgs.stdenv.isLinux
+      if pkgs.stdenv.hostPlatform.isLinux
       then "systemctl --user start emacs 2>/dev/null || ${cfg.package}/bin/emacs --daemon || true"
       else "${cfg.package}/bin/emacs --daemon || true"
     }
@@ -79,13 +79,13 @@ in {
       # sbcl is gated to Linux: the ECL bootstrap segfaults on macOS
       # (upstream nixpkgs issue with SBCL 2.6.3). Installed via Homebrew
       # on Darwin instead (see home/darwin.nix).
-      ++ lib.optional pkgs.stdenv.isLinux pkgs.sbcl
+      ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.sbcl
       # haskell-language-server is gated to Linux: cache.nixos.org has been
       # delivering the darwin closure at byte-trickle speed (multiple CI runs
       # blew the 60min cap copying this single path), and the user doesn't
       # write Haskell on the corporate Mac. Linux runs build it from cache
       # in seconds.
-      ++ lib.optional pkgs.stdenv.isLinux pkgs.haskell-language-server;
+      ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.haskell-language-server;
 
     services.emacs = lib.mkIf cfg.daemon.enable {
       enable = true;
@@ -93,7 +93,7 @@ in {
       # true = WantedBy default.target (any user session, works in headless WSL).
       # "graphical" = WantedBy graphical-session.target (display server required).
       startWithUserSession =
-        if pkgs.stdenv.isLinux
+        if pkgs.stdenv.hostPlatform.isLinux
         then true
         else "graphical";
     };
@@ -104,7 +104,7 @@ in {
     #   - StartLimitBurst/RestartSec bound the restart loop: if it fails 3x in
     #     60s it stops in `failed` state (visible) instead of relaunching every
     #     ~100ms and burning a CPU core indefinitely.
-    systemd.user.services.emacs = lib.mkIf (cfg.daemon.enable && pkgs.stdenv.isLinux) {
+    systemd.user.services.emacs = lib.mkIf (cfg.daemon.enable && pkgs.stdenv.hostPlatform.isLinux) {
       Service = {
         ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/server";
         RestartSec = 5;
