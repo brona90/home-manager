@@ -48,17 +48,71 @@
 ;;
 ;; `org-agenda' and `org-capture' come free: they live in org-agenda.el and
 ;; org-capture.el, whose autoload cookies are picked up by Emacs's own
-;; loaddefs. `org-store-link' and `org-refile' live in org.el itself, whose
-;; autoloads sit in org-loaddefs.el and are loaded by package.el ACTIVATION --
-;; which early-init.el disables. Without this form both resolve to a symbol and
-;; then fail with void-function on the keypress.
+;; loaddefs. Nothing else does, because org's OWN autoload file is loaded by
+;; package.el ACTIVATION -- which early-init.el disables. Without a stub a
+;; command resolves to a symbol and then fails with void-function on the
+;; keypress.
 ;;
 ;; Verified rather than assumed: in a freshly started daemon before this form,
 ;; (fboundp 'org-store-link) and (fboundp 'org-refile) were both nil while
 ;; (key-binding (kbd "SPC m r")) happily returned `org-refile'. Checking the
 ;; binding proves nothing about the command.
+;;
+;; TWO forms, because org is spread over ~40 files:
+;;
+;;   1. `org-loaddefs.el' is org's own generated autoload file -- 274 stubs,
+;;      each naming the file that ACTUALLY defines the command (org-clock-in ->
+;;      "org-clock", org-export-dispatch -> "ox", org-refile -> "org-refile").
+;;      Requiring it beats enumerating those in `:commands', which would emit
+;;      (autoload SYM "org") and fail at keypress time with "Autoloading file
+;;      ... failed to define function". It costs nothing at startup: the file
+;;      is autoload forms only and pulls in no org code.
+;;
+;;   2. A `:commands' list for the commands that carry no cookie at all and DO
+;;      live in org.el -- which is most of the localleader. Checked file by
+;;      file against org 9.8.9 rather than assumed.
+(require 'org-loaddefs)
+
 (use-package org
-  :commands (org-store-link org-refile))
+  :commands (org-clone-subtree-with-time-shift
+             org-cut-subtree
+             org-deadline
+             org-demote-subtree
+             org-edit-special
+             org-move-subtree-down
+             org-move-subtree-up
+             org-narrow-to-subtree
+             org-priority
+             org-priority-down
+             org-priority-up
+             org-promote-subtree
+             org-refile
+             org-schedule
+             org-set-effort
+             org-set-property
+             org-set-tags-command
+             org-sort
+             org-sparse-tree
+             org-store-link
+             org-switchb
+             org-timestamp
+             org-timestamp-inactive
+             org-todo
+             org-toggle-heading
+             org-tree-to-indirect-buffer
+             org-update-statistics-cookies))
+
+;; org-list.el and org-agenda.el residents. Separate forms for the same reason
+;; the consult sub-packages in init.el get separate forms: `:commands' names
+;; the enclosing package's FILE, and "org" is the wrong file for these.
+(use-package org-list
+  :commands (org-toggle-checkbox org-toggle-item))
+
+(use-package org-agenda
+  :commands (org-search-view org-tags-view org-todo-list))
+
+(use-package org-capture
+  :commands (org-capture-goto-target))
 
 (with-eval-after-load 'org
   ;; Which files the agenda scans.  Deliberately a curated list rather than
@@ -224,31 +278,25 @@ async and a plain value when it did not, so both paths are handled."
 ;; Restore it from doom.d/config.el when this config graduates and Doom stops.
 
 ;;;; Bindings
-
+;;
+;; MOVED to lisp/my-bindings.el, which owns the whole leader map. This file
+;; still owns the org SETUP -- and, above, the autoload stubs without which
+;; those bindings would be names of commands that do not exist.
+;;
+;; `SPC m G s/f/p' are unchanged. What did move within the map: `SPC o l' is
+;; now `SPC n l' and `SPC o a' is now a sub-prefix with `SPC o a a' (plus
+;; `SPC o A' and `SPC n a'), both of which are Doom's actual layout.
+;;
 ;; `my/local-leader' is `SPC m' in the general OVERRIDE map, which is global
 ;; rather than mode-local as Doom's localleader is.  That is a known deviation
 ;; and the reason is structural: the override map is an evil INTERCEPT map, so
 ;; once `SPC' resolves there, `org-mode-map' is never consulted for the rest
 ;; of the sequence.  Making `SPC m' genuinely mode-local needs a dispatcher
-;; keymap, which belongs with the rest of the bindings work rather than here.
+;; keymap, which is still not done.
 ;;
 ;; The practical cost is small: sync and fetch are whole-calendar operations
-;; that make sense from any buffer, and `org-gcal-post-at-point' errors
-;; clearly outside an org buffer.
-
-(with-eval-after-load 'general
-  (my/leader
-    "X"  #'org-capture
-    "o"  '(:ignore t :which-key "open")
-    "oa" #'org-agenda
-    "ol" #'org-store-link)
-
-  (my/local-leader
-    "r"  #'org-refile
-    "G"  '(:ignore t :which-key "gcal")
-    "Gs" #'org-gcal-sync
-    "Gf" #'org-gcal-fetch
-    "Gp" #'org-gcal-post-at-point))
+;; that make sense from any buffer, and the org commands error clearly outside
+;; an org buffer.
 
 (provide 'my-org)
 ;;; my-org.el ends here
