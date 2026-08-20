@@ -8,11 +8,19 @@
 ;; LilyPond mode setup - load from system installation
 (when-let ((lily-bin (executable-find "lilypond")))
   (let* ((lily-dir (file-name-directory lily-bin))
-         ;; Try common elisp locations relative to bin
-         (elisp-paths (list
-                       (expand-file-name "../share/emacs/site-lisp" lily-dir)
-                       (expand-file-name "../share/lilypond/current/elisp" lily-dir)
-                       (expand-file-name "../share/lilypond/2.24.4/elisp" lily-dir))))
+         ;; Candidate elisp locations, relative to the resolved bin dir. The
+         ;; version-numbered directory is GLOBBED rather than listed: the old
+         ;; list named "2.24.4" explicitly, the installed tree is
+         ;; share/lilypond/2.26.0/elisp, and that probe had therefore been
+         ;; matching nothing for as long as 2.26 has been installed. It was
+         ;; harmless -- share/emacs/site-lisp is what actually resolves -- but
+         ;; it was also the one line a reader would consult to learn which
+         ;; LilyPond this config targets, and it was lying.
+         (elisp-paths (append
+                       (list (expand-file-name "../share/emacs/site-lisp" lily-dir)
+                             (expand-file-name "../share/lilypond/current/elisp" lily-dir))
+                       (file-expand-wildcards
+                        (expand-file-name "../share/lilypond/*/elisp" lily-dir)))))
     (dolist (path elisp-paths)
       (when (file-directory-p path)
         (add-to-list 'load-path path))))
