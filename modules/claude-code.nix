@@ -180,7 +180,17 @@
                 type = "command";
                 # Write via temp file + mv in the same directory so input.json
                 # appears atomically and readers never see a partial write.
-                command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && t=$(mktemp \"$d/input.XXXXXX\") && cat > \"$t\" && mv \"$t\" \"$f\" && emacsclient --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
+                #
+                # `-s $EMACS_SOCKET_NAME` when that is set, bare emacsclient
+                # otherwise. A bare emacsclient resolves to whichever Emacs is
+                # on PATH -- i.e. ALWAYS the daily driver -- so a Claude session
+                # running inside a second daemon would fire its hook at the
+                # wrong Emacs and show the diff there. Emacs does not export
+                # EMACS_SOCKET_NAME to its subprocesses (it is read only by the
+                # emacsclient binary), so the daemon's unit has to set it; where
+                # it is unset this expands to nothing and behaviour is exactly
+                # as before.
+                command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; d=\${XDG_RUNTIME_DIR:-/tmp}/claude-diff && mkdir -p \"$d\" && f=$d/input.json && t=$(mktemp \"$d/input.XXXXXX\") && cat > \"$t\" && mv \"$t\" \"$f\" && emacsclient \${EMACS_SOCKET_NAME:+-s \"$EMACS_SOCKET_NAME\"} --eval \"(claude-diff-from-hook \\\"$f\\\")\"";
                 timeout = 10;
               }
             ];
@@ -192,7 +202,10 @@
             hooks = [
               {
                 type = "command";
-                command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; emacsclient --eval '(claude-diff-dismiss)'";
+                # Same socket handling as the PermissionRequest hook above --
+                # the dismiss must reach the SAME Emacs that was asked to show
+                # the diff, or the diff layout is left on screen forever.
+                command = "[ -n \"\${INSIDE_EMACS:-}\" ] || exit 0; emacsclient \${EMACS_SOCKET_NAME:+-s \"$EMACS_SOCKET_NAME\"} --eval '(claude-diff-dismiss)'";
                 timeout = 5;
               }
             ];
