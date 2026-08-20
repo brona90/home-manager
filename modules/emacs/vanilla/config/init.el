@@ -158,6 +158,17 @@
    consult-bookmark consult-recent-file consult-xref
    :preview-key '(:debounce 0.4 any)))
 
+;; consult-imenu lives in its OWN file, not consult.el, so `:demand t' on
+;; consult above does not define it -- and with package.el activation off (see
+;; early-init.el) nothing else will. Without this form `SPC s i' resolves to
+;; the symbol and then fails with void-function when the key is pressed.
+;;
+;; It must be its own `use-package', not a `:commands' entry in the consult
+;; block: `:commands' emits (autoload SYM "consult" ...), naming the enclosing
+;; package's file, which for consult-imenu is the wrong file.
+(use-package consult-imenu
+  :commands (consult-imenu consult-imenu-multi))
+
 (use-package embark
   :demand t
   :init (setq prefix-help-command #'embark-prefix-help-command))
