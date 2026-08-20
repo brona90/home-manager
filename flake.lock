@@ -26,7 +26,9 @@
         "doomdir": "doomdir",
         "doomemacs": "doomemacs",
         "doomemacs-modules": "doomemacs-modules",
-        "emacs-overlay": "emacs-overlay",
+        "emacs-overlay": [
+          "emacs-overlay"
+        ],
         "nixpkgs": [
           "nixpkgs"
         ],
@@ -98,18 +100,18 @@
     "emacs-overlay": {
       "inputs": {
         "nixpkgs": [
-          "doom-emacs"
+          "nixpkgs"
         ],
         "nixpkgs-stable": [
-          "doom-emacs"
+          "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1787128465,
-        "narHash": "sha256-yc1y4Z/5J9vWcrS0PAhwJZ28sETlFoU/45X6gAqFKPg=",
+        "lastModified": 1787162050,
+        "narHash": "sha256-CLwkA9zmqg5qT/svcxGfnTm2srmoY7mkaU9Vr6+1BqA=",
         "owner": "nix-community",
         "repo": "emacs-overlay",
-        "rev": "c4fd609b78c2458478f5eaede5aab1696b0b8941",
+        "rev": "df34fdc9c7a5a5228636b940c598b4c3c5dd1178",
         "type": "github"
       },
       "original": {
@@ -285,6 +287,7 @@
       "inputs": {
         "claude-code": "claude-code",
         "doom-emacs": "doom-emacs",
+        "emacs-overlay": "emacs-overlay",
         "git-hooks": "git-hooks",
         "home-manager": "home-manager",
         "home-manager-darwin-intel": "home-manager-darwin-intel",
