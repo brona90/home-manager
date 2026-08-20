@@ -62,6 +62,16 @@
       evil-surround
       general # for :keymaps 'override -- a prebuilt evil intercept map
 
+      # -- org ---------------------------------------------------------------
+      # org is not listed here, but it is NOT the bundled 9.7 either: org-gcal
+      # depends on org, so the ELPA build (9.8.9) comes in transitively and
+      # wins the load-path over Emacs 30.2's bundled copy. That is checked, not
+      # assumed -- and it is the version we want, because the Doom daemon we
+      # are porting from runs 9.8.7. Listing `org' explicitly would pin the
+      # same thing twice and make the two disagree the day one moves.
+      evil-org # org motions/folding under evil, from Doom's :lang org
+      org-gcal # pulls org, oauth2-auto, request-deferred, persist
+
       # -- version control --------------------------------------------------
       magit
       forge

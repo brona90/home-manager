@@ -13,7 +13,7 @@ daily driver until it earns the default slot.
 | Try it without `hms` | `nix run .#emacs-vanilla` |
 | Base Emacs | `pkgs.emacs` 30.2 on **every** platform |
 | Config | `modules/emacs/vanilla/config/`, linked to `~/.config/emacs` |
-| Phase | **1 — scaffold**. Opens files, completes, evil, magit. No Org yet. |
+| Phase | **2 — Org**. Agenda, capture, refile, dashboard, Google Calendar. |
 
 Doom is untouched. Nothing about the daily driver changes until `flavor` flips.
 
@@ -36,10 +36,13 @@ directory writable.
 
 Not yet met. In rough order of how much they hurt when missing:
 
-- [ ] **Org**: agenda, capture, refile, the daily dashboard
-- [ ] **org-gcal**: three calendars, sops credentials, the passphrase-less GPG
-      key, save-after-fetch advice, the 30-minute timer. Verify by fetching and
-      diffing `gcal*.org` against what Doom produces — not by whether it errored
+- [x] **Org**: agenda, capture, refile, the daily dashboard. Ported verbatim
+      from the `after! org` block; `evil-org` carries the folding and motions
+- [ ] **org-gcal**: three calendars and sops credentials are wired and load
+      (see "Deliberate differences" below for the two things that are not
+      copies of Doom). What is **not** done is the part that matters: fetch
+      once and diff `gcal*.org` against what Doom produces. Whether it errored
+      is not the test — a fetch that silently writes half a calendar exits 0
 - [ ] **claude-diff.el** ported, with the Claude popup as a **bottom** window.
       A side window breaks it: `claude-diff-show` calls `delete-other-windows`,
       which cannot delete a side window, and Doom's popup module was silently
@@ -52,6 +55,35 @@ Not yet met. In rough order of how much they hurt when missing:
       long tail, and the thing that decides whether this took a weekend or a
       month
 - [ ] Two weeks as `emv` without reaching for `em`
+
+## Deliberate differences from Doom
+
+Two, both in `lisp/my-org.el`. Neither is an omission.
+
+**No 30-minute background fetch timer.** Doom re-fetches every 30 minutes. Two
+daemons doing that would write `~/org/gcal*.org` underneath each other, and
+whichever has the buffer open hits "file changed on disk" — turning a trial
+config into a data-loss question about real calendar entries. Fetch here is
+`SPC m G f`, by hand. Restore the timer from `doom.d/config.el` at graduation,
+when Doom stops.
+
+For the same reason: **do not run a vanilla fetch while Doom has a `gcal*.org`
+buffer open.** That is the one way this parallel instance can damage something
+the daily driver owns.
+
+**The OAuth token store is a plain `0600` file, not a GPG-encrypted plstore.**
+`~/.local/state/emacs/oauth2-auto.eld`, separate from Doom's, so both keep
+working. The reasoning is written out at length in `lisp/my-secrets.el`; the
+short version is that Doom's store is encrypted to a key with no passphrase
+whose private half sits at `0600` on the same disk, so the encryption was
+never adding protection over the file mode. Encrypting to the YubiKey key
+instead is not an option while the fetch has to run unattended — that trade is
+real and it was made knowingly.
+
+To authorise this Emacs without redoing the browser flow, run
+`M-x my/oauth2-import-from-plstore` once and accept the default path. It reads
+Doom's store; it does not move it. That command is the only thing in this
+config that touches GPG, and it never runs on its own.
 
 ## Graduating
 
@@ -74,6 +106,12 @@ being true the day it becomes the daily driver.
 ## Retiring Doom (after graduation)
 
 - Delete `modules/emacs/doom.d/` and the `doom-emacs` flake input
+- Restore the 30-minute `org-gcal` fetch timer (see above)
+- Retire the passphrase-less GPG key `050C399D3A6B013DD2C93F899BC379782DFE1930`
+  once `~/.config/org-gcal/oauth2-auto.plist` is gone: delete the key from the
+  keyring, drop its sops secret and the sops-nix decrypt block, and revoke it.
+  Nothing else uses it — that is the "one secret system" this was for, and it
+  is not finished until the key is actually gone rather than merely unused
 - Restore `--all-systems` to `nix flake check` — the IFD is what forced its
   removal
 - Drop the `android-mode` and `org-pdftools` disables from `packages.el`, and

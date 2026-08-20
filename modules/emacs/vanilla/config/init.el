@@ -315,5 +315,12 @@
 ;; eglot, treesit, project.el and flymake are all built in; language setup
 ;; lands in a later phase alongside the ts-mode remapping.
 
+;; --- Modules ---------------------------------------------------------------
+;; Loaded LAST on purpose: everything under lisp/ binds keys through the
+;; `my/leader' definer, which does not exist until the `general' block above
+;; has finished its :config.
+
+(require 'my-org)
+
 (provide 'init)
 ;;; init.el ends here
