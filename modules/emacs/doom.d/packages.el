@@ -6,7 +6,16 @@
 (package! ob-nix)
 (package! nix-mode)              ; Nix language support
 (package! forge)                 ; GitHub/GitLab integration for magit
-(package! claude-code :recipe (:host github :repo "stevemolitor/claude-code.el"))
+;; NOT stevemolitor/claude-code.el, whatever a :recipe here would say.
+;; nix-doom-emacs-unstraightened IGNORES :recipe and resolves the name against
+;; emacs-overlay's MELPA set, where `claude-code' is yuya373/claude-code-emacs.
+;; That is what the daemon has always loaded -- verified: the running Emacs
+;; reports claude-code-20260812.1216 with "Author: Yuya Minami", and
+;; `claude-code-normalize-project-root' (advised in config.el) exists only in
+;; yuya373's claude-code-core.el. The old :recipe was decoration that described
+;; a package this config has never run; it is removed rather than corrected so
+;; nobody "fixes" the code to match it.
+(package! claude-code)
 
 ;;; Productivity
 (package! org-roam)              ; Zettelkasten note-taking
