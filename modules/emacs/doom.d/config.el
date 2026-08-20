@@ -21,28 +21,54 @@
   (require 'lilypond-mode nil t)
   
   (with-eval-after-load 'lilypond-mode
-    (add-to-list 'auto-mode-alist '("\\.ly\\'" . LilyPond-mode))
-    (add-to-list 'auto-mode-alist '("\\.ily\\'" . LilyPond-mode))
-    
-    ;; Flycheck integration
-    (after! flycheck
-      (flycheck-define-checker lilypond
-        "A LilyPond syntax checker."
-        :command ("lilypond"
-                  (eval my/lilypond-extra-args)
-                  "-dno-print-pages" "-o" temporary-file-name source)
-        :error-patterns
-        ((error line-start (file-name) ":" line ":" column ": error: " (message) line-end)
-         (warning line-start (file-name) ":" line ":" column ": warning: " (message) line-end)
-         (error line-start "fatal error: " (message) line-end))
-        :modes LilyPond-mode)
-      (add-to-list 'flycheck-checkers 'lilypond))))
+    ;; LilyPond 2.26 renamed EVERY symbol to lowercase ("Change all prefixes to
+    ;; lowercase to follow the Elisp convention"), so `LilyPond-mode' -- the
+    ;; 2.24 name hardcoded here until now -- does not exist against the
+    ;; lilypond in the nix profile (2.26.0).  Nothing announced that:
+    ;; `auto-mode-alist' pointed at a void function, the checker was defined
+    ;; `:modes' a mode that never activated, and the build-on-save hook below
+    ;; was added to a hook that never ran.  All three were silently dead.
+    ;;
+    ;; Resolved at load time rather than hardcoded, because darwin gets
+    ;; lilypond from Homebrew (home/common.nix skips the nix package there)
+    ;; and may still be on 2.24.
+    (defconst my/lilypond-mode-symbol
+      (cond ((fboundp 'lilypond-mode) 'lilypond-mode)   ; 2.26+
+            ((fboundp 'LilyPond-mode) 'LilyPond-mode))  ; 2.24 and earlier
+      "Whichever casing of the LilyPond major mode this lilypond ships.")
+
+    (when my/lilypond-mode-symbol
+      (add-to-list 'auto-mode-alist (cons "\\.ly\\'"  my/lilypond-mode-symbol))
+      (add-to-list 'auto-mode-alist (cons "\\.ily\\'" my/lilypond-mode-symbol))
+
+      ;; Flycheck integration
+      (after! flycheck
+        (flycheck-define-checker lilypond
+          "A LilyPond syntax checker."
+          :command ("lilypond"
+                    (eval my/lilypond-extra-args)
+                    "-dno-print-pages" "-o" temporary-file-name source)
+          ;; The column is OPTIONAL on warnings: 2.26 emits a bare
+          ;; "file.ly:1: warning: no \\version statement found" with no column,
+          ;; so a pattern that requires one drops every warning on the floor.
+          ;; Errors do carry a column.
+          :error-patterns
+          ((error   line-start (file-name) ":" line ":" column ": error: " (message) line-end)
+           (warning line-start (file-name) ":" line ":" (optional column ":") " warning: " (message) line-end)
+           (error   line-start "fatal error: " (message) line-end))
+          ;; Both casings: `flycheck-define-checker' only records these, so
+          ;; naming a mode that does not exist on this machine is harmless.
+          :modes (lilypond-mode LilyPond-mode))
+        (add-to-list 'flycheck-checkers 'lilypond)))))
 
 ;; ── LilyPond: auto-build on save + refresh open PDF buffers ────────
 ;; Generic for any .ly file. Project-specific flags (e.g. --include
 ;; for custom fonts) can be set per-directory in .dir-locals.el:
 ;;
-;;   ((LilyPond-mode . ((my/lilypond-extra-args . ("--include" "/path")))))
+;;   ((lilypond-mode . ((my/lilypond-extra-args . ("--include" "/path")))))
+;;
+;; Note the lowercase mode name -- see the 2.26 rename above. A .dir-locals.el
+;; written against `LilyPond-mode' will never match.
 
 (defcustom my/lilypond-extra-args nil
   "Extra arguments passed to `lilypond' when auto-building on save."
@@ -102,9 +128,13 @@ open PDF buffers it produces."
                         (file-name-nondirectory src) (buffer-name buf))
                (display-buffer buf)))))))))
 
-(add-hook 'LilyPond-mode-hook
-          (lambda ()
-            (add-hook 'after-save-hook #'my/lilypond-build-on-save nil t)))
+;; Hook the mode that actually exists (see the 2.26 rename above). Guarded
+;; because `my/lilypond-mode-symbol' is only defined when lilypond-mode loaded
+;; at all -- on a machine with no lilypond binary this file must still load.
+(when (bound-and-true-p my/lilypond-mode-symbol)
+  (add-hook (intern (format "%s-hook" my/lilypond-mode-symbol))
+            (lambda ()
+              (add-hook 'after-save-hook #'my/lilypond-build-on-save nil t))))
 
 ;; user-full-name / user-mail-address are intentionally omitted here —
 ;; they are already set in ~/.gitconfig by the home-manager git module.
