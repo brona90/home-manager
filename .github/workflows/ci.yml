@@ -70,7 +70,34 @@ jobs:
       # a Linux runner cannot do (verified: `nix flake check --all-systems`
       # fails on x86_64-linux with "required system not available"). Darwin
       # eval coverage lives in the eval-darwin job below instead.
-      - run: nix flake check
+      # Retried for the same reason eval-darwin and build-home are: the IFD
+      # described above sets allowSubstitutes = false, so this FETCHES every
+      # elisp source uncached -- from GitHub, GitLab and codeberg. Any one host
+      # refusing a connection fails the job over a change that touched nothing
+      # related. Observed on PRs #20 and #21 within a minute of each other:
+      #
+      #   error: Failed to fetch git repository
+      #          'https://gitlab.com/sawyerjgardner/demap.el.git'
+      #
+      # demap.el is referenced nowhere in this repo; it arrives through Doom's
+      # module set. This retry, and the whole class of failure, goes away when
+      # Doom does -- see modules/emacs/vanilla/GRADUATION.md.
+      #
+      # Inline rather than ./.github/actions/nix-build-retry: that action takes
+      # a LIST OF BUILD TARGETS and leaves ./result for the Cachix step. This
+      # is one command with neither. Sharing it would mean an input that
+      # switches the action between two shapes, which is worse than six lines.
+      - name: Flake check
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            nix flake check && exit 0
+            [ "$attempt" -lt 3 ] || break
+            echo "::warning::transient nix failure; retrying in 60s (attempt $attempt/3)"
+            sleep 60
+          done
+          echo "::error::nix flake check still failing after 3 attempt(s)"
+          exit 1
       # PR-time eval coverage for the Linux config. `nix build --dry-run`
       # evaluates and plans the build without building the final closure.
       - name: Evaluate Linux home configuration (dry-run)
@@ -104,28 +131,17 @@ jobs:
         with:
           name: nix-community
           extraPullNames: emacs,${{ env.CACHIX_CACHE }}
+      # The retry loop that used to be inlined here now lives in the
+      # composite action, which build-home shares -- the same closure, the
+      # same transient IFD fetch failures, one implementation.
       - name: Evaluate Darwin home configurations (dry-run)
-        # nix-doom-emacs-unstraightened fetches every elisp source uncached via
-        # IFD (allowSubstitutes = false), so this step git-clones flaky non-GitHub
-        # hosts (codeberg, gitlab, savannah). nix's `download-attempts` covers
-        # binary substituter downloads, NOT these git fetches, so a single
-        # transient 504 fails the whole eval. Retry the loop to ride out transient
-        # upstream outages (re-runs are fast: already-fetched sources are cached).
-        run: |
-          configs=( "gfoster@x86_64-darwin" "gfoster@aarch64-darwin" "888973@aarch64-darwin" )
-          for attempt in 1 2 3; do
-            failed=0
-            for config in "${configs[@]}"; do
-              echo "::group::dry-run $config (attempt $attempt)"
-              nix build --dry-run ".#homeConfigurations.\"$config\".activationPackage" || failed=1
-              echo "::endgroup::"
-            done
-            [ "$failed" -eq 0 ] && exit 0
-            echo "Transient eval failure; retrying in 60s (attempt $attempt/3)…" >&2
-            sleep 60
-          done
-          echo "Darwin eval still failing after 3 attempts" >&2
-          exit 1
+        uses: ./.github/actions/nix-build-retry
+        with:
+          nix-args: --dry-run
+          targets: |
+            .#homeConfigurations."gfoster@x86_64-darwin".activationPackage
+            .#homeConfigurations."gfoster@aarch64-darwin".activationPackage
+            .#homeConfigurations."888973@aarch64-darwin".activationPackage
 
   build-home:
     name: Build Home Configurations
@@ -134,23 +150,37 @@ jobs:
     # Cap at 60 min so a stuck build (e.g. shellcheck on lvim wrapper on macOS-14)
     # surfaces fast instead of bleeding the GitHub Actions 6h job timeout.
     timeout-minutes: 60
-    # Run on push to main/master (not PRs) to populate cache
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # There is deliberately NO job-level `if` here. It used to read
+    #   if: github.event_name == 'push' && (github.ref == 'refs/heads/main' ...)
+    # which made this job report "skipping" on EVERY pull request (observed on
+    # PR #14: Lint/Flake Check/Evaluate Darwin green, Build Home Configurations
+    # skipped). Nothing in CI built the Linux closure before merge, so a local
+    # `nix build` was the only thing between a broken home configuration and
+    # master. The matrix below is event-dependent instead of the whole job.
     strategy:
       # One config's transient failure (e.g. a 503 from a package host)
       # must not cancel the sibling builds.
       fail-fast: false
+      # PRs build the Linux configuration ONLY; a push to main/master builds
+      # everything. That is the cheapest thing that still catches a broken
+      # Linux build: ubuntu runners are the cheap ones, macOS bills at 10x,
+      # and the Darwin configs already get PR-time EVAL coverage from
+      # eval-darwin -- eval is what actually breaks on a config change, and a
+      # Darwin-only *build* failure is caught on push, before any Mac
+      # switches to it.
+      #
+      # gfoster@x86_64-darwin is absent from both lists: GitHub has no hosted
+      # Intel macOS runners anymore. It keeps eval-only coverage via
+      # eval-darwin (Rosetta on the arm64 runner).
+      #
+      # A dynamic matrix, not a job `if`, because `jobs.<id>.if` cannot see
+      # the matrix context and a per-entry `if` does not exist -- spinning up
+      # two macOS runners just to skip their steps is what that would cost.
       matrix:
-        include:
-          - config: gfoster@x86_64-linux
-            runner: ubuntu-latest
-          - config: gfoster@aarch64-darwin
-            runner: macos-14
-          - config: 888973@aarch64-darwin
-            runner: macos-14
-          # gfoster@x86_64-darwin is intentionally absent: GitHub has no
-          # hosted Intel macOS runners anymore. It still gets eval-only
-          # coverage via the eval-darwin job (Rosetta on the arm64 runner).
+        include: >-
+          ${{ fromJSON(github.event_name == 'push'
+          && '[{"config":"gfoster@x86_64-linux","runner":"ubuntu-latest"},{"config":"gfoster@aarch64-darwin","runner":"macos-14"},{"config":"888973@aarch64-darwin","runner":"macos-14"}]'
+          || '[{"config":"gfoster@x86_64-linux","runner":"ubuntu-latest"}]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
@@ -187,12 +217,17 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
 
+      # Retried, exactly like eval-darwin: this job builds the same
+      # unstraightened closure and so has always had the same transient-IFD
+      # failure mode -- it simply had no retry, so a GitHub 408 mid-build
+      # failed a push that was fine. The rationale lives with the action.
+      # nix-args: -L (print-build-logs) so a hanging derivation surfaces its
+      # actual build phase output instead of "building '...drv'..." silence.
       - name: Build home configuration
-        run: |
-          echo "Building homeConfigurations.${{ matrix.config }}"
-          # -L (print-build-logs) so a hanging derivation surfaces its actual
-          # build phase output instead of just "building '...drv'..." silence.
-          nix build -L '.#homeConfigurations."${{ matrix.config }}".activationPackage'
+        uses: ./.github/actions/nix-build-retry
+        with:
+          nix-args: -L
+          targets: .#homeConfigurations."${{ matrix.config }}".activationPackage
 
       - name: Push closure to Cachix (best effort)
         # Never fail CI over a cache upload; the build already succeeded.
@@ -211,6 +246,28 @@ jobs:
             | tee /tmp/cachix-paths.txt \
             | cachix push "${{ env.CACHIX_CACHE }}"
           echo "Pushed $(grep -c . /tmp/cachix-paths.txt || true) paths not already signed by cache.nixos.org"
+
+      # THE EMACS GATE -- the only CI step that ever starts Emacs.
+      #
+      # WHY A DAEMON AND NOT `emacs --batch`: batch does NOT load init.el at
+      # all, so a batch run reports success while having loaded nothing. That
+      # is exactly how six leader keys reached master bound to void commands
+      # (fixed in PR #15) with every CI job green. verify.sh starts a REAL
+      # daemon from the store configDir, walks the actual leader keymap and
+      # asserts fboundp on every command it reaches. If anyone ever "speeds
+      # this up" by switching it to --batch, the check is gone and the job
+      # will keep saying PASS. See modules/emacs/vanilla/verify.sh.
+      #
+      # Linux only: packages.emacs-vanilla is Linux-gated in flake.nix.
+      #
+      # In THIS job rather than one of its own because verify.sh builds the
+      # activation package as one of its stages: here that is a store hit
+      # from the step above, whereas a dedicated runner would rebuild the
+      # whole home closure a second time. Placed after the Cachix push so a
+      # red gate still leaves the closure cached.
+      - name: Emacs vanilla gate (real daemon, not batch mode)
+        if: matrix.config == 'gfoster@x86_64-linux'
+        run: bash modules/emacs/vanilla/verify.sh
 
   docker-build:
     name: Build & Push Docker

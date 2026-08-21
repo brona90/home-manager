@@ -95,7 +95,7 @@ Also update the config names in the `check` job's dry-run step and the `eval-dar
 lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
   ├─> check (ubuntu: nix flake check + dry-run eval of the Linux config)
   └─> eval-darwin (macos-14: dry-run eval of all Darwin configs; x86_64-darwin via Rosetta)
-      └─[+check]─> build-home (push only: x86_64-linux + 2× aarch64-darwin, pushes to Cachix)
+      └─[+check]─> build-home (PRs: x86_64-linux · pushes: + 2× aarch64-darwin; Cachix; runs the Emacs gate)
                      └─> docker-build (build → load → smoke test → push if DOCKERHUB_TOKEN)
                            └─> docker-test (registry pull verification)
 ```
@@ -107,7 +107,7 @@ lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
 | `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck, actionlint |
 | `check` | After lint | `nix flake check` + `nix build --dry-run` eval of the Linux config |
 | `eval-darwin` | After lint (pushes/PRs) | `nix build --dry-run` eval of all Darwin configs in `config.nix`; x86_64-darwin via Rosetta 2 (`extra-platforms`) |
-| `build-home` | Merge to master | Builds home configs (x86_64-linux + both aarch64-darwin); pushes to Cachix if token set. x86_64-darwin is eval-only (no hosted Intel macOS runners). The Cachix push is filtered: only paths *not* already signed by cache.nixos.org are uploaded (no point mirroring thousands of upstream paths) |
+| `build-home` | **PRs and pushes** | On a PR: builds `gfoster@x86_64-linux` only, then runs the Emacs gate (`modules/emacs/vanilla/verify.sh`). On a push to master: also both aarch64-darwin. Gated by the **matrix**, not a job-level `if` — the `if` is what made it skip on every PR. x86_64-darwin is eval-only (no hosted Intel macOS runners). The Cachix push is filtered: only paths *not* already signed by cache.nixos.org are uploaded (no point mirroring thousands of upstream paths), and it runs *before* the Emacs gate so a red gate still leaves the closure cached |
 | `docker-build` | After build-home | Builds Docker image, loads it, smoke-tests it locally, and only then pushes to Docker Hub if token set |
 | `docker-test` | After docker-build | Pulls the pushed image from Docker Hub and verifies it runs; reports "skipped — no token" in the job summary if `DOCKERHUB_TOKEN` is unset |
 
@@ -138,14 +138,27 @@ Auto-merge only waits for checks because of branch protection (below); two repo-
 
 ### Branch protection on `master`
 
-Protection requires exactly the three checks that run in PR context — `Lint`, `Flake Check`, `Evaluate Darwin Configurations` (`build-home` and the docker jobs are push-gated and must *not* be listed, or auto-merge would wait forever). Applied with:
+Protection requires exactly the checks that run in PR context. The docker jobs remain push-gated and must *not* be listed, or auto-merge would wait forever.
+
+**`build-home` now reports on PRs and belongs in this list.** It used to be push-gated by a job-level `if`, which meant nothing in CI built the Linux home configuration on a pull request — verified on PR #14, where it showed `skipping` while everything else passed. The event-dependence now lives in the matrix instead: PRs build `gfoster@x86_64-linux` only, pushes still build all three. The context name is the **matrix** name, parameters included:
+
+```
+Build Home Configurations (gfoster@x86_64-linux, ubuntu-latest)
+```
+
+Requiring it also requires the Emacs gate, which runs as a step inside that job. `nix flake check` cannot cover that gate: it has to start a real daemon, because `emacs --batch` does not load `init.el` at all and would report success while loading nothing.
 
 ```bash
 gh api -X PUT repos/<owner>/<repo>/branches/master/protection --input - <<'EOF'
 {
   "required_status_checks": {
     "strict": false,
-    "contexts": ["Lint", "Flake Check", "Evaluate Darwin Configurations"]
+    "contexts": [
+      "Lint",
+      "Flake Check",
+      "Evaluate Darwin Configurations",
+      "Build Home Configurations (gfoster@x86_64-linux, ubuntu-latest)"
+    ]
   },
   "enforce_admins": false,
   "required_pull_request_reviews": null,
@@ -153,6 +166,16 @@ gh api -X PUT repos/<owner>/<repo>/branches/master/protection --input - <<'EOF'
 }
 EOF
 ```
+
+Check what is actually required rather than assuming the call took:
+
+```bash
+gh api repos/<owner>/<repo>/branches/master/protection --jq '.required_status_checks.contexts'
+```
+
+**Until `build-home` is in that list, `update-flake.yml` auto-merge can squash a lock bump once Lint / Flake Check / Evaluate Darwin pass — before the Linux build or the Emacs gate has reported.** That is the reason the gate exists, so it is not optional bookkeeping.
+
+The matrix name is derived from `config.nix`; renaming the user, system or runner changes the context string, and a required check whose name no longer exists never reports, which blocks every PR forever. Update this list in the same commit as any such rename.
 
 **`enforce_admins: false` is load-bearing:** the repo owner routinely pushes directly to `master`, and with admin enforcement off, none of the protection rules apply to admins — direct pushes keep working exactly as before. The required checks only constrain PRs (i.e. the automated flake-update PRs) and non-admin pushes. Do not flip `enforce_admins` on without rethinking the direct-push workflow.
 
