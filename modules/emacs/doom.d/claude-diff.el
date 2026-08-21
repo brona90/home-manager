@@ -212,11 +212,34 @@
 ;; ── Display ──────────────────────────────────────────────────────────
 
 (defun claude-diff-show (file before-content after-content)
-  "Show 2-way diff for FILE with BEFORE-CONTENT and AFTER-CONTENT."
+  "Show 2-way diff for FILE with BEFORE-CONTENT and AFTER-CONTENT.
+
+Owns the lifetime of `claude-diff--saved-wconf'; the layout work itself is
+`claude-diff--show-1'."
   ;; Save the full window configuration so reset can restore all splits/buffers.
   ;; Only save if we don't already have one (avoid overwriting with diff layout).
-  (unless claude-diff--saved-wconf
-    (setq claude-diff--saved-wconf (current-window-configuration)))
+  (let ((fresh (unless claude-diff--saved-wconf
+                 (setq claude-diff--saved-wconf (current-window-configuration))
+                 t))
+        (ok nil))
+    (unwind-protect
+        (prog1 (claude-diff--show-1 file before-content after-content)
+          (setq ok t))
+      ;; If building the layout threw, the configuration captured above must
+      ;; NOT be kept. The `unless' guard would then suppress the re-save on the
+      ;; next call, and the next SUCCESSFUL diff would restore a window
+      ;; configuration belonging to an abandoned attempt -- silently dropping
+      ;; whatever the user had on screen in between.
+      ;;
+      ;; `delete-other-windows' in `claude-diff--show-1' is a real thrower:
+      ;; window.el signals "Cannot make side window the only window" when the
+      ;; selected window is a side window, which is exactly the case when this
+      ;; is called from the hook while the user sits in the Claude popup.
+      (unless ok
+        (when fresh (setq claude-diff--saved-wconf nil))))))
+
+(defun claude-diff--show-1 (file before-content after-content)
+  "Build the diff layout for FILE from BEFORE-CONTENT and AFTER-CONTENT."
   ;; Kill any existing diff buffers from a prior review
   (dolist (buf (buffer-list))
     (when (or (string-prefix-p "*Before: " (buffer-name buf))
