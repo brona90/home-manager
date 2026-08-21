@@ -52,8 +52,25 @@ runs:
         # which shellcheck cannot see (it lints this body in isolation --
         # actionlint does NOT shellcheck action.yml, so it is checked by
         # hand: shellcheck must exit 0 on this script).
+        #
+        # NOT `mapfile`/`readarray`: those are bash 4 builtins, and the macOS
+        # runners this action also serves ship **bash 3.2** as /bin/bash --
+        # Apple has never shipped bash 4 (GPLv3). `shell: bash` therefore means
+        # bash 5 on ubuntu and 3.2 on macos-14, and the first version of this
+        # action died on macos with `mapfile: command not found`, exit 127,
+        # before running a single nix command. A read loop is portable to both.
+        # Process substitution IS available in bash 3.2 -- only `mapfile` is not.
+        #
+        # Copied to a local first so the SC2153 directive binds to one simple
+        # command. A `# shellcheck disable` applies to the NEXT command, and
+        # the reference is inside the `done <` redirection of a compound
+        # `while`, where a directive placed above the loop does not reach it.
         # shellcheck disable=SC2153
-        mapfile -t targets < <(printf '%s\n' "$TARGETS" | sed '/^[[:space:]]*$/d')
+        raw_targets="$TARGETS"
+        targets=()
+        while IFS= read -r line; do
+          [ -n "$line" ] && targets+=("$line")
+        done < <(printf '%s\n' "$raw_targets")
         if [ "${#targets[@]}" -eq 0 ]; then
           echo "::error::nix-build-retry was called with no targets"
           exit 1

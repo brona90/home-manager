@@ -70,7 +70,34 @@ jobs:
       # a Linux runner cannot do (verified: `nix flake check --all-systems`
       # fails on x86_64-linux with "required system not available"). Darwin
       # eval coverage lives in the eval-darwin job below instead.
-      - run: nix flake check
+      # Retried for the same reason eval-darwin and build-home are: the IFD
+      # described above sets allowSubstitutes = false, so this FETCHES every
+      # elisp source uncached -- from GitHub, GitLab and codeberg. Any one host
+      # refusing a connection fails the job over a change that touched nothing
+      # related. Observed on PRs #20 and #21 within a minute of each other:
+      #
+      #   error: Failed to fetch git repository
+      #          'https://gitlab.com/sawyerjgardner/demap.el.git'
+      #
+      # demap.el is referenced nowhere in this repo; it arrives through Doom's
+      # module set. This retry, and the whole class of failure, goes away when
+      # Doom does -- see modules/emacs/vanilla/GRADUATION.md.
+      #
+      # Inline rather than ./.github/actions/nix-build-retry: that action takes
+      # a LIST OF BUILD TARGETS and leaves ./result for the Cachix step. This
+      # is one command with neither. Sharing it would mean an input that
+      # switches the action between two shapes, which is worse than six lines.
+      - name: Flake check
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            nix flake check && exit 0
+            [ "$attempt" -lt 3 ] || break
+            echo "::warning::transient nix failure; retrying in 60s (attempt $attempt/3)"
+            sleep 60
+          done
+          echo "::error::nix flake check still failing after 3 attempt(s)"
+          exit 1
       # PR-time eval coverage for the Linux config. `nix build --dry-run`
       # evaluates and plans the build without building the final closure.
       - name: Evaluate Linux home configuration (dry-run)
