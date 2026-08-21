@@ -220,6 +220,28 @@ jobs:
             | cachix push "${{ env.CACHIX_CACHE }}"
           echo "Pushed $(grep -c . /tmp/cachix-paths.txt || true) paths not already signed by cache.nixos.org"
 
+      # THE EMACS GATE -- the only CI step that ever starts Emacs.
+      #
+      # WHY A DAEMON AND NOT `emacs --batch`: batch does NOT load init.el at
+      # all, so a batch run reports success while having loaded nothing. That
+      # is exactly how six leader keys reached master bound to void commands
+      # (fixed in PR #15) with every CI job green. verify.sh starts a REAL
+      # daemon from the store configDir, walks the actual leader keymap and
+      # asserts fboundp on every command it reaches. If anyone ever "speeds
+      # this up" by switching it to --batch, the check is gone and the job
+      # will keep saying PASS. See modules/emacs/vanilla/verify.sh.
+      #
+      # Linux only: packages.emacs-vanilla is Linux-gated in flake.nix.
+      #
+      # In THIS job rather than one of its own because verify.sh builds the
+      # activation package as one of its stages: here that is a store hit
+      # from the step above, whereas a dedicated runner would rebuild the
+      # whole home closure a second time. Placed after the Cachix push so a
+      # red gate still leaves the closure cached.
+      - name: Emacs vanilla gate (real daemon, not batch mode)
+        if: matrix.config == 'gfoster@x86_64-linux'
+        run: bash modules/emacs/vanilla/verify.sh
+
   docker-build:
     name: Build & Push Docker
     runs-on: ubuntu-latest
