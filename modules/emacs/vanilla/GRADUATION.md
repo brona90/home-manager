@@ -13,7 +13,7 @@ daily driver until it earns the default slot.
 | Try it without `hms` | `nix run .#emacs-vanilla` |
 | Base Emacs | `pkgs.emacs` 30.2 on **every** platform |
 | Config | `modules/emacs/vanilla/config/`, linked to `~/.config/emacs` |
-| Phase | **2 — Org**. Agenda, capture, refile, dashboard, Google Calendar. |
+| Phase | **3 — Bindings**. The discoverable `SPC` leader menu, on Doom's keys. |
 
 Doom is untouched. Nothing about the daily driver changes until `flavor` flips.
 
@@ -51,12 +51,45 @@ Not yet met. In rough order of how much they hurt when missing:
       This exists only in `config.el` because the Doom module could not build
       under nix-doom — there is no module behind it to fall back on
 - [ ] **Languages**: eglot + treesit for the ten in use
-- [ ] **Bindings**: enough of `SPC` that muscle memory stops misfiring. The
-      long tail, and the thing that decides whether this took a weekend or a
-      month
+- [x] **Bindings**: `lisp/my-bindings.el`. 14 named prefixes and ~150 named
+      leader keys on Doom's key choices, every one of them showing a
+      human-readable name in the which-key popup — the whole point of a leader
+      key, and the thing that was still missing. Gate: a real daemon walks the
+      override map and asserts `fboundp` on every command it reaches (738
+      reachable, 0 void) and that no key or prefix renders as a raw symbol
+      (490 named, 0 unnamed). What is still absent is the long tail behind
+      features this config does not have — see below
 - [ ] Two weeks as `emv` without reaching for `em`
 
-## Deliberate differences from Doom
+## Deliberate differences from Doom — bindings
+
+Every one of these is a key where Doom's command does not exist outside Doom.
+The key is kept so the finger lands somewhere sane; the behaviour differs.
+
+| Key | Doom | Here | Difference that will be noticed |
+|---|---|---|---|
+| `SPC c e` | `+eval/buffer-or-region` | `my/eval-buffer-or-region` | **elisp only.** Doom dispatches on major mode through quickrun; this evaluates as Emacs Lisp or not at all |
+| `SPC c d` / `c D` | `+lookup/definition`, `+lookup/references` | `xref-find-definitions`, `xref-find-references` | no dumb-jump/online fallback chain — with no LSP and no tags, xref just fails |
+| `SPC c k` | `+lookup/documentation` | `eldoc-doc-buffer` | point-local docs only; no docset or online lookup |
+| `SPC c f` | `+format/region-or-buffer` | `eglot-format` | needs a live language server; there is no format-all equivalent here |
+| `SPC f D` | `doom/delete-this-file` | `delete-file` | prompts for a filename instead of acting on the current buffer |
+| `SPC s l` / `s c` | `link-hint-open-link`, unbound | `avy-goto-line`, `avy-goto-char-timer` | different feature entirely. link-hint is not in the package set and avy had no leader key; these two free keys went to the tool that is present |
+| `SPC b K` | `doom/kill-all-buffers` | *unbound* | `SPC b O` (`my/kill-other-buffers`) is the nearest thing, and it spares non-file buffers |
+| `SPC m r` | refile sub-prefix | `org-refile` directly | Doom's `SPC m r r`. The rest of that sub-menu is `+org/` commands that do not exist here |
+| `SPC o a` | `org-agenda` (phase 2) | sub-prefix; agenda is `SPC o a a` | this is Doom's actual layout — phase 2 was the deviation. `SPC o A` and `SPC n a` also reach it |
+| `SPC o l` | *(llm prefix)* | *moved:* store-link is now `SPC n l` | phase 2 put `org-store-link` on `SPC o l`, which is not a Doom key |
+
+Unbound rather than repurposed, because the feature is not here at all:
+`SPC TAB` (workspaces), `SPC ~` (popups), `SPC d` (dape), `SPC l` (crdt),
+`SPC r` (ssh-deploy), snippets, treemacs, docsets, `SPC t z` (zen).
+
+`SPC m` is still structurally global rather than mode-local — it is reached
+through an evil *intercept* map, so `org-mode-map` is never consulted once
+`SPC` resolves. A genuinely mode-local localleader needs a dispatcher keymap
+and is not done. In practice the org commands under it error clearly outside
+an org buffer.
+
+## Deliberate differences from Doom — org
 
 Two, both in `lisp/my-org.el`. Neither is an omission.
 

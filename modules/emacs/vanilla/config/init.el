@@ -61,9 +61,67 @@
   (electric-pair-mode 1)
   (show-paren-mode 1)
   (column-number-mode 1)
-  (which-key-mode 1)         ; built in since Emacs 30 -- no package needed
   (setq display-line-numbers-type t)
   (add-hook 'prog-mode-hook #'display-line-numbers-mode))
+
+;; --- Discoverability -------------------------------------------------------
+;;
+;; which-key is what makes the SPC leader a MENU rather than a set of chords
+;; you have to remember, so it gets a real configuration block rather than one
+;; `(which-key-mode 1)' buried in the `emacs' block above.
+;;
+;; BUILT IN since Emacs 30 -- `(locate-library "which-key")' in this build
+;; returns .../emacs-30.2/share/emacs/30.2/lisp/which-key.elc, not an elpa
+;; path. It is deliberately NOT in package.nix: a MELPA copy would land earlier
+;; on load-path and shadow the built-in with a fork that has drifted.
+(use-package which-key
+  :demand t
+  :init
+  ;; `setopt', NOT `setq'. `which-key-dont-use-unicode' carries a :set function
+  ;; that re-evaluates `which-key-separator' and `which-key-ellipsis' from
+  ;; their standard values, and those standard values are what read the flag.
+  ;; Measured in this build:
+  ;;
+  ;;   (setq   which-key-dont-use-unicode nil) -> separator " : ", ellipsis ".."
+  ;;   (setopt which-key-dont-use-unicode nil) -> separator " U+2192 ",
+  ;;                                              ellipsis U+2026
+  ;;
+  ;; i.e. a plain `setq' flips the flag and silently keeps the ASCII glyphs,
+  ;; which looks like which-key ignoring the setting.
+  (setopt which-key-dont-use-unicode nil)
+  (setq which-key-idle-delay 0.3           ; menu appears rather than waits
+        which-key-idle-secondary-delay 0.05 ; ...and instantly for the next key
+        which-key-max-description-length 40 ; default 27 truncates real names
+        which-key-add-column-padding 1
+        which-key-min-display-lines 6       ; stop the popup jumping in height
+        which-key-show-remaining-keys t
+        ;; Alphabetical, not by key-type: a menu you read top-to-bottom.
+        which-key-sort-order #'which-key-key-order-alpha
+        which-key-prefix-prefix "+"
+        which-key-show-prefix 'echo         ; keys so far go in the echo area
+        which-key-popup-type 'side-window
+        which-key-side-window-location 'bottom
+        which-key-side-window-max-height 0.30
+        which-key-preserve-window-configuration t
+        ;; LOAD-BEARING, and the default is wrong HERE specifically. Its
+        ;; defcustom value is `(not (display-graphic-p))', EVALUATED AT LOAD
+        ;; TIME. This is a daemon: at load there is no frame, `display-graphic-p'
+        ;; is nil, so the default computes to t and stays t forever -- including
+        ;; in the GUI frames emacsclient makes later. Measured: t in a daemon
+        ;; started from the store config. The imprecise fit rounds the popup to
+        ;; whole lines and clips the last row of a full menu.
+        which-key-allow-imprecise-window-fit nil)
+  :config
+  ;; NOTE: `which-key-mode' sets `prefix-help-command' to
+  ;; `which-key-C-h-dispatch'. The `embark' block below then sets it to
+  ;; `embark-prefix-help-command' in its `:init', which runs LATER, so EMBARK
+  ;; WINS -- verified in a running daemon, where `prefix-help-command' is
+  ;; `embark-prefix-help-command'. That is the intended outcome and not an
+  ;; accident of ordering: embark's version offers a searchable completing-read
+  ;; over the prefix's keys WITH their descriptions, which is the same "find it
+  ;; by name" property this whole file exists for. The idle popup is unaffected;
+  ;; only what `C-h' after a prefix does changes.
+  (which-key-mode 1))
 
 ;; --- Appearance ------------------------------------------------------------
 ;;
@@ -125,6 +183,20 @@
   :demand t
   :config (vertico-mode 1))
 
+;; `SPC '' -- Doom's "resume last search". Its own file (vertico-repeat.el), so
+;; the same rule as the consult sub-packages applies.
+;;
+;; `vertico-repeat-save' is the half that is easy to miss: without it on
+;; `minibuffer-setup-hook' nothing ever records a session and `vertico-repeat'
+;; errors with "No repeatable session". It is a plain function, not a command,
+;; hence `:autoload'; and it MUST have an autoload stub, because a void
+;; function on `minibuffer-setup-hook' would break every minibuffer prompt in
+;; the session, not just this key.
+(use-package vertico-repeat
+  :commands (vertico-repeat vertico-repeat-select)
+  :autoload (vertico-repeat-save)
+  :init (add-hook 'minibuffer-setup-hook #'vertico-repeat-save))
+
 (use-package orderless
   :demand t
   :init
@@ -140,6 +212,16 @@
   :demand t
   :config (marginalia-mode 1))
 
+;; BEFORE the consult block, and that is load-bearing rather than tidy.
+;; consult-xref lives in its own file (consult-xref.el), which nothing loads --
+;; see the block below the consult one for the general form of this trap. What
+;; makes THIS one order-sensitive is that consult's `:config' passes
+;; consult-xref to `consult-customize', and `consult--customize-put' silently
+;; drops any symbol failing `functionp' with "neither a command nor a source".
+;; With this form after the consult block that warning fired on every startup.
+(use-package consult-xref
+  :autoload (consult-xref))
+
 (use-package consult
   :demand t
   :init
@@ -153,21 +235,42 @@
   ;; file-touching commands that means one visit per keystroke, so debounce
   ;; them.  NOTE: wrapping any of these in your own command means adding YOUR
   ;; command here too -- consult-customize keys on the command symbol.
+  ;; The my/search-* wrappers in my-bindings.el need the same debounce -- but
+  ;; they CANNOT be listed here. `consult--customize-put' tests `functionp' as
+  ;; this `:config' runs, which is long before lisp/ is loaded, so all three
+  ;; were warned about and dropped. That call lives next to the defuns instead.
   (consult-customize
    consult-ripgrep consult-git-grep consult-grep
    consult-bookmark consult-recent-file consult-xref
    :preview-key '(:debounce 0.4 any)))
 
-;; consult-imenu lives in its OWN file, not consult.el, so `:demand t' on
-;; consult above does not define it -- and with package.el activation off (see
-;; early-init.el) nothing else will. Without this form `SPC s i' resolves to
-;; the symbol and then fails with void-function when the key is pressed.
+;; consult ships as SEVEN files, and only consult.el is what `:demand t' above
+;; loads. Everything else -- consult-imenu, consult-flymake, consult-org,
+;; consult-register, consult-xref -- is a separate feature that nothing loads,
+;; because early-init.el turns package.el activation (and therefore every
+;; package autoload file) off. Without a form per file the leader keys resolve
+;; to the symbol and then fail with void-function on the keypress.
 ;;
-;; It must be its own `use-package', not a `:commands' entry in the consult
-;; block: `:commands' emits (autoload SYM "consult" ...), naming the enclosing
-;; package's file, which for consult-imenu is the wrong file.
+;; Each must be its OWN `use-package'. A `:commands' entry in the consult block
+;; emits (autoload SYM "consult" ...), naming the ENCLOSING package's file --
+;; the wrong file for every one of these.
 (use-package consult-imenu
   :commands (consult-imenu consult-imenu-multi))
+
+(use-package consult-flymake
+  :commands (consult-flymake))
+
+(use-package consult-org
+  :commands (consult-org-heading consult-org-agenda))
+
+;; `:autoload' rather than `:commands' for the two non-interactive ones:
+;; `consult-register-format' and `consult-register-window' are wired into
+;; `register-preview-function'/`register-preview-delay' in the consult block
+;; above, so they are CALLED without ever being a command. `:commands' would
+;; declare them interactive, which they are not.
+(use-package consult-register
+  :commands (consult-register consult-register-load consult-register-store)
+  :autoload (consult-register-format consult-register-window))
 
 (use-package embark
   :demand t
@@ -259,56 +362,115 @@
     :states '(normal insert visual motion emacs)
     :keymaps 'override
     :prefix "SPC m"
-    :global-prefix "C-SPC m")
+    :global-prefix "C-SPC m"))
 
-  ;; Doom's most-used leader keys.  Deliberately a small set: the rest get
-  ;; added as they are actually missed, rather than transcribing 2500 lines of
-  ;; +bindings speculatively.
-  (my/leader
-    "."   #'find-file
-    ","   #'consult-buffer
-    "SPC" #'project-find-file
-    "/"   #'consult-ripgrep
-    ":"   #'execute-extended-command
-    "RET" #'consult-bookmark
-    "u"   #'universal-argument
-    "a"   #'embark-act
-    "x"   #'scratch-buffer               ; built in since Emacs 29
-    "w"   '(:keymap evil-window-map :which-key "window")
-    "h"   '(:keymap help-map           :which-key "help")
-    "b"   '(:ignore t :which-key "buffer")
-    "bb"  #'consult-buffer
-    "bk"  #'kill-current-buffer
-    "bs"  #'save-buffer
-    "f"   '(:ignore t :which-key "file")
-    "ff"  #'find-file
-    "fr"  #'consult-recent-file
-    "fs"  #'save-buffer
-    "g"   '(:ignore t :which-key "git")
-    "gg"  #'magit-status
-    "p"   '(:keymap project-prefix-map :which-key "project")
-    "s"   '(:ignore t :which-key "search")
-    "ss"  #'consult-line
-    "si"  #'consult-imenu
-    "su"  #'vundo
-    "q"   '(:ignore t :which-key "quit")
-    "qq"  #'save-buffers-kill-terminal
-    "qr"  #'restart-emacs))              ; built in since Emacs 29
+;; The bindings themselves are in lisp/my-bindings.el, required at the bottom
+;; of this file. They are NOT here, because `my/leader' does not exist until
+;; the `general' block above has finished its `:config' -- and because the map
+;; is now long enough that mixing it in with package setup would hide both.
 
 ;; --- Version control -------------------------------------------------------
 
 (use-package magit
-  :commands (magit-status magit-dispatch)
+  ;; magit-blame-addition, magit-file-dispatch and the forge commands are all
+  ;; named by the leader map and were all VOID at startup before this list
+  ;; grew: magit's own autoload file is never loaded (see early-init.el).
+  ;;
+  ;; These are safe as `:commands' on the `magit' package even though several
+  ;; live in other files -- magit.el `require's magit-blame, magit-files and
+  ;; the rest at load time, so (autoload SYM "magit") does define them. That
+  ;; is NOT true of the consult sub-packages above, which have no such parent
+  ;; require; the difference is why those get a form each and these do not.
+  :commands (magit-status
+             magit-status-here
+             magit-dispatch
+             magit-file-dispatch
+             magit-blame-addition
+             magit-branch-checkout
+             magit-branch-and-checkout
+             magit-clone
+             magit-commit-create
+             magit-commit-fixup
+             magit-fetch
+             magit-file-delete
+             magit-find-file
+             magit-find-git-config-file
+             magit-init
+             magit-list-repositories
+             magit-list-submodules
+             magit-log-buffer-file
+             magit-show-commit
+             magit-stage-buffer-file
+             magit-unstage-buffer-file)
   :init (setq magit-define-global-key-bindings nil))
 
-(use-package forge :after magit)
+;; NO `:after magit', for exactly the reason the org-gcal block spells out:
+;; `:after' wraps the WHOLE form -- `:commands' included -- in a
+;; `with-eval-after-load', so the autoload stubs are deferred too and every
+;; forge command stays void until something else loads magit. MEASURED in a
+;; cold daemon with `:after magit' present: all 13 forge commands below were
+;; unbound while `SPC g '' happily reported `forge-dispatch'.
+;;
+;; Ordering was never at risk: forge.el opens with (require 'magit) and pulls
+;; forge-commands/forge-topics itself, so (autoload SYM "forge") lands
+;; everything in the right order.
+(use-package forge
+  :commands (forge-dispatch
+             forge-browse-commit
+             forge-browse-issue
+             forge-browse-issues
+             forge-browse-pullreq
+             forge-browse-pullreqs
+             forge-browse-remote
+             forge-create-issue
+             forge-create-pullreq
+             forge-list-issues
+             forge-list-notifications
+             forge-list-pullreqs
+             forge-visit-issue
+             forge-visit-pullreq))
 
+;; No `:commands' needed for the hunk motions: `:demand t' loads diff-hl.el and
+;; diff-hl-next-hunk/-previous-hunk/-revert-hunk/-stage-dwim all live in it.
 (use-package diff-hl
   :demand t
   :config
   (global-diff-hl-mode 1)
   (add-hook 'magit-pre-refresh-hook  #'diff-hl-magit-pre-refresh)
   (add-hook 'magit-post-refresh-hook #'diff-hl-magit-post-refresh))
+
+;; Own file again (diff-hl-show-hunk.el), so `SPC g p' needs its own form.
+(use-package diff-hl-show-hunk
+  :commands (diff-hl-show-hunk))
+
+;; --- Language tooling ------------------------------------------------------
+;;
+;; eglot and flymake are built in, but "built in" does not mean "bound": only
+;; the entry points carry autoload cookies in Emacs's own loaddefs. The `SPC c'
+;; keys below were all void at startup without this.
+(use-package eglot
+  :commands (eglot
+             eglot-code-actions
+             eglot-find-declaration
+             eglot-find-implementation
+             eglot-find-typeDefinition
+             eglot-format
+             eglot-reconnect
+             eglot-rename
+             eglot-shutdown))
+
+;; compile.el carries an autoload cookie on `compile' but NOT on `recompile',
+;; so `SPC c C' was void while `SPC c c' worked -- a good illustration of why
+;; "it is built in" is not the same as "it is bound".
+(use-package compile
+  :commands (compile recompile))
+
+(use-package flymake
+  :commands (flymake-mode
+             flymake-goto-next-error
+             flymake-goto-prev-error
+             flymake-show-buffer-diagnostics
+             flymake-show-project-diagnostics))
 
 ;; --- Editing / navigation --------------------------------------------------
 
@@ -323,15 +485,19 @@
   :hook (prog-mode . ws-butler-mode))
 
 ;; --- Direnv-provided tooling ----------------------------------------------
-;; eglot, treesit, project.el and flymake are all built in; language setup
-;; lands in a later phase alongside the ts-mode remapping.
+;; treesit and project.el are built in; language setup lands in a later phase
+;; alongside the ts-mode remapping.
 
 ;; --- Modules ---------------------------------------------------------------
 ;; Loaded LAST on purpose: everything under lisp/ binds keys through the
 ;; `my/leader' definer, which does not exist until the `general' block above
 ;; has finished its :config.
+;;
+;; my-bindings.el goes after my-org.el: it names org commands, and my-org.el is
+;; what emits their autoload stubs and sets `org-directory'.
 
 (require 'my-org)
+(require 'my-bindings)
 
 (provide 'init)
 ;;; init.el ends here
