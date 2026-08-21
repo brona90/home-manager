@@ -35,16 +35,44 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
+      # Every linter below comes out of THIS flake's nixpkgs, via
+      # packages.<system>.lint-tools. These steps used to be
+      # `nix run nixpkgs#<tool>`, which resolves through the RUNNER's flake
+      # registry -- a property of the machine, not of the repo -- so CI and a
+      # local run silently got different versions of the same tool. PR #21
+      # went red on it: shellcheck renumbered one finding (SC2329 in 0.11,
+      # SC2317 earlier), modules/emacs/vanilla/verify.sh suppressed only the
+      # newer code, and the registry served an older shellcheck than the
+      # local profile had. verify.sh now resolves the same derivation, so the
+      # two agree by construction. The `lint-tools-pinned` flake check guards
+      # the regression.
+      #
+      # Cost of the change: this job now evaluates the flake, so it fetches
+      # every input rather than just the registry's nixpkgs. That is the
+      # price of the pin, it is paid once per job, and the `check` job pays
+      # it anyway.
+      - name: Build the pinned lint tools
+        run: nix build .#lint-tools --out-link /tmp/lint-tools
       - name: Run statix
-        run: nix run nixpkgs#statix -- check .
+        run: /tmp/lint-tools/bin/statix check .
       - name: Run deadnix
-        run: nix run nixpkgs#deadnix -- -f .
+        run: /tmp/lint-tools/bin/deadnix -f .
       - name: Check Nix formatting
-        run: nix run nixpkgs#alejandra -- --check .
+        run: /tmp/lint-tools/bin/alejandra --check .
       - name: Shellcheck bootstrap.sh
-        run: nix run nixpkgs#shellcheck -- bootstrap.sh
+        run: /tmp/lint-tools/bin/shellcheck bootstrap.sh
       - name: Actionlint workflows
-        run: nix run nixpkgs#actionlint -- .github/workflows/*.yml
+        run: /tmp/lint-tools/bin/actionlint .github/workflows/*.yml
+      # The CI-side twin of the `via <path> [<version>]` lines verify.sh
+      # prints. The dereferenced store path names the exact derivation,
+      # version included, and is the artefact to compare against a local run
+      # the next time anyone suspects skew. Paths rather than `--version`
+      # because statix has no --version flag at all.
+      - name: Report the pinned linter store paths
+        run: |
+          for tool in statix deadnix alejandra shellcheck actionlint; do
+            printf '%s -> %s\n' "$tool" "$(readlink -f "/tmp/lint-tools/bin/$tool")"
+          done
 
   check:
     name: Flake Check
