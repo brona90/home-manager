@@ -8,6 +8,12 @@
 > that survived graduation, and the trial workflow (still useful for
 > testing future config changes on a parallel socket).
 
+This doc is also the **template** for the pattern: a parallel instance on its
+own socket, kept until it earns the default slot.
+[`modules/emacs/vanilla/GRADUATION.md`](../emacs/vanilla/GRADUATION.md) mirrors
+it for the second Emacs flavour (`emacsclient -s vanilla` in place of
+`tmux -L experimental`), and is the live example of a trial still in progress.
+
 ## 1. Current state
 
 | File | Role |

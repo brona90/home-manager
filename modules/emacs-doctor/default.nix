@@ -6,9 +6,10 @@
 }: let
   cfg = config.my.emacsDoctor;
 
-  # Resolve emacsclient from the SAME Emacs the daemon runs (the Doom package).
-  # Version skew vs the daemon would break the emacsclient eval calls; fall back
-  # to pkgs.emacs only when the emacs module is disabled.
+  # Resolve emacsclient from the SAME Emacs the daemon on the DEFAULT socket
+  # runs -- whichever flavor `my.emacs.flavor` names, Doom today. Version skew
+  # vs that daemon would break the emacsclient eval calls; fall back to
+  # pkgs.emacs only when the emacs module is disabled.
   emacsPackage =
     if config.my.emacs.enable
     # primaryPackage, NOT package: `package` is always Doom. Reading it here
