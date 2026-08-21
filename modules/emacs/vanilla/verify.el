@@ -176,7 +176,13 @@ LABEL is an inline keymap label, which is name enough on its own."
     ;; so BOTH symbols are acceptable -- what is asserted separately below is
     ;; that AUCTeX loaded AT ALL, which is the thing that silently fails.
     ("sample.tex"  (LaTeX-mode latex-mode) nil nil      "AUCTeX via the my/LaTeX-mode shim")
-    ("sample.http" (restclient-mode)    nil nil         "")))
+    ("sample.http" (restclient-mode)    nil nil         "")
+    ;; LilyPond: the mode's elisp ships INSIDE the lilypond derivation, has no
+    ;; autoload cookie anywhere in it, and 2.26 renamed the mode to lowercase.
+    ;; All three are ways for a .ly file to land silently in `fundamental-mode',
+    ;; which is exactly what this row catches.  There is no lilypond-ts-mode.
+    ("sample.ly"   (lilypond-mode)      nil nil         "via the my/lilypond-mode shim")
+    ("sample.ily"  (lilypond-mode)      nil nil         "include files get the mode too")))
 
 (defun my/verify-languages (dir)
   "Open one sample file per language from DIR and check mode and parser."
@@ -527,6 +533,144 @@ LABEL is an inline keymap label, which is name enough on its own."
          res))))))
 
 
+;;;; ---------------------------------------------------------------------
+;;;; (f) LilyPond: the mode, the flymake backend, the build hook
+;;;; ---------------------------------------------------------------------
+
+;; FILE . (EXPECTED-COUNT EXPECTED-TYPE EXPECTED-LINE WHY)
+;;
+;; The `nil' rows are as load-bearing as the others.  `ly-clean.ly' proves the
+;; backend does not invent diagnostics; `ly-include.ly' proves the temp file is
+;; compiled with `-I <source dir>' -- without that flag its relative \include
+;; fails and lilypond cascades into three errors that are not in the user's
+;; file at all (measured).
+(defconst my/verify-lilypond-cases
+  '(("ly-clean.ly"   0   nil      nil "a valid file must produce nothing")
+    ("ly-warn.ly"    1   :warning 1   "2.26 emits this warning with NO COLUMN")
+    ("ly-error.ly"   2   :error   2   "errors DO carry a column")
+    ("ly-include.ly" 0   nil      nil "relative \\include survives the temp file")))
+
+(defun my/verify--lilypond-run (path)
+  "Run the LilyPond flymake backend over PATH.
+Return a list of (TYPE LINE TEXT) triples, or the symbol `timeout' if the
+process never answered.
+
+The triples are extracted WHILE THE SOURCE BUFFER IS STILL ALIVE.  Returning
+the `flymake-diagnostic' objects instead cost a debugging round: their
+positions are only meaningful inside their buffer, and reading them after the
+`kill-buffer' below fails with \"Selecting deleted buffer\" -- which reads like
+a broken backend rather than like a broken test."
+  (let ((got 'pending)
+        (result nil))
+    (with-current-buffer (find-file-noselect path)
+      (unwind-protect
+          (progn
+            (my/lilypond-flymake (lambda (diags &rest _) (setq got diags)))
+            (let ((n 0))
+              (while (and (eq got 'pending) (< n 600))
+                (accept-process-output nil 0.05)
+                (cl-incf n)))
+            (unless (eq got 'pending)
+              (setq result
+                    (mapcar (lambda (d)
+                              (list (flymake-diagnostic-type d)
+                                    (save-excursion
+                                      (goto-char (flymake-diagnostic-beg d))
+                                      (line-number-at-pos))
+                                    (flymake-diagnostic-text d)))
+                            got))))
+        (kill-buffer)))
+    (if (eq got 'pending) 'timeout result)))
+
+(defun my/verify-lilypond (dir)
+  "Assert the LilyPond integration using sample files from DIR."
+  (my/verify--say "\n== (f) lilypond: mode, flymake backend, build-on-save ==")
+  (require 'flymake)
+
+  ;; -- how it was found -----------------------------------------------------
+  (if (bound-and-true-p my/lilypond-site-lisp)
+      (my/verify--ok "site-lisp: %s" my/lilypond-site-lisp)
+    (my/verify--fail
+     "my/lilypond-site-lisp is nil -- lilypond-mode.el is not on load-path, so .ly gets fundamental-mode"))
+  (if (and (bound-and-true-p my/lilypond-executable)
+           (file-executable-p my/lilypond-executable))
+      (my/verify--ok "lilypond: %s" my/lilypond-executable)
+    (my/verify--fail "my/lilypond-executable is nil or not executable: %S"
+                     (bound-and-true-p my/lilypond-executable)))
+  ;; The shim is what `auto-mode-alist' must name.  Naming `lilypond-mode'
+  ;; directly works on 2.26 and breaks on a 2.24 Homebrew Mac, which is a
+  ;; failure nothing on Linux would ever see.
+  (let ((target (cdr (assoc "\\.ly\\'" auto-mode-alist))))
+    (if (eq target 'my/lilypond-mode)
+        (my/verify--ok "auto-mode-alist \\.ly\\' -> my/lilypond-mode (the casing shim)")
+      (my/verify--fail "auto-mode-alist \\.ly\\' -> %S, expected my/lilypond-mode" target)))
+
+  ;; -- what a .ly buffer looks like -----------------------------------------
+  (let ((path (expand-file-name "ly-clean.ly" dir)))
+    (if (not (file-exists-p path))
+        (my/verify--fail "ly-clean.ly: sample file was never created")
+      (with-current-buffer (find-file-noselect path)
+        (unwind-protect
+            (progn
+              (if (eq major-mode 'lilypond-mode)
+                  (my/verify--ok "major-mode is lilypond-mode (2.26 lowercase)")
+                (my/verify--fail "major-mode is %S, expected lilypond-mode" major-mode))
+              (if (equal comment-start "%")
+                  (my/verify--ok "comment-start is \"%%\"")
+                (my/verify--fail "comment-start is %S, expected \"%%\" -- the mode did not really run"
+                                 comment-start))
+              (if (memq 'my/lilypond-flymake flymake-diagnostic-functions)
+                  (my/verify--ok "flymake backend registered buffer-locally")
+                (my/verify--fail "my/lilypond-flymake is NOT on flymake-diagnostic-functions"))
+              ;; DELIBERATE: registered but not enabled.  Turning flymake on
+              ;; here would mean TWO lilypond processes on every save, because
+              ;; build-on-save already runs one.  If someone "helpfully" adds
+              ;; (flymake-mode 1) this line is what says so out loud.
+              (if (bound-and-true-p flymake-mode)
+                  (my/verify--fail
+                   "flymake-mode is ON in a .ly buffer -- that doubles the lilypond runs per save; it is meant to be SPC t f")
+                (my/verify--ok "flymake-mode is off by default (SPC t f turns it on)"))
+              (if (memq 'my/lilypond-build-on-save after-save-hook)
+                  (my/verify--ok "build-on-save hooked buffer-locally")
+                (my/verify--fail "my/lilypond-build-on-save is NOT on after-save-hook")))
+          (kill-buffer)))))
+
+  ;; -- the failure buffer's display rule ------------------------------------
+  ;; The leading space is not a typo: the buffer is " *lilypond: BASE*".
+  (if (my/verify--dba-entry "^ \\*lilypond: ")
+      (my/verify--ok "display rule for the lilypond failure buffer is present")
+    (my/verify--fail
+     "no display-buffer-alist entry for \"^ \\\\*lilypond: \" -- Doom's popup manager used to place it"))
+
+  ;; -- THE BACKEND, RUN FOR REAL --------------------------------------------
+  (dolist (case my/verify-lilypond-cases)
+    (cl-destructuring-bind (file count type line why) case
+      (let ((path (expand-file-name file dir)))
+        (if (not (file-exists-p path))
+            (my/verify--fail "%s: sample file was never created" file)
+          (let ((diags (my/verify--lilypond-run path)))
+            (cond
+             ((eq diags 'timeout)
+              (my/verify--fail "%s: the flymake backend never reported" file))
+             ((/= (length diags) count)
+              (my/verify--fail "%s: %d diagnostic(s), expected %d (%s): %S"
+                               file (length diags) count why
+                               (mapcar (lambda (d) (nth 2 d)) diags)))
+             ((null type)
+              (my/verify--ok "%s -> 0 diagnostics (%s)" file why))
+             (t
+              (cl-destructuring-bind (got-type got-line text) (car diags)
+                (cond
+                 ((not (eq got-type type))
+                  (my/verify--fail "%s: first diagnostic is %S, expected %S (%s)"
+                                   file got-type type why))
+                 ((/= got-line line)
+                  (my/verify--fail "%s: first diagnostic on line %d, expected %d (%s)"
+                                   file got-line line why))
+                 (t
+                  (my/verify--ok "%s -> %d %S at line %d: %s"
+                                 file (length diags) got-type got-line
+                                 text))))))))))))
 
 
 ;;;; ---------------------------------------------------------------------
@@ -552,6 +696,9 @@ LABEL is an inline keymap label, which is name enough on its own."
             (my/verify--fail "EMACS_VANILLA_VERIFY_SAMPLES is unset"))
           (my/verify-eglot)
           (my/verify-claude)
+          (if samples
+              (my/verify-lilypond samples)
+            (my/verify--fail "EMACS_VANILLA_VERIFY_SAMPLES is unset"))
           ;; LAST: the language section visits files, and anything that goes
           ;; wrong while doing so must land in *Messages* before it is read.
           (my/verify-messages))

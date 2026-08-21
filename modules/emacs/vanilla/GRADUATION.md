@@ -13,10 +13,19 @@ daily driver until it earns the default slot.
 | Try it without `hms` | `nix run .#emacs-vanilla` |
 | Base Emacs | `pkgs.emacs` 30.2 on **every** platform |
 | Config | `modules/emacs/vanilla/config/`, linked to `~/.config/emacs` |
-| Phase | **3b — Languages**. 21 file types to the right mode, tree-sitter where a mode exists, eglot where a server is installed. |
+| Phase | **4 — Claude Code and LilyPond**. The last two code items on this list; what is left is org-gcal's data check and two weeks of use. |
 | Gate | `bash modules/emacs/vanilla/verify.sh` — lints, builds, then asks a real daemon |
 
 Doom is untouched. Nothing about the daily driver changes until `flavor` flips.
+
+Both systemd units now export `EMACS_SOCKET_NAME` (`%t/emacs/server` and
+`%t/emacs/vanilla`). That is what makes a Claude session running in a vterm
+inside *this* daemon fire its hooks at *this* daemon: Emacs never exports that
+variable to subprocesses, it is read by the `emacsclient` binary, and
+`modules/claude-code.nix` has passed `-s "$EMACS_SOCKET_NAME"` since #17 with
+nothing setting it. The primary sets it too, explicitly — see the comment in
+`modules/emacs/default.nix` for why the already-correct fallback was not left
+to chance.
 
 ## How to trial
 
@@ -44,13 +53,21 @@ Not yet met. In rough order of how much they hurt when missing:
       copies of Doom). What is **not** done is the part that matters: fetch
       once and diff `gcal*.org` against what Doom produces. Whether it errored
       is not the test — a fetch that silently writes half a calendar exits 0
-- [ ] **claude-diff.el** ported, with the Claude popup as a **bottom** window.
-      A side window breaks it: `claude-diff-show` calls `delete-other-windows`,
-      which cannot delete a side window, and Doom's popup module was silently
-      supplying a shim
-- [ ] **LilyPond**: mode loading, the flycheck checker, async build-on-save.
-      This exists only in `config.el` because the Doom module could not build
-      under nix-doom — there is no module behind it to fall back on
+- [x] **claude-diff.el** ported to `lisp/claude-diff.el`, required **eagerly**
+      because the PermissionRequest hook `--eval`s into a daemon that may never
+      have loaded `claude-code.el`, and `--eval` cannot autoload a function
+      with no stub. The Claude popup is a **bottom** window, and the caller
+      selects `window-main-window` before deleting — see "Deliberate
+      differences — Claude" for why both halves are needed and what the third
+      option would have cost. `claude-code` is the nixpkgs package (the same
+      `yuya373/claude-code-emacs` Doom runs), `SPC l` is Doom's eleven keys,
+      and `projectile` comes with it as private plumbing that takes no key
+- [x] **LilyPond**: `lisp/my-lilypond.el`. Mode loading through a casing shim,
+      the flycheck checker **ported to flymake**, async build-on-save, and an
+      explicit display rule for the failure buffer that Doom's popup manager
+      used to place. The gate runs a real `lilypond` over four sample files
+      and checks the diagnostics, because the interesting half of that checker
+      is the case where 2.26 emits a warning with **no column**
 - [x] **Languages**: `lisp/my-lang.el`. 21 file types checked in a live daemon —
       every one lands in the intended major mode, and every one that has a
       tree-sitter mode in Emacs 30.2 has a live parser. 17 grammars come from
@@ -134,14 +151,103 @@ The key is kept so the finger lands somewhere sane; the behaviour differs.
 | `SPC o l` | *(llm prefix)* | *moved:* store-link is now `SPC n l` | phase 2 put `org-store-link` on `SPC o l`, which is not a Doom key |
 
 Unbound rather than repurposed, because the feature is not here at all:
-`SPC TAB` (workspaces), `SPC ~` (popups), `SPC d` (dape), `SPC l` (crdt),
-`SPC r` (ssh-deploy), snippets, treemacs, docsets, `SPC t z` (zen).
+`SPC TAB` (workspaces), `SPC ~` (popups), `SPC d` (dape), `SPC r`
+(ssh-deploy), snippets, treemacs, docsets, `SPC t z` (zen).
+
+`SPC l` is **claude**, as in Doom. Doom's `SPC l` is the crdt module, which is
+not in this package set, so the prefix was free and Doom's own eleven Claude
+keys — four session, seven diff-review — transfer unchanged.
 
 `SPC m` is still structurally global rather than mode-local — it is reached
 through an evil *intercept* map, so `org-mode-map` is never consulted once
 `SPC` resolves. A genuinely mode-local localleader needs a dispatcher keymap
 and is not done. In practice the org commands under it error clearly outside
 an org buffer.
+
+## Deliberate differences from Doom — Claude
+
+**The Claude window is an ordinary bottom window, not a side window, and the
+caller guards too.** `claude-diff--show-1` calls `delete-other-windows`, which
+signals *"Cannot make side window the only window"* (window.el:4381) when the
+selected window is a side window — every time the hook fires while you are
+sitting in the Claude popup. Doom's `+popup` module shimmed this with a
+`delete-other-windows` window parameter. Two fixes, doing different jobs:
+
+- `display-buffer-at-bottom` makes the Claude window deletable, which is what
+  the **layout** needs: claude-diff clears the frame and rebuilds three panes.
+- `claude-diff--select-main-window` makes the **call** legal from anywhere,
+  which matters independently — `which-key-popup-type` is `side-window` here.
+
+The third option, `(window-parameters . ((no-delete-other-windows . t)))` on a
+side window, was **rejected, not overlooked**. It is not a drop-in: with the
+Claude window surviving, `claude-diff--show-1` still splits a bottom third and
+puts the Claude buffer in it, so the buffer would be on screen twice. Taking it
+means redesigning the layout so claude-diff builds *around* a persistent Claude
+window — a reasonable design, and one `window-toggle-side-windows` would give a
+free show/hide for — but it cannot be tested from here (that path needs a live
+Claude vterm in this daemon and a real GUI frame), and rewriting layout code on
+the one untestable path is where bugs ship. The full argument is in
+`lisp/my-claude.el`.
+
+**The `claude-code-normalize-project-root` advice is `:filter-args`, not
+Doom's `:filter-return`.** Upstream now *signals* a `user-error` on a nil
+project root instead of returning nil, so a `:filter-return` advice never
+runs — Doom's is dead code today. Measured: with Doom's advice installed,
+`(claude-code-normalize-project-root nil)` still signals.
+
+**`projectile` is installed and enables nothing.** It is a hard dependency of
+seven of claude-code's files (`projectile-project-root`,
+`projectile-project-files`, `projectile-project-type` — project.el has no
+analogue for the last two). It is not a mode here and it takes no key: `SPC p`
+remains project.el's `project-prefix-map`.
+
+**Doom's `:quit nil` / `:ttl nil` / `:modeline t` have no counterpart** and
+need none — they are popup-*manager* concepts, and vanilla has no manager.
+
+**Not verified, and cannot be from here:** the hook end-to-end. Proving the
+diff actually appears needs a live Claude session in a vterm inside the vanilla
+daemon with a GUI frame. What is proved is every precondition: claude-diff is
+loaded, `claude-diff-from-hook` is a real function, the unit exports
+`EMACS_SOCKET_NAME`, the window is not a side window, and
+`delete-other-windows` does not signal from it.
+
+## Deliberate differences from Doom — LilyPond
+
+**`lilypond-mode`, lowercase.** 2.26 renamed every symbol ("Change all
+prefixes to lowercase to follow the Elisp convention"), and the Doom config
+hardcoded `LilyPond-mode` for two years — during which `auto-mode-alist`
+pointed at a void function, the checker was `:modes` a mode that never
+activated, and the build hook was added to a hook that never ran. All three
+silently dead. `.ly` here goes to a shim, `my/lilypond-mode`, that dispatches
+on whichever casing the loaded file defines, because Homebrew's lilypond on
+darwin moves on its own schedule.
+
+**flycheck → flymake, and it is registered but NOT enabled.** This is the one
+place vanilla deliberately does less than Doom. Doom's `:checkers syntax`
+turns flycheck on globally, so every save ran lilypond **twice** — once for the
+checker and once for the build. Vanilla enables flymake nowhere by default
+(only eglot does, and eglot never manages a `.ly`), so the default here is one
+lilypond per save: the build, which produces the PDF you are looking at and
+whose failure buffer carries lilypond's own error text. The backend is still on
+`flymake-diagnostic-functions` in every LilyPond buffer, so `SPC t f` turns
+inline diagnostics on for anyone who wants them and accepts the second process.
+The gate asserts `flymake-mode` is *off*, so a future "helpful"
+`(flymake-mode 1)` shows up as a gate change rather than as silent CPU.
+
+**The column is optional on warnings.** 2.26 emits
+`file.ly:1: warning: no \version statement found` with **no column**; errors do
+carry one. A pattern requiring a column drops every warning. Both branches are
+run for real by the gate against real files.
+
+**The temp file is compiled with `-I <source dir>`.** Without it a relative
+`\include` fails from `/tmp` and lilypond cascades into three errors that are
+not in the user's file — measured, and the gate has a sample file for it.
+
+**pdf-tools is not in the package set**, so the PDF-refresh-after-build lands
+in `doc-view-mode`, not `pdf-view-mode`. `revert-buffer` still re-renders; what
+is lost is pdf-view's scroll-position preservation, so the view jumps back to
+page one on each rebuild. Adding pdf-tools is a line in `package.nix` and
+poppler in the closure — a decision, not an oversight, and not taken here.
 
 ## Deliberate differences from Doom — org
 
@@ -231,11 +337,28 @@ Five stages, in increasing cost:
    `~/.config/emacs`. Not `emacs --batch`: batch does not load `init.el`
 4. **in-daemon assertions** — `verify.el`
 
-What `verify.el` asserts: every command reachable by walking the **actual**
-leader keymap is `fboundp`; every non-borrowed leader key renders as a name;
-one real sample file per language lands in the expected major mode with the
-expected parser; eglot's contacts and hooks are as intended; `*Messages*` is
-clean.
+What `verify.el` asserts, section by section:
+
+- **(a)** every command reachable by walking the **actual** leader keymap is
+  `fboundp`, and every non-borrowed leader key renders as a name
+- **(b)** one real sample file per language lands in the expected major mode
+  with the expected parser
+- **(d)** eglot's contacts and hooks are as intended
+- **(e)** claude: `claude-diff` is *loaded* rather than merely autoloadable and
+  its commands are real definitions; the four `claude-code` commands are stubs
+  that resolve to real definitions when the file loads; the fallback advice
+  makes `(claude-code-normalize-project-root nil)` return a string; and the
+  window rule is **measured** — a `*claude:*` buffer is displayed, its
+  `window-side` parameter read, and `delete-other-windows` actually attempted
+  from it. Then the caller's guard is tested from a real side window, with a
+  **control that asserts the unguarded call does signal first**, so that half
+  of the check can fail
+- **(f)** lilypond: the mode, `comment-start`, the backend registered and
+  `flymake-mode` *off*, the build hook, the failure buffer's display rule — and
+  a real `lilypond` run over four files asserting the diagnostics, including
+  the warning-with-no-column and the relative-`\include` cases
+- **(c)** `*Messages*` carries no warnings or errors — run last, so anything
+  the other sections provoked has landed
 
 It walks the keymap rather than a hand-written list of commands, because a
 hand-written list is how six void commands shipped once already. On its first
@@ -243,6 +366,15 @@ run against phase 3b it failed three assertions, one of which was a real bug
 (`nix-ts-mode` resolving to no eglot server) and two of which were bugs in the
 gate itself — both of the "confident, precise, wrong number" kind, which is why
 each now carries a comment about the trap.
+
+On phase 4 it did it again, twice in a row: it caught a bug in the *test*
+(reading a flymake diagnostic's position after its buffer was killed, which
+surfaces as "Selecting deleted buffer" and reads like a broken backend), and
+then a real bug in `claude-diff--select-main-window` — whose first version
+guarded with `(when (window-live-p main) ...)` and did nothing at all, because
+`window-main-window` returns an **internal** window whenever the main area
+holds more than one window. The design note said the guard was correct; the
+daemon said `#<window 3> live=nil`.
 
 ## Notes
 
