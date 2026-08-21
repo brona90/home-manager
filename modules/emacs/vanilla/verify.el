@@ -359,6 +359,177 @@ LABEL is an inline keymap label, which is name enough on its own."
 
 
 ;;;; ---------------------------------------------------------------------
+;;;; (e) Claude: the eager half, the deferred half, and the window rule
+;;;; ---------------------------------------------------------------------
+
+;; The seven review commands.  These are NOT allowed to be autoload stubs:
+;; `claude-diff-from-hook' is reached by
+;; `emacsclient --eval "(claude-diff-from-hook ...)"' from a Claude session
+;; that may be running in a plain vterm, or in tmux, or in a terminal that is
+;; not this Emacs -- and nothing in that path declares a stub for it, so the
+;; file is either loaded at startup or the hook is `void-function'.
+(defconst my/verify-claude-diff-eager
+  '(claude-diff-from-hook claude-diff-dismiss claude-diff-approve
+    claude-diff-deny claude-diff-next-change claude-diff-prev-change
+    claude-diff-scroll-up claude-diff-scroll-down))
+
+;; The four session commands.  These SHOULD be stubs before anything loads
+;; claude-code.el -- that is the deferral working.
+(defconst my/verify-claude-code-deferred
+  '(claude-code-run claude-code-send-region claude-code-switch-to-buffer
+    claude-code-transient))
+
+(defun my/verify--dba-entry (regexp)
+  "Return the `display-buffer-alist' entry whose condition is REGEXP."
+  (assoc regexp display-buffer-alist))
+
+(defun my/verify-claude ()
+  "Assert the Claude integration: eager review, deferred session, bottom window."
+  (my/verify--say "\n== (e) claude: diff review, session, window rule ==")
+
+  ;; -- the eager half -------------------------------------------------------
+  (if (featurep 'claude-diff)
+      (my/verify--ok "claude-diff is LOADED (not merely autoloadable)")
+    (my/verify--fail
+     "claude-diff is not loaded -- the PermissionRequest hook's --eval will be void-function"))
+  (let ((stubs (seq-filter (lambda (s)
+                             (or (not (fboundp s))
+                                 (autoloadp (symbol-function s))))
+                           my/verify-claude-diff-eager)))
+    (if (null stubs)
+        (my/verify--ok "all %d claude-diff commands are real definitions"
+                       (length my/verify-claude-diff-eager))
+      (my/verify--fail "%d claude-diff commands are void or still stubs: %S"
+                       (length stubs) stubs)))
+
+  ;; -- the deferred half ----------------------------------------------------
+  (let ((void (seq-remove #'fboundp my/verify-claude-code-deferred)))
+    (if (null void)
+        (my/verify--ok "all %d claude-code commands are bound (autoload stubs)"
+                       (length my/verify-claude-code-deferred))
+      (my/verify--fail "%d claude-code commands are VOID: %S" (length void) void)))
+
+  ;; -- THE WINDOW RULE, MEASURED RATHER THAN READ ---------------------------
+  ;;
+  ;; The bug this exists for: `claude-diff-show' calls `delete-other-windows',
+  ;; and window.el:4381 signals "Cannot make side window the only window" when
+  ;; the selected window is a side window -- which it is whenever the hook
+  ;; fires while the user sits in the Claude popup.  Doom's +popup module
+  ;; shimmed that with a `delete-other-windows' WINDOW PARAMETER; vanilla has
+  ;; no such shim, so the rule must produce an ORDINARY window.
+  ;;
+  ;; Checking that the alist entry SAYS `display-buffer-at-bottom' is not
+  ;; enough -- that is reading the design back to itself.  So this actually
+  ;; displays a buffer, reads the window's `window-side' parameter, and tries
+  ;; the very call that used to throw.
+  (let ((entry (my/verify--dba-entry "^\\*claude:")))
+    (if (null entry)
+        (my/verify--fail "no display-buffer-alist entry for \"^\\\\*claude:\"")
+      (my/verify--ok "display rule: %S" entry)
+      (when (memq 'display-buffer-in-side-window (cadr entry))
+        (my/verify--fail
+         "the claude rule uses display-buffer-in-side-window -- delete-other-windows WILL signal"))
+      (unless (assq 'post-command-select-window (cddr entry))
+        (my/verify--fail
+         "the claude rule has no post-command-select-window entry (Doom's :select nil)"))))
+  (save-window-excursion
+    (let ((buf (get-buffer-create "*claude:/verify*")))
+      (unwind-protect
+          (let ((win (display-buffer buf)))
+            (cond
+             ((not (window-live-p win))
+              (my/verify--fail "display-buffer refused to show a *claude:* buffer"))
+             ((window-parameter win 'window-side)
+              (my/verify--fail
+               "the claude window IS a side window (window-side=%S) -- claude-diff-show will signal"
+               (window-parameter win 'window-side)))
+             (t
+              (my/verify--ok "the claude window is an ordinary window (window-side nil)")
+              (let ((err (condition-case e
+                             (progn (select-window win) (delete-other-windows) nil)
+                           (error e))))
+                (if err
+                    (my/verify--fail
+                     "delete-other-windows from the claude window SIGNALLED %S" err)
+                  (my/verify--ok
+                   "delete-other-windows from the claude window succeeds"))))))
+        (kill-buffer buf))))
+
+  ;; -- THE OTHER HALF: the caller's guard -----------------------------------
+  ;;
+  ;; The display rule above only covers the Claude buffer.  The hook fires
+  ;; from wherever point is, and this config has another side window in normal
+  ;; use -- `which-key-popup-type' is `side-window'.  So
+  ;; `claude-diff--select-main-window' has to make `delete-other-windows' legal
+  ;; from ANY side window.
+  ;;
+  ;; The CONTROL is the important part.  Asserting only that the guarded call
+  ;; succeeds would pass just as happily if side windows had stopped signalling
+  ;; altogether, or if this test never managed to build a side window in the
+  ;; first place -- a check that can only report PASS.  So the unguarded call
+  ;; is made first, and it is a FAILURE if it does NOT signal.
+  (save-window-excursion
+    (let ((buf (get-buffer-create "*verify-side-window*")))
+      (unwind-protect
+          (let ((win (display-buffer-in-side-window buf '((side . right)))))
+            (if (not (window-live-p win))
+                (my/verify--fail "could not create a side window; the guard below is untested")
+              (select-window win)
+              (let ((control (condition-case e (progn (delete-other-windows) nil)
+                               (error e))))
+                (if (null control)
+                    (my/verify--fail
+                     "delete-other-windows from a SIDE window did not signal -- this control no longer tests anything")
+                  (my/verify--ok "control: bare delete-other-windows from a side window signals %S"
+                                 (cadr control))
+                  (select-window win)
+                  (let ((guarded (condition-case e
+                                     (progn (claude-diff--select-main-window)
+                                            (delete-other-windows)
+                                            nil)
+                                   (error e))))
+                    (if guarded
+                        (my/verify--fail
+                         "claude-diff--select-main-window did NOT make it safe: %S" guarded)
+                      (my/verify--ok
+                       "claude-diff--select-main-window makes delete-other-windows safe from a side window")))))))
+        (kill-buffer buf))))
+
+  ;; -- loading claude-code for real -----------------------------------------
+  ;;
+  ;; `fboundp' on an autoload stub proves the KEY is bound; it does not prove
+  ;; the stub names the right file.  Loading is the only way to know.
+  (if (not (require 'claude-code nil t))
+      (my/verify--fail "(require 'claude-code) FAILED -- the leader keys are stubs over nothing")
+    (my/verify--ok "claude-code loads")
+    (let ((bad (seq-filter (lambda (s)
+                             (or (not (fboundp s))
+                                 (autoloadp (symbol-function s))))
+                           my/verify-claude-code-deferred)))
+      (if (null bad)
+          (my/verify--ok "all %d claude-code commands resolved to real definitions"
+                         (length my/verify-claude-code-deferred))
+        (my/verify--fail "%S did not resolve after loading claude-code" bad)))
+    ;; The advice.  Upstream's `claude-code-normalize-project-root' SIGNALS a
+    ;; user-error on nil, so Doom's `:filter-return' version of this advice is
+    ;; dead code -- measured: with it installed, the call below still signals.
+    ;; `:filter-args' normalises before the guard.  `SPC l l' from *scratch*
+    ;; depends on this.
+    (let ((res (condition-case e
+                   (claude-code-normalize-project-root nil)
+                 (error e))))
+      (cond
+       ((stringp res)
+        (my/verify--ok "normalize-project-root nil -> %S (fallback advice live)" res))
+       (t
+        (my/verify--fail
+         "normalize-project-root nil gave %S -- the fallback advice is not doing its job"
+         res))))))
+
+
+
+
+;;;; ---------------------------------------------------------------------
 ;;;; Driver
 ;;;; ---------------------------------------------------------------------
 
@@ -380,6 +551,7 @@ LABEL is an inline keymap label, which is name enough on its own."
               (my/verify-languages samples)
             (my/verify--fail "EMACS_VANILLA_VERIFY_SAMPLES is unset"))
           (my/verify-eglot)
+          (my/verify-claude)
           ;; LAST: the language section visits files, and anything that goes
           ;; wrong while doing so must land in *Messages* before it is read.
           (my/verify-messages))
