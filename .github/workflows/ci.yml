@@ -134,23 +134,37 @@ jobs:
     # Cap at 60 min so a stuck build (e.g. shellcheck on lvim wrapper on macOS-14)
     # surfaces fast instead of bleeding the GitHub Actions 6h job timeout.
     timeout-minutes: 60
-    # Run on push to main/master (not PRs) to populate cache
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # There is deliberately NO job-level `if` here. It used to read
+    #   if: github.event_name == 'push' && (github.ref == 'refs/heads/main' ...)
+    # which made this job report "skipping" on EVERY pull request (observed on
+    # PR #14: Lint/Flake Check/Evaluate Darwin green, Build Home Configurations
+    # skipped). Nothing in CI built the Linux closure before merge, so a local
+    # `nix build` was the only thing between a broken home configuration and
+    # master. The matrix below is event-dependent instead of the whole job.
     strategy:
       # One config's transient failure (e.g. a 503 from a package host)
       # must not cancel the sibling builds.
       fail-fast: false
+      # PRs build the Linux configuration ONLY; a push to main/master builds
+      # everything. That is the cheapest thing that still catches a broken
+      # Linux build: ubuntu runners are the cheap ones, macOS bills at 10x,
+      # and the Darwin configs already get PR-time EVAL coverage from
+      # eval-darwin -- eval is what actually breaks on a config change, and a
+      # Darwin-only *build* failure is caught on push, before any Mac
+      # switches to it.
+      #
+      # gfoster@x86_64-darwin is absent from both lists: GitHub has no hosted
+      # Intel macOS runners anymore. It keeps eval-only coverage via
+      # eval-darwin (Rosetta on the arm64 runner).
+      #
+      # A dynamic matrix, not a job `if`, because `jobs.<id>.if` cannot see
+      # the matrix context and a per-entry `if` does not exist -- spinning up
+      # two macOS runners just to skip their steps is what that would cost.
       matrix:
-        include:
-          - config: gfoster@x86_64-linux
-            runner: ubuntu-latest
-          - config: gfoster@aarch64-darwin
-            runner: macos-14
-          - config: 888973@aarch64-darwin
-            runner: macos-14
-          # gfoster@x86_64-darwin is intentionally absent: GitHub has no
-          # hosted Intel macOS runners anymore. It still gets eval-only
-          # coverage via the eval-darwin job (Rosetta on the arm64 runner).
+        include: >-
+          ${{ fromJSON(github.event_name == 'push'
+          && '[{"config":"gfoster@x86_64-linux","runner":"ubuntu-latest"},{"config":"gfoster@aarch64-darwin","runner":"macos-14"},{"config":"888973@aarch64-darwin","runner":"macos-14"}]'
+          || '[{"config":"gfoster@x86_64-linux","runner":"ubuntu-latest"}]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
