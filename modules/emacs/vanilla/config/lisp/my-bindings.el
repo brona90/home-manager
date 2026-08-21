@@ -412,6 +412,33 @@ difference is visible before you press it."
   "iu"  '(insert-char              :which-key "Unicode character")
   "iy"  '(consult-yank-pop         :which-key "From kill ring")
 
+  ;;; SPC l --- claude
+  ;;
+  ;; Doom's `SPC l' is the crdt module and is not bound here, so the key was
+  ;; free and Doom's own claude bindings (config.el) transfer unchanged: four
+  ;; session keys from the `use-package! claude-code' block and seven review
+  ;; keys from the `map!' beside `(load! "claude-diff")'.
+  ;;
+  ;; The review half works FROM INSIDE THE VTERM, which is the whole reason
+  ;; they are leader keys: `SPC' is an evil intercept binding (see the
+  ;; `general' block in init.el), so it outranks vterm's own keymap.
+  ;;
+  ;; Every one of the eleven is `fboundp' at startup: the four claude-code
+  ;; commands through `:commands' autoload stubs, the seven claude-diff ones
+  ;; because lisp/my-claude.el `require's that file outright.
+  "l"   '(:ignore t :which-key "claude")
+  "la"  '(claude-diff-approve       :which-key "Approve changes")
+  "lb"  '(claude-code-switch-to-buffer :which-key "Switch to Claude buffer")
+  "lD"  '(claude-diff-dismiss       :which-key "Dismiss diff")
+  "lj"  '(claude-diff-scroll-up     :which-key "Scroll diff up")
+  "lk"  '(claude-diff-scroll-down   :which-key "Scroll diff down")
+  "ll"  '(claude-code-run           :which-key "Start Claude")
+  "lm"  '(claude-code-transient     :which-key "Claude menu")
+  "ln"  '(claude-diff-next-change   :which-key "Next change")
+  "lp"  '(claude-diff-prev-change   :which-key "Previous change")
+  "lr"  '(claude-code-send-region   :which-key "Send region to Claude")
+  "lx"  '(claude-diff-deny          :which-key "Deny changes")
+
   ;;; SPC m --- local leader
   ;;
   ;; `:ignore t' names the prefix WITHOUT touching the keymap, so this cannot

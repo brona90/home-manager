@@ -253,6 +253,31 @@ in {
       Service = {
         ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/server";
         RestartSec = 5;
+        # SET EXPLICITLY EVEN THOUGH THE FALLBACK IS ALREADY CORRECT -- and
+        # that is the whole argument for the line.
+        #
+        # modules/claude-code.nix runs its hooks as
+        #   emacsclient ''${EMACS_SOCKET_NAME:+-s "$EMACS_SOCKET_NAME"} --eval ...
+        # so with the variable UNSET a hook reaches whichever emacsclient is on
+        # PATH -- `primaryPackage', talking to the default socket. The right
+        # answer, arrived at by accident.
+        #
+        # It stops being right the moment anything puts EMACS_SOCKET_NAME into
+        # the systemd USER MANAGER's environment, because units inherit that.
+        # One `systemctl --user import-environment' from a shell where the user
+        # had exported it to reach the second daemon by hand is enough, and it
+        # persists until the manager is restarted. The primary would then hand
+        # every Claude hook a socket name pointing at the OTHER flavor, and the
+        # diff would open in the wrong Emacs with no error anywhere. A
+        # unit-level `Environment=' overrides the inherited environment, so
+        # this makes the correct answer a guarantee rather than a coincidence.
+        #
+        # %t is $XDG_RUNTIME_DIR, expanded by systemd when the unit is loaded,
+        # so the value is an ABSOLUTE path and does not depend on the hook
+        # process having XDG_RUNTIME_DIR set. `server' is home-manager's
+        # hardcoded socket name for this unit -- the same file the ExecStartPre
+        # above deletes.
+        Environment = ["EMACS_SOCKET_NAME=%t/emacs/server"];
       };
       Unit = {
         StartLimitIntervalSec = 60;
@@ -293,6 +318,17 @@ in {
         ExecStart = ''${pkgs.runtimeShell} -l -c "exec ${secondary.package}/bin/emacs --fg-daemon=${secondary.serverName} ${lib.escapeShellArgs secondary.extraArgs}"'';
         # ONE FILE -- see the primary unit's comment.
         ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/${secondary.serverName}";
+        # THE HALF THAT IS NOT OPTIONAL. Emacs never exports EMACS_SOCKET_NAME
+        # to its subprocesses -- the variable is read by the emacsclient BINARY
+        # and by nothing inside Emacs -- so a Claude session running in a vterm
+        # inside THIS daemon inherits it only because the unit puts it there.
+        # Without this line every claude-code.nix hook fired from this flavor
+        # runs a bare `emacsclient', resolves to the daily driver's socket, and
+        # shows the diff in the wrong Emacs.
+        #
+        # Same absolute-%t form as the primary, naming the same file the
+        # ExecStartPre above deletes.
+        Environment = ["EMACS_SOCKET_NAME=%t/emacs/${secondary.serverName}"];
         SuccessExitStatus = 15; # Emacs exits 15 on SIGTERM
         Restart = "on-failure";
         RestartSec = 5;

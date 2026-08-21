@@ -180,6 +180,30 @@ printf '# Title\n\nSome *text*.\n'                             > "$SAMPLES/sampl
 printf '\\documentclass{article}\n\\begin{document}\nhi\n\\end{document}\n' > "$SAMPLES/sample.tex"
 printf 'GET https://example.com/api\n'                         > "$SAMPLES/sample.http"
 
+# -- LilyPond samples -------------------------------------------------------
+# FOUR files, not one, because the flymake backend has four separable ways to
+# be wrong and section (f) of verify.el runs a real lilypond over each:
+#
+#   ly-clean    valid, and must produce NOTHING -- a backend that invents
+#               diagnostics is worse than no backend
+#   ly-warn     NO \version, which is the case that made this port necessary:
+#               2.26 emits "file.ly:1: warning: ..." with NO COLUMN, and a
+#               pattern requiring one silently drops every warning
+#   ly-error    an unknown command, which DOES carry a column (line 2, col 11)
+#   ly-include  a RELATIVE \include. The backend compiles a temp copy, so
+#               without `-I <source dir>' this file fails to find sub/inc.ily
+#               and cascades into three errors that are not in it at all
+#
+# sample.ly / sample.ily are the language table's rows (major mode only); the
+# ly-* four are section (f)'s, and each runs a real lilypond.
+printf '\\version "2.26.0"\n{ c8 d8 e8 f8 }\n'                 > "$SAMPLES/sample.ly"
+printf 'notesB = { g8 a8 }\n'                                  > "$SAMPLES/sample.ily"
+printf '\\version "2.26.0"\n{ c4 d4 e4 f4 }\n'                 > "$SAMPLES/ly-clean.ly"
+printf '{ c4 d4 e4 f4 }\n'                                     > "$SAMPLES/ly-warn.ly"
+printf '\\version "2.26.0"\n{ c4 d4 \\nosuchcommand e4 }\n'    > "$SAMPLES/ly-error.ly"
+printf 'notesA = { c4 d4 }\n'                                  > "$SAMPLES/ly-inc.ily"
+printf '\\version "2.26.0"\n\\include "ly-inc.ily"\n{ \\notesA }\n' > "$SAMPLES/ly-include.ly"
+
 # The daemon inherits these; passing them through the environment avoids
 # quoting elisp inside shell inside emacsclient --eval.
 export EMACS_VANILLA_VERIFY_OUT="$REPORT"
