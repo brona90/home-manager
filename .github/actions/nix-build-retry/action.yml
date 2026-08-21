@@ -1,0 +1,80 @@
+name: nix build with retry
+description: >-
+  Build (or dry-run) one or more flake targets, retrying the whole set on
+  transient failures.
+
+  WHY THIS EXISTS: nix-doom-emacs-unstraightened resolves every elisp source
+  through import-from-derivation, and its intermediate derivations set
+  allowSubstitutes = false. Those are plain git fetches of non-GitHub hosts
+  (codeberg, gitlab, savannah) that no binary cache can serve, and nix's own
+  download-attempts setting covers substituter downloads only -- NOT these.
+  One transient 408/504 therefore fails an otherwise-green job. Retrying is
+  cheap: whatever a failed attempt did fetch is already in the store, so a
+  retry resumes rather than restarts.
+
+inputs:
+  targets:
+    description: Newline-separated flake references, one per line.
+    required: true
+  nix-args:
+    description: >-
+      Extra arguments for nix build, e.g. "--dry-run" or "-L". Deliberately
+      word-split, so it must not contain arguments with spaces.
+    required: false
+    default: ""
+  attempts:
+    description: How many times to try the whole set before giving up.
+    required: false
+    default: "3"
+  delay:
+    description: Seconds to wait between attempts.
+    required: false
+    default: "60"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      # Explicit rather than inherited: callers rely on nix build dropping its
+      # ./result symlink in the workspace (the Cachix push step reads it).
+      working-directory: ${{ github.workspace }}
+      env:
+        TARGETS: ${{ inputs.targets }}
+        NIX_ARGS: ${{ inputs.nix-args }}
+        ATTEMPTS: ${{ inputs.attempts }}
+        DELAY: ${{ inputs.delay }}
+      run: |
+        # NOT set -e: a failing target must be recorded and retried, not abort
+        # the loop half way through the set.
+        set -uo pipefail
+
+        # TARGETS/NIX_ARGS/ATTEMPTS/DELAY come from the env: block above,
+        # which shellcheck cannot see (it lints this body in isolation --
+        # actionlint does NOT shellcheck action.yml, so it is checked by
+        # hand: shellcheck must exit 0 on this script).
+        # shellcheck disable=SC2153
+        mapfile -t targets < <(printf '%s\n' "$TARGETS" | sed '/^[[:space:]]*$/d')
+        if [ "${#targets[@]}" -eq 0 ]; then
+          echo "::error::nix-build-retry was called with no targets"
+          exit 1
+        fi
+
+        for attempt in $(seq 1 "$ATTEMPTS"); do
+          failed=0
+          for target in "${targets[@]}"; do
+            echo "::group::nix build $NIX_ARGS $target (attempt $attempt/$ATTEMPTS)"
+            # shellcheck disable=SC2086  # NIX_ARGS is a deliberate argument list
+            nix build $NIX_ARGS "$target" || failed=1
+            echo "::endgroup::"
+          done
+          if [ "$failed" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$attempt" -lt "$ATTEMPTS" ]; then
+            echo "::warning::transient nix failure; retrying in ${DELAY}s (attempt $attempt/$ATTEMPTS)"
+            sleep "$DELAY"
+          fi
+        done
+
+        echo "::error::still failing after $ATTEMPTS attempt(s)"
+        exit 1
