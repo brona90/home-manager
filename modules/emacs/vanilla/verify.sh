@@ -43,8 +43,24 @@ say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 pass() { printf '  PASS  %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
 
-# Invoked by the EXIT trap below; shellcheck cannot see that.
-# shellcheck disable=SC2329
+# `cleanup` is invoked by `trap cleanup EXIT` on the line below. Shellcheck
+# cannot prove reachability through `trap` in any version, and its own message
+# says what to do about it: "Check usage (or ignore if invoked indirectly)".
+# This is that case -- the documented remedy for indirect invocation, not a
+# linter being wrong and not a finding being dodged.
+#
+# The alternative that needs no suppression is inlining this body into the
+# trap string. Rejected: five legible lines become one quoted line with `$`
+# escaping, in the file whose entire job is to be auditable. Blanket
+# `--severity=warning` was also rejected -- silencing a whole class everywhere
+# to excuse one known-good site is strictly worse than one scoped directive.
+#
+# BOTH codes, because shellcheck renumbered this finding: SC2329 ("function
+# never invoked") in 0.11, SC2317 ("command appears to be unreachable") in
+# earlier releases, where it lands on every line of the body rather than on
+# the function. Naming only the newer code passed locally on 0.11.0 and failed
+# CI on an older one. Info severity is enough to make shellcheck exit 1.
+# shellcheck disable=SC2317,SC2329
 cleanup() {
   if [ -n "$DAEMON_PID" ]; then
     "$EMACSCLIENT" -s "$SOCKET" --eval '(kill-emacs)' >/dev/null 2>&1
@@ -77,12 +93,27 @@ run_linter() {
     fail "$tool could not be resolved (not on PATH, not runnable from nixpkgs)"
     return
   fi
-  local status=0
+  # Report WHICH binary and WHICH version, always. `resolve_linter` prefers
+  # PATH and falls back to `nix run nixpkgs#...`, which resolves through the
+  # *runner's registry* rather than this flake's pinned nixpkgs -- so the
+  # local and CI runs can silently be different versions of the same tool.
+  # That is not hypothetical: this gate passed locally on shellcheck 0.11.0
+  # and failed in CI on an older one, because the two number the same finding
+  # SC2329 and SC2317 respectively. The version is printed so the next skew is
+  # one line of log instead of a dig through 80,000.
+  #
+  # TODO: pin the linters to the flake's own nixpkgs so the two agree by
+  # construction. That needs a flake output; printing the version is the
+  # honest interim.
+  local ver status=0
   if [ "${resolved#nix-run:}" != "$resolved" ]; then
+    ver=$(nix run "nixpkgs#$tool" -- --version 2>/dev/null | head -2 | tr '\n' ' ')
     nix run "nixpkgs#$tool" -- "$@" || status=$?
   else
+    ver=$("$resolved" --version 2>/dev/null | head -2 | tr '\n' ' ')
     "$resolved" "$@" || status=$?
   fi
+  printf '        via %s [%s]\n' "$resolved" "${ver:-version unknown}"
   if [ "$status" -eq 0 ]; then
     pass "$tool (exit 0)"
   else
