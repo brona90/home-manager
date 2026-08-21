@@ -5,7 +5,8 @@
 #
 # This will open $EDITOR (set to 'emt' by sops.nix). Add secrets like:
 #
-# Required keys (used by modules/sops.nix):
+# Keys used by modules/sops.nix. Each one is decrypted only if present, so a
+# fork can omit any of them:
 #
 # github_token: ghp_xxxxxxxxxxxxxxxxxxxx
 # dockerhub_token: dckr_pat_xxxxxxxxxxxxxxxxxxxx
@@ -30,6 +31,14 @@
 #     -----BEGIN PGP PUBLIC KEY BLOCK-----
 #     ...
 #     -----END PGP PUBLIC KEY BLOCK-----
+# org_gcal:                      # Google Calendar sync. client_id/client_secret
+#   client_id: xxxxxxxx.apps.googleusercontent.com    # are used by BOTH Emacs
+#   client_secret: GOCSPX-xxxxxxxxxxxxxxxx            # flavours (Doom+vanilla).
+#   gpg_private_key: |           # Doom only: passphrase-less key that encrypts
+#     -----BEGIN PGP PRIVATE KEY BLOCK-----   # Doom's OAuth token plstore, so
+#     ...                                     # it decrypts with no pinentry.
+#     -----END PGP PRIVATE KEY BLOCK-----     # Vanilla keeps its token in a
+#                                             # plain 0600 file and ignores it.
 #
 # Save and close. The file will be encrypted automatically.
 # You can then safely commit secrets/secrets.yaml to git.

@@ -23,10 +23,18 @@
 }: let
   cfg = config.my.orreryMcp;
 
-  # Same reasoning as emacs-mcp.nix: reuse the Doom Emacs package when the
-  # emacs module is on rather than pulling pkgs.emacs in as well, which would
-  # put a second full Emacs in the closure. Orrery's build and CLI are
-  # `emacs -Q --batch`, so any Emacs works -- this is purely about closure size.
+  # THE DELIBERATE EXCEPTION: this is the one consumer that reads
+  # `my.emacs.package` (always Doom) rather than `my.emacs.primaryPackage`.
+  # emacs-mcp.nix and emacs-doctor/default.nix must follow the primary because
+  # they talk to the daemon on the DEFAULT socket and would hit version skew.
+  # Nothing here talks to a daemon: orrery's build and CLI are `emacs -Q
+  # --batch`, so ANY Emacs works and this is purely about closure size -- reuse
+  # an Emacs that is already in the closure instead of adding a second one.
+  #
+  # Consequence to know after `flavor` flips to "vanilla": this keeps the Doom
+  # closure alive for batch use even though nothing interactive uses it. That
+  # is a cheap, correct default; the line to change is here, not upstream, and
+  # only when Doom is actually retired (see modules/emacs/vanilla/GRADUATION.md).
   emacsPackage =
     if config.my.emacs.enable
     then config.my.emacs.package
