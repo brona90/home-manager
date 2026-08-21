@@ -13,7 +13,8 @@ daily driver until it earns the default slot.
 | Try it without `hms` | `nix run .#emacs-vanilla` |
 | Base Emacs | `pkgs.emacs` 30.2 on **every** platform |
 | Config | `modules/emacs/vanilla/config/`, linked to `~/.config/emacs` |
-| Phase | **3 — Bindings**. The discoverable `SPC` leader menu, on Doom's keys. |
+| Phase | **3b — Languages**. 21 file types to the right mode, tree-sitter where a mode exists, eglot where a server is installed. |
+| Gate | `bash modules/emacs/vanilla/verify.sh` — lints, builds, then asks a real daemon |
 
 Doom is untouched. Nothing about the daily driver changes until `flavor` flips.
 
@@ -50,7 +51,19 @@ Not yet met. In rough order of how much they hurt when missing:
 - [ ] **LilyPond**: mode loading, the flycheck checker, async build-on-save.
       This exists only in `config.el` because the Doom module could not build
       under nix-doom — there is no module behind it to fall back on
-- [ ] **Languages**: eglot + treesit for the ten in use
+- [x] **Languages**: `lisp/my-lang.el`. 21 file types checked in a live daemon —
+      every one lands in the intended major mode, and every one that has a
+      tree-sitter mode in Emacs 30.2 has a live parser. 17 grammars come from
+      Nix (an explicit list; see `package.nix` for why it is not
+      `withAllGrammars`). eglot gets three additions and no more: a `taplo`
+      contact for `toml-ts-mode`, a pin to `pyright-langserver` for Python
+      (pyright *and* ruff are installed, so `M-x eglot` otherwise prompts and
+      `eglot-ensure` silently picks one), and a `nil` contact for
+      `nix-ts-mode` — that last one because the assumption that `nix-ts-mode`
+      calls `derived-mode-add-parents` (which is what would make eglot's
+      `nix-mode` entry match it) is **false** in `nix-ts-mode 20260705.1600`.
+      `haskell-ts-mode` 1.3.5 does make that call and needs nothing. The gate
+      found the difference; the design had not
 - [x] **Bindings**: `lisp/my-bindings.el`. 14 named prefixes and ~150 named
       leader keys on Doom's key choices, every one of them showing a
       human-readable name in the which-key popup — the whole point of a leader
@@ -60,6 +73,47 @@ Not yet met. In rough order of how much they hurt when missing:
       (490 named, 0 unnamed). What is still absent is the long tail behind
       features this config does not have — see below
 - [ ] Two weeks as `emv` without reaching for `em`
+
+## Deliberate differences from Doom — languages
+
+**`eglot-ensure` is hooked only where the server is actually installed.** The
+17 modes that get it were checked against `~/.nix-profile/bin`, not against what
+would be nice. C, C++, CMake, Fortran and LaTeX get a working major mode and no
+eglot hook, because `clangd`, `cmake-language-server`, `fortls` and `texlab` are
+not installed. A hook with no server behind it logs a failed connection on
+*every* `find-file` in that language, which is how people learn to ignore eglot
+errors. Install the server, then add the hook — in that order. The gate asserts
+both halves: every hooked mode resolves to a contact, and none of the five
+server-less ones is hooked.
+
+**Five grammars are deliberately absent** from `package.nix`: markdown, latex,
+commonlisp, elisp and fortran. There is no `markdown-ts-mode`, `latex-ts-mode`,
+`commonlisp-ts-mode`, `elisp-ts-mode` or `fortran-ts-mode` in Emacs 30.2 or in
+the package set — `markdown-mode`, AUCTeX, `sly`, `lisp-mode` and `fortran-mode`
+are font-lock modes. Those grammars would grow the closure and never create a
+parser. `treesit-parser-list` being nil in a `.md` or `.tex` buffer is the
+correct answer, and the gate's expectation table says so in as many words so
+that nobody "fixes" it.
+
+**AUCTeX is reached through a shim, `my/LaTeX-mode`, and that is not tidiable.**
+Emacs's dumped loaddefs ships both `(defalias 'LaTeX-mode #'latex-mode)` and a
+`major-mode-remap-defaults` entry for it, and `autoload` does nothing when a
+symbol is already `fboundp`. Every deferred route through the name `LaTeX-mode`
+therefore resolves to the *built-in* `latex-mode` and looks exactly like AUCTeX
+not being installed. Four variants were measured before the shim was written.
+
+**`.mjs` and `.cjs` had no `auto-mode-alist` entry at all** — anywhere in Emacs
+30.2. They opened in `fundamental-mode`. That is fixed here, and it is the kind
+of thing that stays invisible until someone opens an ESM config file.
+
+**`go.mod` opened in `m2-mode`** (Modula-2), because `files.el` matches
+`\.mod\'`. Also fixed here.
+
+Not covered at all, and not pretended otherwise: CSS, HTML, C#, PHP, Ruby,
+Elixir. Emacs 30.2 has a `-ts-mode` for each and servers exist for several, but
+none of them is in use, and an entry per language that nobody opens is a list
+that rots silently. Adding one is a `:mode` line, a grammar in `package.nix` and
+a row in the gate's table.
 
 ## Deliberate differences from Doom — bindings
 
@@ -152,6 +206,43 @@ being true the day it becomes the daily driver.
   fails builds on a transient GitHub 408 goes with them
 - Drop the nix-doom row from `dev-disk`
 - Rewrite the README's first table row
+
+## The gate
+
+```sh
+bash modules/emacs/vanilla/verify.sh
+```
+
+Lives in the repo as of phase 3b. It used to live in `/tmp`, one `clear` away
+from being lost, and it is the only thing that catches this config's
+characteristic failure: `package-enable-at-startup` is nil, so a key can be
+bound, show a name in the which-key popup, and be **void** when pressed.
+
+Five stages, in increasing cost:
+
+0. **preflight** — nothing under `modules/emacs/vanilla` is untracked. Flakes
+   only see git-tracked files, so a new `lisp/*.el` that has not been
+   `git add`ed is simply absent from the store and fails as "Cannot open load
+   file", which reads like a broken `require` rather than a missing `git add`
+1. **lint** — alejandra, statix, deadnix and shellcheck, each by **exit code**.
+   A linter that cannot be resolved is a failure, never a skip
+2. **build** — the activation package
+3. **a real daemon**, started from the **store** config directory, never from
+   `~/.config/emacs`. Not `emacs --batch`: batch does not load `init.el`
+4. **in-daemon assertions** — `verify.el`
+
+What `verify.el` asserts: every command reachable by walking the **actual**
+leader keymap is `fboundp`; every non-borrowed leader key renders as a name;
+one real sample file per language lands in the expected major mode with the
+expected parser; eglot's contacts and hooks are as intended; `*Messages*` is
+clean.
+
+It walks the keymap rather than a hand-written list of commands, because a
+hand-written list is how six void commands shipped once already. On its first
+run against phase 3b it failed three assertions, one of which was a real bug
+(`nix-ts-mode` resolving to no eglot server) and two of which were bugs in the
+gate itself — both of the "confident, precise, wrong number" kind, which is why
+each now carries a comment about the trap.
 
 ## Notes
 

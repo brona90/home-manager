@@ -484,9 +484,10 @@
 (use-package ws-butler
   :hook (prog-mode . ws-butler-mode))
 
-;; --- Direnv-provided tooling ----------------------------------------------
-;; treesit and project.el are built in; language setup lands in a later phase
-;; alongside the ts-mode remapping.
+;; --- Language tooling, continued -------------------------------------------
+;; treesit and project.el are built in. The mode/grammar/eglot wiring is
+;; lisp/my-lang.el, required at the bottom of this file -- it is long enough
+;; that inlining it here would hide both it and the package setup above.
 
 ;; --- Modules ---------------------------------------------------------------
 ;; Loaded LAST on purpose: everything under lisp/ binds keys through the
@@ -497,6 +498,11 @@
 ;; what emits their autoload stubs and sets `org-directory'.
 
 (require 'my-org)
+;; my-lang.el before my-bindings.el: `SPC c' names eglot and flymake commands
+;; and my-lang.el is what decides which buffers ever start a server. Neither
+;; file binds a key the other defines, so this order is about reading it in the
+;; sequence it takes effect, not about correctness.
+(require 'my-lang)
 (require 'my-bindings)
 
 (provide 'init)
