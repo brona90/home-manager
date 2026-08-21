@@ -674,6 +674,255 @@ a broken backend rather than like a broken test."
 
 
 ;;;; ---------------------------------------------------------------------
+;;;; (g) Popups: one bottom side window, and a toggle that goes both ways
+;;;; ---------------------------------------------------------------------
+
+;; lisp/my-popups.el replaces Doom's ~1400-line `:ui popup' with
+;; `window-sides-slots', four `display-buffer-alist' rules and one preloaded
+;; command.  There are no packages behind it, so there is nothing to be void --
+;; which means the usual failure mode of this config does not apply and a
+;; DIFFERENT one does: the rules are DATA, and data that says the right thing
+;; and does the wrong thing reads exactly like data that works.
+;;
+;; So nothing below reads the alist back to itself.  Every claim is made by
+;; displaying a real buffer on the daemon's real frame (F1, 80x25 -- side
+;; windows behave there; measured) and asking the resulting window.
+;;
+;; THE TOGGLE IS TESTED IN BOTH DIRECTIONS.  A one-way test would pass on a
+;; `window-toggle-side-windows' that had lost `window-state-put' entirely --
+;; hiding works, and you would find out that restore does not the first time
+;; you pressed `SPC ~' twice.  The round trip IS the feature.
+
+(defconst my/verify-popup-height-fraction 0.42
+  "The `window-height' my-popups.el gives the documentation rule.
+Duplicated here on purpose: a gate that imports the value it is checking
+against can only ever agree with itself.")
+
+(defun my/verify--side-windows ()
+  "Return the live side windows of the selected frame."
+  (seq-filter (lambda (w) (window-parameter w 'window-side))
+              (window-list nil 'nomini)))
+
+(defun my/verify--ordinary-window-p (regexp name)
+  "Display a buffer called NAME and report whether its window is ordinary.
+REGEXP is only used for the message.  Returns non-nil on success."
+  (let ((buf (get-buffer-create name)))
+    (unwind-protect
+        (let ((win (display-buffer buf)))
+          (cond
+           ((not (window-live-p win))
+            (my/verify--fail "display-buffer refused to show %S" name)
+            nil)
+           ((window-parameter win 'window-side)
+            (my/verify--fail
+             "%s -> %S is a SIDE window (window-side=%S); the popup rules have swallowed it"
+             regexp name (window-parameter win 'window-side))
+            nil)
+           (t
+            (my/verify--ok "%s -> %S stays an ordinary window (window-side nil)"
+                           regexp name)
+            win)))
+      (kill-buffer buf))))
+
+(defun my/verify-popups ()
+  "Assert the popup layer: side window, no mode line, toggle both ways."
+  (my/verify--say "\n== (g) popups: bottom side window, modeline, SPC ~ ==")
+
+  (if (featurep 'my-popups)
+      (my/verify--ok "my-popups is loaded")
+    (my/verify--fail "my-popups is NOT loaded -- init.el is missing its require"))
+
+  ;; -- the layout decision, stated as a number ------------------------------
+  ;; (left top right bottom).  Bottom is capped at ONE slot: two bottom slots
+  ;; are rendered SIDE BY SIDE, not stacked, so the cap is what makes a second
+  ;; popup replace the first instead of halving it.
+  (if (equal (nth 3 window-sides-slots) 1)
+      (my/verify--ok "window-sides-slots = %S (one bottom slot)" window-sides-slots)
+    (my/verify--fail "window-sides-slots = %S -- bottom slot count is not 1"
+                     window-sides-slots))
+
+  ;; -- `SPC ~' --------------------------------------------------------------
+  ;; `key-binding' reporting the right symbol is not the check; this config has
+  ;; shipped six keys that did exactly that and were void on the press.
+  (with-temp-buffer
+    (evil-normal-state)
+    (let ((cmd (key-binding (kbd "SPC ~"))))
+      (cond
+       ((not (eq cmd 'window-toggle-side-windows))
+        (my/verify--fail "SPC ~ resolves to %S, expected window-toggle-side-windows" cmd))
+       ((not (fboundp cmd))
+        (my/verify--fail "SPC ~ -> %S is VOID" cmd))
+       ((not (commandp cmd))
+        (my/verify--fail "SPC ~ -> %S is not a command" cmd))
+       (t
+        (my/verify--ok "SPC ~ -> %S, fboundp and interactive" cmd)))))
+
+  ;; -- the popup itself, measured on a real frame ---------------------------
+  (save-window-excursion
+    (delete-other-windows (window-main-window))
+    (let* ((root-height (window-total-height (frame-root-window)))
+           (want (round (* root-height my/verify-popup-height-fraction)))
+           (main (selected-window)))
+      (describe-function 'car)
+      (let ((win (get-buffer-window "*Help*")))
+        (cond
+         ((not (window-live-p win))
+          (my/verify--fail "*Help* was not displayed at all"))
+         (t
+          (if (eq (window-parameter win 'window-side) 'bottom)
+              (my/verify--ok "*Help* is a BOTTOM side window (slot %S)"
+                             (window-parameter win 'window-slot))
+            (my/verify--fail "*Help* window-side is %S, expected `bottom'"
+                             (window-parameter win 'window-side)))
+          ;; Height, with a tolerance: `window--display-buffer' rounds
+          ;; (* root-height fraction) and then only resizes as far as
+          ;; `window--resizable-p' allows, so demanding equality would make
+          ;; this assertion a report on the gate's own frame size.
+          (let ((got (window-total-height win)))
+            (if (<= (abs (- got want)) 2)
+                (my/verify--ok "*Help* height %d lines (wanted ~%d of %d)"
+                               got want root-height)
+              (my/verify--fail "*Help* height %d lines, wanted ~%d of %d (tolerance 2)"
+                               got want root-height)))
+          ;; Doom's `:modeline nil', with no manager: the WINDOW parameter.
+          (let ((mlf (window-parameter win 'mode-line-format)))
+            (if (eq mlf 'none)
+                (my/verify--ok "*Help* mode-line-format window parameter is `none'")
+              (my/verify--fail "*Help* mode-line-format window parameter is %S, expected `none'"
+                               mlf)))
+          ;; WEAK dedication, and the value matters: `window--display-buffer'
+          ;; re-dedicates a REUSED window only when the alist value is exactly
+          ;; `side', and `t' would make it strongly dedicated -- which-key
+          ;; swaps its own buffer through this very slot on every leader key.
+          (let ((ded (window-dedicated-p win)))
+            (cond
+             ((eq ded 'side) (my/verify--ok "*Help* window is weakly dedicated (`side')"))
+             ((eq ded t)
+              (my/verify--fail "*Help* window is STRONGLY dedicated -- which-key shares this slot"))
+             (t (my/verify--fail "*Help* window dedication is %S, expected `side'" ded))))
+          ;; Doom's `:select t', via the Emacs 30 `body-function' entry.
+          (if (eq (selected-window) win)
+              (my/verify--ok "*Help* is selected (body-function . select-window)")
+            (my/verify--fail "*Help* is not selected; body-function did not take"))
+          ;; THE CONTROL FOR NOT SETTING `no-other-window'.  my-popups.el
+          ;; deliberately omits it because there is no `+popup/other' here to
+          ;; get back into a popup with.  If someone adds it, this goes red
+          ;; rather than the user silently losing the ability to scroll help.
+          (if (window-parameter win 'no-other-window)
+              (my/verify--fail
+               "the popup has no-other-window set -- there is no `+popup/other' here, so it would be unreachable")
+            (my/verify--ok "the popup does not carry no-other-window"))
+          ;; And the same claim behaviourally, because the parameter is only
+          ;; the mechanism people know about. Walk the whole cycle rather than
+          ;; stepping once: `other-window' is cyclic and the frame is not
+          ;; guaranteed to hold exactly two windows here.
+          (select-window main)
+          (let ((n (length (window-list nil 'nomini)))
+                (found nil))
+            (dotimes (_ n)
+              (other-window 1)
+              (when (eq (selected-window) win) (setq found t)))
+            (if found
+                (my/verify--ok "the popup is reachable with `other-window'; cycle was %S"
+                               (window-list nil 'nomini))
+              (my/verify--fail
+               "`other-window' never reaches the popup -- it would be unscrollable; windows were %S"
+               (window-list nil 'nomini))))
+
+          ;; -- THE ROUND TRIP -------------------------------------------------
+          (window-toggle-side-windows)
+          (let ((sides (my/verify--side-windows)))
+            (if (and (null sides) (null (get-buffer-window "*Help*")))
+                (my/verify--ok "SPC ~ (1st) hid every side window")
+              (my/verify--fail "SPC ~ (1st) left %d side window(s) and help-window %S"
+                               (length sides) (get-buffer-window "*Help*"))))
+          (window-toggle-side-windows)
+          (let ((back (get-buffer-window "*Help*")))
+            (cond
+             ((not (window-live-p back))
+              (my/verify--fail "SPC ~ (2nd) did NOT bring the popup back"))
+             ((not (eq (window-parameter back 'window-side) 'bottom))
+              (my/verify--fail "SPC ~ (2nd) restored *Help* as window-side %S"
+                               (window-parameter back 'window-side)))
+             ((not (eq (window-parameter back 'mode-line-format) 'none))
+              (my/verify--fail
+               "SPC ~ (2nd) restored *Help* without its mode-line-format parameter (%S)"
+               (window-parameter back 'mode-line-format)))
+             (t
+              (my/verify--ok "SPC ~ (2nd) restored the popup, still bottom, still no mode line")))))))))
+
+  ;; -- `*compilation*' is the ONE popup that keeps its mode line ------------
+  ;; Compilation state ("run", "exit [1]") lives in `mode-line-process' and
+  ;; nowhere else in the buffer.  This asserts the exception is real, not a
+  ;; regexp that failed to match.
+  (save-window-excursion
+    (delete-other-windows (window-main-window))
+    (let ((buf (get-buffer-create "*compilation*")))
+      (unwind-protect
+          (let ((win (display-buffer buf)))
+            (cond
+             ((not (window-live-p win))
+              (my/verify--fail "*compilation* was not displayed"))
+             ((not (eq (window-parameter win 'window-side) 'bottom))
+              (my/verify--fail "*compilation* window-side is %S, expected `bottom'"
+                               (window-parameter win 'window-side)))
+             ((window-parameter win 'mode-line-format)
+              (my/verify--fail
+               "*compilation* mode-line-format parameter is %S -- the exit status is invisible"
+               (window-parameter win 'mode-line-format)))
+             (t
+              (my/verify--ok "*compilation* is a bottom popup and KEEPS its mode line"))))
+        (kill-buffer buf))))
+
+  ;; -- COMPOSITION with the two rules that were already here ----------------
+  ;;
+  ;; my-claude.el's "^\\*claude:" entry and my-lilypond.el's "^ \\*lilypond: "
+  ;; entry both deliberately produce ORDINARY windows.  The Claude one is a bug
+  ;; fix: `claude-diff--show-1' calls `delete-other-windows' and rebuilds three
+  ;; panes, which only works if its window is deletable.  A popup regexp that
+  ;; drifted wide enough to catch either would break that, and it would break
+  ;; it the way regexps break -- silently and only in use.
+  ;;
+  ;; The Claude case is checked HERE AGAIN, with a popup already on screen,
+  ;; which is what section (e) cannot cover: the frame there has no side window
+  ;; from these rules in it.
+  (save-window-excursion
+    (delete-other-windows (window-main-window))
+    (describe-function 'cdr)
+    (let ((popup (get-buffer-window "*Help*")))
+      (if (not (window-live-p popup))
+          (my/verify--fail "could not open a popup; the composition checks below are untested")
+        (let ((claude (my/verify--ordinary-window-p "^\\*claude:" "*claude:/verify-popups*")))
+          (when claude
+            ;; And it must still be able to clear the frame -- including the
+            ;; popup.  If someone adds `no-delete-other-windows' to the popup
+            ;; rules, the popup survives, claude-diff's "bottom third" becomes a
+            ;; third of the main area, and the Claude buffer ends up on screen
+            ;; twice.  my-claude.el rejected that as option (c); this is the
+            ;; assertion that keeps it rejected.
+            (let* ((buf (get-buffer-create "*claude:/verify-popups*"))
+                   (win (display-buffer buf))
+                   (err (condition-case e
+                            (progn (select-window win) (delete-other-windows) nil)
+                          (error e))))
+              (cond
+               (err (my/verify--fail
+                     "delete-other-windows from the claude window WITH a popup open signalled %S"
+                     err))
+               ((my/verify--side-windows)
+                (my/verify--fail
+                 "delete-other-windows left %d side window(s) standing -- no-delete-other-windows is set somewhere"
+                 (length (my/verify--side-windows))))
+               (t
+                (my/verify--ok
+                 "delete-other-windows from the claude window clears the popup too")))
+              (kill-buffer buf)))))))
+  (save-window-excursion
+    (delete-other-windows (window-main-window))
+    (my/verify--ordinary-window-p "^ \\*lilypond: " " *lilypond: verify*")))
+
+
+;;;; ---------------------------------------------------------------------
 ;;;; Driver
 ;;;; ---------------------------------------------------------------------
 
@@ -696,6 +945,11 @@ a broken backend rather than like a broken test."
             (my/verify--fail "EMACS_VANILLA_VERIFY_SAMPLES is unset"))
           (my/verify-eglot)
           (my/verify-claude)
+          ;; AFTER claude: section (e) proves the claude rule on a frame with
+          ;; no popup in it, and (g) then proves the same thing again with one
+          ;; open. Losing that ordering turns two independent measurements into
+          ;; one.
+          (my/verify-popups)
           (if samples
               (my/verify-lilypond samples)
             (my/verify--fail "EMACS_VANILLA_VERIFY_SAMPLES is unset"))
