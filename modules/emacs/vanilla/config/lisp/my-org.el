@@ -44,6 +44,22 @@
 ;; Must be set before org loads, hence outside the `with-eval-after-load'.
 (setq org-directory "~/org/")
 
+;; Autoload stubs for the org commands the leader map names.
+;;
+;; `org-agenda' and `org-capture' come free: they live in org-agenda.el and
+;; org-capture.el, whose autoload cookies are picked up by Emacs's own
+;; loaddefs. `org-store-link' and `org-refile' live in org.el itself, whose
+;; autoloads sit in org-loaddefs.el and are loaded by package.el ACTIVATION --
+;; which early-init.el disables. Without this form both resolve to a symbol and
+;; then fail with void-function on the keypress.
+;;
+;; Verified rather than assumed: in a freshly started daemon before this form,
+;; (fboundp 'org-store-link) and (fboundp 'org-refile) were both nil while
+;; (key-binding (kbd "SPC m r")) happily returned `org-refile'. Checking the
+;; binding proves nothing about the command.
+(use-package org
+  :commands (org-store-link org-refile))
+
 (with-eval-after-load 'org
   ;; Which files the agenda scans.  Deliberately a curated list rather than
   ;; the whole ~/org dir, so old scratch/learning files don't pollute the
@@ -114,8 +130,12 @@
 ;; `M-x my/oauth2-import-from-plstore' once and accept the default path.  That
 ;; is the only GPG call in this config, and it never runs on its own.
 
+;; NO `:after org'. It reads like the right dependency -- org-gcal does need
+;; org -- but `:after' defers the AUTOLOAD STUBS as well as the :config, so
+;; until something else loaded org, all three commands below were unbound and
+;; `SPC m G s' failed with void-function instead of syncing. org-gcal has its
+;; own (require 'org), so ordering was never actually at risk.
 (use-package org-gcal
-  :after org
   :commands (org-gcal-sync org-gcal-fetch org-gcal-post-at-point)
   :config
   ;; Credentials come from sops-nix, never from this file.

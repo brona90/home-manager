@@ -41,11 +41,34 @@
 (setq use-package-always-ensure nil)
 (setq use-package-ensure-function #'ignore)
 
-;; Defer by default.  Nix packages ship generated autoloads, so every
-;; interactive command is already reachable without loading anything -- the win
-;; is not `:defer', it is never letting use-package emit an implicit `require'.
-;; A form with `:config' and no autoload keyword IS a require.  Packages that
-;; genuinely must load eagerly say `:demand t'.
+;; Defer by default.  The win is not `:defer' itself, it is never letting
+;; use-package emit an implicit `require': a form with `:config' and no
+;; autoload keyword IS a require.  Packages that genuinely must load eagerly
+;; say `:demand t'.
+;;
+;; WHAT MAKES DEFERRAL WORK HERE IS use-package, NOT NIX.  It is tempting to
+;; assume the generated autoloads in the Nix closure leave every command
+;; reachable for free.  They do not, because `package-enable-at-startup' is nil
+;; directly above: startup.el gates `package-activate-all' on it, and without
+;; that call nothing loads a single autoload file.  Measured in this build:
+;;
+;;   package-enable-at-startup nil -> 0 packages activated; magit-status,
+;;                                    vundo, avy-goto-char-timer,
+;;                                    evil-org-mode and org-gcal-sync are all
+;;                                    unbound
+;;   (package-activate-all)        -> 58 activated, all of them bound
+;;
+;; So every reachable command here is reachable because a `use-package' form
+;; named it in `:commands', `:hook', `:mode', `:bind' or `:after' -- those are
+;; what emit the autoload stubs.  THE RULE THAT FOLLOWS: a package with none of
+;; those keywords and no `:demand t' is not lazy, it is ABSENT, and it fails as
+;; "void-function", not as "package missing".  It bites hardest on language
+;; modes, whose packaged `auto-mode-alist' entries never register either, so
+;; `:mode' has to be spelled out.
+;;
+;; Re-enabling package.el activation is not the fix: it would scan and activate
+;; all 58 at startup, which is the cost being avoided, and it would want an
+;; elpa/ directory inside the read-only config.
 (setq use-package-always-defer t)
 
 ;; --- 3. Frame settings, before the first frame ----------------------------
