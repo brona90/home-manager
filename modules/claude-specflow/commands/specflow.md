@@ -70,3 +70,34 @@ process is opt-in; small changes stay friction-free.
 Summarize: what was copied, what was merged vs skipped, the exact config values you set (and
 why), and the verification results. Remind them the workflow is opt-in: `/large-change
 <request>` for features, `/iterate <fix>` for follow-ups, and plain prompts for small edits.
+
+## Updating a repo that already has specflow — a manual step, by design
+
+Install **copies** the hooks into `<repo>/.claude/hooks/`. Those copies are then plain files
+owned by that repo: `hms` refreshes `~/.claude/templates/specflow/` from this flake, and does
+not touch them. So a hook fix landing in this repo reaches the template immediately and
+reaches an already-installed repo **never**, until somebody re-copies it.
+
+That gap has already produced a real divergence. This very repo's
+`.claude/hooks/branch-policy.sh` was hand-updated with a candidate fix whose PR was then
+closed unmerged, so for a while the repo ran a version of the hook that existed nowhere in
+git — with five ways to slip a commit onto a protected branch past it, none of which the
+tracked template had.
+
+When a hook under `templates/specflow/hooks/` changes, for each repo that has specflow
+installed:
+
+```sh
+diff ~/.claude/templates/specflow/hooks/<hook>.sh <repo>/.claude/hooks/<hook>.sh
+```
+
+Then re-copy, **re-apply that repo's `>>> CONFIGURE <<<` block** (`PROTECTED`,
+`PROD_TEST_PATTERN`, the formatter dispatch table — these are per-repo and the template ships
+placeholders), and `chmod +x`. Confirm the result behaves, e.g.:
+
+```sh
+echo '{"tool_input":{"command":"git commit -m x"}}' | <repo>/.claude/hooks/branch-policy.sh
+```
+
+on a protected branch must print a `deny` decision. Do not assume the copy is current because
+`hms` ran; check it.
