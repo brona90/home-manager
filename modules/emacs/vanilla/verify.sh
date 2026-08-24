@@ -29,8 +29,55 @@ set -uo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd -- "$SCRIPT_DIR/../../.." && pwd)
-SYSTEM=$(nix eval --raw --impure --expr 'builtins.currentSystem')
 USER_NAME=${EMACS_VANILLA_VERIFY_USER:-gfoster}
+
+# The nix system double, obtained WITHOUT an impure evaluation.
+#
+# This line was `nix eval --raw --impure --expr builtins.currentSystem`, and
+# it was the only --impure in the entire repo: an audit found no
+# builtins.getEnv, no <nixpkgs> search-path lookup, no currentTime, and every
+# flake input pinned by rev. Benign in effect, but a lone exception is how
+# the habit comes back, and nothing here needs impurity to know what machine
+# it is on.
+#
+# `nix config show system` reports the same string out of nix's own settings
+# -- that setting is where builtins.currentSystem gets its value -- and it is
+# the double nix will actually BUILD for, which is the question this variable
+# is asking. It is a settings query, not an evaluation, so there is no
+# purity to violate.
+#
+# A `uname -s`/`uname -m` mapping was the obvious alternative and is worse on
+# both counts that matter here. It needs a translation table (Darwin reports
+# `arm64` where the nix double says `aarch64`, and `Darwin` where the double
+# says `darwin`), and it describes the CPU rather than the nix installation:
+# an x86_64 nix on Apple Silicon would be told aarch64-darwin and then fail
+# to build it, which is precisely the aarch64-darwin/x86_64-darwin confusion
+# this repo already carries a pinned nixpkgs for.
+#
+# EMACS_VANILLA_VERIFY_SYSTEM overrides it, matching the USER_NAME
+# convention above -- that is the `--system` flag, spelled the way the rest
+# of this file spells its knobs. An empty result is FATAL rather than
+# defaulted: falling back to x86_64-linux would have a Mac silently gate a
+# configuration that is not its own.
+SYSTEM=${EMACS_VANILLA_VERIFY_SYSTEM:-$(nix config show system 2>/dev/null)}
+if [ -z "$SYSTEM" ]; then
+  # No backticks in these strings. They would only be prose formatting, but a
+  # backtick inside single quotes reads as an attempted command substitution
+  # (SC2016) and the whole gate exits 1 over punctuation in an error message.
+  # Quoting the command names instead costs nothing and leaves nothing to
+  # suppress -- better than a disable directive for a finding that exists
+  # solely because of a decorative character.
+  #
+  # Note also that a comment line may not BEGIN with the word shellcheck
+  # after the hash: that is the directive syntax, and prose starting that way
+  # is parsed as a malformed directive (SC1072/SC1073, both errors). An
+  # earlier draft of this very comment did exactly that.
+  printf 'FATAL: could not determine the nix system double.\n' >&2
+  printf "       'nix config show system' returned nothing (nix < 2.20 spells\n" >&2
+  printf "       it 'nix show-config system'). Override it explicitly:\n" >&2
+  printf '       EMACS_VANILLA_VERIFY_SYSTEM=x86_64-linux bash %s\n' "${BASH_SOURCE[0]}" >&2
+  exit 1
+fi
 
 FAILURES=0
 SOCKET=emacs-vanilla-verify
@@ -70,15 +117,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Resolve a linter that may or may not be in the profile. A linter that cannot
-# be found is a FAILURE, never a skip -- silently skipping is exactly how a
-# gate ends up green while checking nothing.
+# THE LINTERS ARE PINNED, NOT DISCOVERED.
+#
+# This used to prefer whatever `command -v` found and fall back to
+# `nix run nixpkgs#<tool>`. That fallback resolves through the RUNNER's flake
+# registry rather than through this flake's own pinned nixpkgs input, so the
+# same gate ran different tool versions here and in CI.
+#
+# It went red on PR #21. shellcheck renumbered one finding -- SC2329 in 0.11,
+# SC2317 in earlier releases (see the disable directive above) -- this file
+# named only SC2329, passed locally on 0.11.0 out of the profile, and failed
+# CI on an older one out of the registry. Naming both codes fixed that
+# instance and not the class.
+#
+# Every linter now comes out of packages.<system>.lint-tools, a symlinkJoin
+# built from this flake's nixpkgs (see lib/lint-tools.nix). ci.yml's lint job
+# resolves the same derivation. Local and CI therefore agree by construction
+# instead of by both happening to have the same tool installed.
+#
+# PATH is deliberately NOT consulted, not even as a preference: a PATH
+# preference IS the skew, and a fallback that can win is not a pin. There is
+# a flake check guarding the regression -- `lint-tools-pinned` in flake.nix.
+LINT_TOOLS=""
+
+# Resolve a linter from the pinned set, and from nothing else. A linter that
+# cannot be found is a FAILURE, never a skip -- silently skipping is exactly
+# how a gate ends up green while checking nothing.
 resolve_linter() {
   local tool=$1
-  if command -v "$tool" >/dev/null 2>&1; then
-    command -v "$tool"
-  elif nix run "nixpkgs#$tool" -- --help >/dev/null 2>&1; then
-    printf 'nix-run:%s' "$tool"
+  if [ -n "$LINT_TOOLS" ] && [ -x "$LINT_TOOLS/bin/$tool" ]; then
+    printf '%s' "$LINT_TOOLS/bin/$tool"
   else
     printf ''
   fi
@@ -90,30 +158,25 @@ run_linter() {
   local resolved
   resolved=$(resolve_linter "$tool")
   if [ -z "$resolved" ]; then
-    fail "$tool could not be resolved (not on PATH, not runnable from nixpkgs)"
+    fail "$tool is not in the pinned lint set (nix build $REPO#lint-tools)"
     return
   fi
-  # Report WHICH binary and WHICH version, always. `resolve_linter` prefers
-  # PATH and falls back to `nix run nixpkgs#...`, which resolves through the
-  # *runner's registry* rather than this flake's pinned nixpkgs -- so the
-  # local and CI runs can silently be different versions of the same tool.
-  # That is not hypothetical: this gate passed locally on shellcheck 0.11.0
-  # and failed in CI on an older one, because the two number the same finding
-  # SC2329 and SC2317 respectively. The version is printed so the next skew is
-  # one line of log instead of a dig through 80,000.
+  # Report WHICH binary and WHICH version, always. Before the pin this was
+  # diagnosis: the one line of log that would have identified the skew above
+  # instead of a dig through 80,000. It is now PROOF -- the path is a store
+  # path out of this flake's nixpkgs, so the version printed here is the
+  # version CI runs, and a change in it means the lock moved and nothing
+  # else. Ambient PATH cannot alter either field.
   #
-  # TODO: pin the linters to the flake's own nixpkgs so the two agree by
-  # construction. That needs a flake output; printing the version is the
-  # honest interim.
-  local ver status=0
-  if [ "${resolved#nix-run:}" != "$resolved" ]; then
-    ver=$(nix run "nixpkgs#$tool" -- --version 2>/dev/null | head -2 | tr '\n' ' ')
-    nix run "nixpkgs#$tool" -- "$@" || status=$?
-  else
-    ver=$("$resolved" --version 2>/dev/null | head -2 | tr '\n' ' ')
-    "$resolved" "$@" || status=$?
-  fi
-  printf '        via %s [%s]\n' "$resolved" "${ver:-version unknown}"
+  # The path is DEREFERENCED through the lint-tools symlink, because the
+  # derivation name carries the version. That is not cosmetic: statix has no
+  # --version flag whatsoever (`statix --version` is an argument error), so
+  # for that one tool the store path is the only evidence of which build ran.
+  local ver status=0 real
+  real=$(readlink -f "$resolved")
+  ver=$("$resolved" --version 2>/dev/null | head -2 | tr '\n' ' ')
+  "$resolved" "$@" || status=$?
+  printf '        via %s [%s]\n' "$real" "${ver:-no --version flag; version is in the path}"
   if [ "$status" -eq 0 ]; then
     pass "$tool (exit 0)"
   else
@@ -138,9 +201,19 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "1. nix lint (exit codes, not stdout)"
+say "1. nix lint (exit codes, not stdout; versions pinned, not discovered)"
 # ---------------------------------------------------------------------------
 cd "$REPO" || exit 1
+
+# Build the pinned set first -- every linter below is resolved out of it, so
+# a failure here is reported once rather than four times.
+LINT_TOOLS=$(nix build "$REPO#lint-tools" --no-link --print-out-paths) || LINT_TOOLS=""
+if [ -n "$LINT_TOOLS" ]; then
+  pass "pinned lint set: $LINT_TOOLS"
+else
+  fail "could not build $REPO#lint-tools -- every linter below will fail"
+fi
+
 run_linter alejandra --check .
 run_linter statix check .
 run_linter deadnix --fail .
