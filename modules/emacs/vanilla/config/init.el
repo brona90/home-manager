@@ -510,6 +510,14 @@
 ;; my-bindings.el goes after my-org.el: it names org commands, and my-org.el is
 ;; what emits their autoload stubs and sets `org-directory'.
 
+;; my-popups.el FIRST of the modules, and the order is load-bearing in one
+;; narrow way: every one of these files adds its window rules with
+;; `add-to-list', which PREPENDS, so the file that loads first ends up LAST in
+;; `display-buffer-alist'. my-claude.el's "^\\*claude:" entry is a bug fix that
+;; must win, so the general popup rules go in underneath it. The regexps are
+;; disjoint today and the gate proves it, but "specific rules ahead of general
+;; ones" is the invariant worth keeping by construction.
+(require 'my-popups)
 (require 'my-org)
 ;; my-lang.el before my-bindings.el: `SPC c' names eglot and flymake commands
 ;; and my-lang.el is what decides which buffers ever start a server. Neither

@@ -13,7 +13,7 @@ daily driver until it earns the default slot.
 | Try it without `hms` | `nix run .#emacs-vanilla` |
 | Base Emacs | `pkgs.emacs` 30.2 on **every** platform |
 | Config | `modules/emacs/vanilla/config/`, linked to `~/.config/emacs` |
-| Phase | **4 — Claude Code and LilyPond**. The last two code items on this list; what is left is org-gcal's data check and two weeks of use. |
+| Phase | **4 — Claude Code, LilyPond, popups**. What is left is org-gcal's data check and two weeks of use. |
 | Gate | `bash modules/emacs/vanilla/verify.sh` — lints, builds, then asks a real daemon |
 
 Doom is untouched. Nothing about the daily driver changes until `flavor` flips.
@@ -89,6 +89,16 @@ Not yet met. In rough order of how much they hurt when missing:
       reachable, 0 void) and that no key or prefix renders as a raw symbol
       (490 named, 0 unnamed). What is still absent is the long tail behind
       features this config does not have — see below
+- [x] **Popups**: `lisp/my-popups.el`. Doom's `:ui popup` is ~1400 lines; this
+      is ~60 and **no packages** — `window-sides-slots`, four
+      `display-buffer-alist` rules and `SPC ~`. `popper` and `shackle` were
+      both evaluated and rejected. Three Doom behaviours are deliberately not
+      reproduced (`vslot`, `:ttl`, ESC-to-close) and each is written up below
+      with its reason. The gate displays a real `*Help*` buffer on the daemon's
+      real frame and asserts the side window, the height, the missing mode
+      line, the weak dedication, and the `SPC ~` round trip **in both
+      directions** — which is how it caught that `mode-line-format` is not in
+      `window-persistent-parameters` and was silently lost on restore
 - [ ] Two weeks as `emv` without reaching for `em`
 
 ## Deliberate differences from Doom — languages
@@ -151,8 +161,13 @@ The key is kept so the finger lands somewhere sane; the behaviour differs.
 | `SPC o l` | *(llm prefix)* | *moved:* store-link is now `SPC n l` | phase 2 put `org-store-link` on `SPC o l`, which is not a Doom key |
 
 Unbound rather than repurposed, because the feature is not here at all:
-`SPC TAB` (workspaces), `SPC ~` (popups), `SPC d` (dape), `SPC r`
-(ssh-deploy), snippets, treemacs, docsets, `SPC t z` (zen).
+`SPC TAB` (workspaces), `SPC d` (dape), `SPC r` (ssh-deploy), snippets,
+treemacs, docsets, `SPC t z` (zen).
+
+`SPC ~` **is** bound, and it is the one key on that list that came back. Doom
+puts `+popup/toggle` there; here it is `window-toggle-side-windows`, which is
+that command and `+popup/restore` in one. See "Deliberate differences —
+popups".
 
 `SPC l` is **claude**, as in Doom. Doom's `SPC l` is the crdt module, which is
 not in this package set, so the prefix was free and Doom's own eleven Claude
@@ -163,6 +178,111 @@ through an evil *intercept* map, so `org-mode-map` is never consulted once
 `SPC` resolves. A genuinely mode-local localleader needs a dispatcher keymap
 and is not done. In practice the org commands under it error clearly outside
 an org buffer.
+
+## Deliberate differences from Doom — popups
+
+`lisp/my-popups.el`. Doom's `:ui popup` is a ~1400-line popup **manager**; this
+is ~60 lines of settings and **zero packages**, because the 80% that matters is
+three Emacs 30 built-ins.
+
+**What is there:**
+
+| | |
+|---|---|
+| `window-sides-slots` | `(nil nil nil 1)` — **one** bottom popup, ever |
+| `*Help*`, `*Apropos*`, `*eldoc*`, `*info*` | bottom side window, 0.42 of the frame, no mode line, **selected** (Doom's `:select t`, via the Emacs 30 `body-function` entry) |
+| `*Flymake diagnostics for …*` | same, 0.3, selected — a list you cannot move point into is a picture of a list |
+| `*Messages*`, `*Warnings*`, `*Compile-Log*` | same, 0.3, `post-command-select-window . nil` (Doom's `:select nil`) |
+| `*compilation*` | same, 0.3, not selected, and the **one popup that keeps its mode line** — compilation state (`run`, `exit [1]`) lives in `mode-line-process` and nowhere else |
+| `SPC ~` | `window-toggle-side-windows` — Doom's `+popup/toggle` **and** `+popup/restore` in one preloaded, interactive command |
+
+**Two packages were evaluated and rejected**, and both will be proposed again:
+
+- **`popper`** buys popup *cycling* and per-project grouping and nothing else
+  this lacks — and it does not solve the side-window problem people reach for
+  it to solve, because `popper-display-popup-at-bottom` calls
+  `display-buffer-in-side-window` itself. It also walks straight into this
+  config's characteristic trap: only `popper-mode` carries an autoload cookie,
+  so `popper-toggle`, `popper-cycle` and `popper-raise-popup` would be **void
+  on the keypress**, and `popper-echo-mode` lives in a separate file nothing
+  loads. Three extra `use-package` forms to get less than `SPC ~` gives free.
+- **`shackle`** is two commits in six years and covers only the part
+  `display-buffer-alist` already does well in Emacs 30.
+
+### The three things Doom does that this cannot, and does not pretend to
+
+These are **omissions with reasons**, not oversights. Each one is a feature of
+Doom's *manager*, and there is no manager here.
+
+1. **The `vslot` axis — two stacked bottom popups.** Emacs's side windows put
+   two bottom slots **side by side**, not stacked (`window-sides-vertical` is
+   nil, and full-width bottom popups are the point). So a second slot would
+   give two 40-column popups on an 80-column frame rather than Doom's two
+   stacked ones. The answer here is `window-sides-slots` bottom = **1**: a new
+   popup *replaces* the old one. Reuse is the better failure mode, and it makes
+   the omission a decision rather than a gap. Reproducing `vslot` properly
+   means writing a layout manager, which is the 1400 lines.
+
+2. **`:ttl` — the buffer-kill timer.** Not ported, and *"not worth it until
+   measured"* is the honest form of that. With one bottom slot the **visible**
+   clutter `:ttl` exists for cannot happen. What is left is buffer-*list*
+   clutter, and `*Help*`, `*Apropos*` and `*eldoc*` are single reused buffers,
+   not one per invocation — the only things that really accumulate are
+   `*Flymake diagnostics for `x'*` (one per buffer), which `SPC b O` already
+   answers. Against that: a wall-clock timer that kills buffers is the one
+   thing in this config that could destroy work, it is the first piece of
+   background state that mutates buffers, and it is untestable by this gate
+   without sleeping in it. **What would change the answer:** if `buffer-list`
+   after a two-week `emv` session is more than ~20% transient buffers, revisit.
+
+3. **ESC-to-close.** Doom closes popups from `doom-escape-hook`. There is no
+   such hook here and nothing to hang one on: grepping `my-bindings.el` for
+   `escape`, `ESC` and `keyboard-quit` returns **zero** hits, so ESC is plain
+   `keyboard-quit`. `q` in the popup and `SPC ~` are the ways out. Adding an
+   ESC hook means inventing a dispatcher, which is the manager again.
+
+### Three more things deliberately not done
+
+- **`no-other-window` is not set on the popups**, though Doom sets it on every
+  one. Doom can afford it because `+popup/other` exists to jump *into* a popup;
+  there is no such command here and no manager to hang one off, so it would
+  leave a popup you can see and cannot select — unscrollable, unquittable,
+  mouse-only. The gate asserts the `*Help*` popup **is** reachable by
+  `other-window`, so this is a checked invariant rather than a note.
+- **`no-delete-other-windows` is not set either**, though it is the obvious
+  next built-in (window.el:4387-4402). Putting it on these popups is exactly
+  option (c) that "Deliberate differences — Claude" below considered and
+  rejected: the popup would survive `claude-diff--show-1`'s
+  `delete-other-windows`, its "bottom third" would become a third of the *main
+  area*, and the Claude buffer would be on screen twice. The gate asserts a
+  popup **is** cleared by `delete-other-windows` from the Claude window.
+- **`*Backtrace*` gets no rule**, unlike Doom. The Emacs debugger enters
+  `recursive-edit` in that window and drives selection itself; a dedicated side
+  window plus a selection override is a change this gate cannot exercise, and
+  untestable window surgery on the debugger is a bad trade. **`helpful` gets no
+  rule either** — the package is not in `package.nix`, so the branch would be
+  dead. Add it in the commit that adds the package, not before.
+
+### How it composes with the two rules that were already here
+
+`display-buffer-alist` already had two entries, and **both deliberately produce
+ordinary windows**: `"^\\*claude:"` (my-claude.el) and `"^ \\*lilypond: "`
+(my-lilypond.el). All four popup regexps are anchored with `` \` `` and are
+disjoint from both. `my-popups` is `require`d **first** in `init.el`, so —
+because `add-to-list` prepends — its general rules end up *after* those two
+specific ones in the alist. The gate proves the composition rather than
+asserting it: with a popup already open it displays a `*claude:*` buffer and a
+` *lilypond: *` buffer and reads `window-side` off each.
+
+**which-key shares the slot, and that is fine.** `which-key-popup-type` is
+already `side-window` with `which-key-side-window-slot` 0 at the bottom — the
+same window. It swaps its own buffer in on every leader prefix and restores the
+window configuration afterwards (`which-key-preserve-window-configuration` is
+t). This is why the popups are `(dedicated . side)` and **not** `(dedicated
+. t)`: `t` is *strong* dedication, and a strongly dedicated window is one
+`set-window-buffer` away from an error. The value `side` is also the only value
+`window--display-buffer` re-applies to a *reused* window (window.el:7381),
+which is what keeps the popup dedicated as buffers rotate through the slot.
 
 ## Deliberate differences from Doom — Claude
 
@@ -357,6 +477,16 @@ What `verify.el` asserts, section by section:
   `flymake-mode` *off*, the build hook, the failure buffer's display rule — and
   a real `lilypond` run over four files asserting the diagnostics, including
   the warning-with-no-column and the relative-`\include` cases
+- **(g)** popups: `window-sides-slots`, `SPC ~` resolving to a command that is
+  `fboundp` *and* interactive, and then a real `*Help*` buffer displayed on the
+  daemon's real frame — `window-side`, the height against the fraction the
+  gate keeps its **own** copy of, the `mode-line-format` window parameter, the
+  dedication value, and that `other-window` can still reach it. The `SPC ~`
+  round trip is asserted **in both directions**: a one-way test would pass on a
+  toggle that had lost `window-state-put` entirely. Then composition — with a
+  popup on screen, a `*claude:*` buffer and a ` *lilypond: *` buffer must each
+  still get an ordinary window, and `delete-other-windows` from the Claude
+  window must still clear the popup
 - **(c)** `*Messages*` carries no warnings or errors — run last, so anything
   the other sections provoked has landed
 
@@ -375,6 +505,18 @@ guarded with `(when (window-live-p main) ...)` and did nothing at all, because
 `window-main-window` returns an **internal** window whenever the main area
 holds more than one window. The design note said the guard was correct; the
 daemon said `#<window 3> live=nil`.
+
+The popup layer made it three for three, and again one real bug and one gate
+bug. The real one: `window-toggle-side-windows` round-trips the frame through
+`window-state-get`/`window-state-put`, and those copy a window parameter only
+if it is named in `window-persistent-parameters` — whose default names
+`window-side` and `window-slot` and **not** `mode-line-format`. So `SPC ~`
+twice brought the popup back *with* a mode line, permanently, with nothing
+logged and nothing raised. One line
+(`(add-to-list 'window-persistent-parameters '(mode-line-format . writable))`)
+fixes it, and it exists only because the toggle was tested in both directions.
+The gate bug was the `other-window` reachability check stepping **once** and
+assuming a two-window frame; it now walks the whole cycle.
 
 ## Notes
 

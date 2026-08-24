@@ -271,6 +271,12 @@ difference is visible before you press it."
   "<"   '(switch-to-buffer                     :which-key "Switch buffer (plain)")
   "`"   '(evil-switch-to-windows-last-buffer   :which-key "Switch to last buffer")
   "'"   '(vertico-repeat                       :which-key "Resume last search")
+  ;; Doom's `SPC ~' is `+popup/toggle'.  `window-toggle-side-windows' is that
+  ;; command AND `+popup/restore' in one, and it is PRELOADED and INTERACTIVE
+  ;; (window.el:1190) -- so unlike almost every other key in this file it needs
+  ;; no `use-package' form behind it and cannot be void.  See lisp/my-popups.el
+  ;; for what it toggles.
+  "~"   '(window-toggle-side-windows           :which-key "Toggle popups")
   "/"   '(consult-ripgrep                      :which-key "Search project")
   "*"   '(my/search-project-for-symbol-at-point :which-key "Search project for symbol")
   ";"   '(pp-eval-expression                   :which-key "Eval expression")
