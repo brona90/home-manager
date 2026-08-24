@@ -213,6 +213,7 @@ This repo is designed to be easily forked:
 │   ├── dev-shell-hook.sh  # the shellHook — runs on every `cd`, must stay cheap
 │   ├── install-hooks.sh   # body of `nix run .#install-hooks`
 │   ├── warm-direnv.sh     # post-merge/checkout/rewrite background cache warm
+│   ├── link-pc-config.sh  # gives a new worktree its .pre-commit-config.yaml
 │   └── pre-commit-hooks.nix  # the hook set handed to git-hooks.nix
 └── .github/
     ├── workflows/         # CI/CD
@@ -263,9 +264,11 @@ you. What changed is *when*:
   **background**, lock-guarded so repeated `cd`s cannot stack up copies.
 
 `nix run .#install-hooks` also installs `post-merge`, `post-checkout` and
-`post-rewrite` hooks that refill the direnv cache in the background, so a
-`git pull` that moves the lock does not leave the refill to ambush your next
-`cd`. They never delay the git command and print nothing when they work.
+`post-rewrite` hooks. They do two things: give the worktree a
+`.pre-commit-config.yaml` if it has not got one (see below), and refill the
+direnv cache in the background, so a `git pull` that moves the lock does not
+leave the refill to ambush your next `cd`. They never delay the git command and
+print nothing when they work.
 
 The linters are not on `PATH` directly. `install-hooks` materialises
 `packages.lint-tools` at `.direnv/lint-tools` (with a GC root) and the
@@ -310,6 +313,94 @@ shorter-lived than the hook it protects (`direnv prune` or `git worktree
 remove` strands it), and a collected script makes every `git checkout` in every
 worktree print an exec error. Belt and braces: the hooks test the path before
 `exec`ing it, and the devShell notices a collected root and reinstalls.
+
+### A new worktree gets its own `.pre-commit-config.yaml`
+
+`.git/hooks` belongs to the clone, but `.pre-commit-config.yaml` does **not**.
+The hook `git-hooks.nix` generates passes a *relative*
+`--config=.pre-commit-config.yaml`, which `pre-commit` resolves against the
+worktree it was invoked in. So `git worktree add` used to produce a worktree
+that the shared `pre-commit` hook fires in and that has no config, and every
+commit in it died with:
+
+```
+No .pre-commit-config.yaml file was found
+- To temporarily silence this, run `PRE_COMMIT_ALLOW_NO_CONFIG=1 git ...`
+```
+
+The `post-checkout` hook now links it in at the moment the worktree is created
+(`lib/link-pc-config.sh`); the devShell links it too, from the same recorded
+path, for the cases `post-checkout` cannot reach. Nothing to do by hand.
+
+**Do not take `pre-commit`'s advice in that message.** Both
+`PRE_COMMIT_ALLOW_NO_CONFIG=1` and installing the hook with
+`--allow-missing-config` unblock the commit by *skipping every linter*, turning
+"this worktree is misconfigured" into "this worktree is not linted", silently. A
+blocked commit is recoverable; a quietly unlinted one is not. A `nix flake
+check` guard fails the build if the hook is ever installed with
+`--allow-missing-config`.
+
+If a worktree ever does end up without one, the fix is:
+
+```bash
+nix run .#install-hooks
+```
+
+Two consequences worth knowing:
+
+- The config is a JSON file whose every entry is an absolute `/nix/store` path,
+  with nothing worktree- or even repo-specific in it, so one copy is shared by
+  all worktrees and it is GC-rooted once, in `.git/hooks/.hm-gcroots/`.
+- A worktree therefore gets linted by the *installed* hook set, not by its own
+  `lib/pre-commit-hooks.nix` — exactly as it already was for the `pre-commit`
+  hook itself. Changing the hook set means re-running `install-hooks`; the
+  devShell notices on its own, because `lib/pre-commit-hooks.nix` is one of the
+  files hashed into the staleness stamp.
+
+`git worktree remove` needs no special handling: the link lives inside the
+worktree and goes with it, while the GC root it was made from lives in the
+shared git dir and survives.
+
+### `core.hooksPath` is cleared on purpose
+
+Chasing the above turned up a second and worse fault in the same place.
+`git-hooks.nix`'s installer finishes by setting `core.hooksPath`, to a value it
+deliberately makes *relative* to the working copy it was run from:
+
+```sh
+common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+common_dir=${common_dir#$GIT_WC/}                    # "/repo/.git" -> ".git"
+git config --local core.hooksPath "$common_dir/hooks"
+```
+
+Run from the main checkout, that stores `.git/hooks`. In a **linked worktree**
+`.git` is a *file*, not a directory, so `.git/hooks` names nothing — git finds
+no hooks there and **every commit in every worktree goes through unlinted, in
+silence**. Verified by committing a deliberately misformatted `.nix` file in a
+fresh worktree and watching it sail through.
+
+Which of two broken states a clone is in depends only on where `install-hooks`
+was last run:
+
+| last run from | `core.hooksPath` | effect in a linked worktree |
+| --- | --- | --- |
+| the main checkout | `.git/hooks` (relative) | no hooks at all — commits **unlinted**, silently |
+| a linked worktree | `/abs/path/.git/hooks` | hooks run — commits **refused**, no config |
+
+`install-hooks` therefore unsets `core.hooksPath` after the upstream installer
+has set it. With the config absent, git resolves hooks against the common git
+dir by itself, correctly, from the main checkout and from every worktree — and
+unlike an absolute value that keeps working if the clone is ever moved. Nothing
+is lost: the upstream installer already unsets any pre-existing value before it
+runs, because `pre-commit` refuses to install while `core.hooksPath` is set.
+
+The three scripts that need the hooks directory (`install-hooks.sh`,
+`link-pc-config.sh`, `dev-shell-hook.sh`) fall back to
+`--git-common-dir` + `/hooks`, because `git rev-parse --path-format=absolute
+--git-path hooks` *fatals* in a linked worktree while the relative config is
+still in place — the state of every clone that has not re-run `install-hooks`
+yet. Guards `(g2)` and `(g3)` in `install-hooks-installs-hooks` hold both
+halves in place.
 
 To back the whole thing out — the `pre-commit` hook is left alone, since it
 predates this and removing it would stop linting commits:

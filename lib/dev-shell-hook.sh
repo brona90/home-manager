@@ -62,7 +62,7 @@ __hm_dev_bootstrap_bg() {
 }
 
 __hm_dev_bootstrap() {
-  local repo hooks stamp want need pc
+  local repo hooks stamp want need pc pcc
 
   want="@HOOKS_STAMP@"
 
@@ -78,8 +78,18 @@ __hm_dev_bootstrap() {
   esac
   export PATH
 
-  hooks=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || return 0
-  [ -n "$hooks" ] || return 0
+  # One fork on the happy path. The fallback exists because `--git-path hooks`
+  # honours core.hooksPath, which git-hooks.nix's installer sets relative to the
+  # working copy it ran in -- and a relative path cannot be resolved from a
+  # linked worktree, where `.git` is a file. Returning early there would leave
+  # the worktree with no hooks and no prospect of getting any, since this is
+  # what schedules the install. See lib/install-hooks.sh for the whole story.
+  hooks=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) || hooks=""
+  if [ -z "$hooks" ]; then
+    hooks=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+    [ -n "$hooks" ] || return 0
+    hooks="$hooks/hooks"
+  fi
 
   need=""
 
@@ -101,11 +111,33 @@ __hm_dev_bootstrap() {
 
   # (c) The generated hook passes a RELATIVE --config=.pre-commit-config.yaml,
   #     so the symlink is per-worktree even though .git/hooks is not: a fresh
-  #     `git worktree add` needs one of its own. `-e` follows the link, so a
+  #     `git worktree add` needs one of its own, and without it the SHARED
+  #     pre-commit hook refuses every commit in that worktree with "No
+  #     .pre-commit-config.yaml file was found". `-e` follows the link, so a
   #     dangling one (target collected) counts as absent, which is what we
   #     want.
+  #
+  #     The post-checkout hook normally does this the instant the worktree is
+  #     created (lib/link-pc-config.sh), so reaching here means either that
+  #     hook is not installed yet or it never fired -- `git worktree add
+  #     --no-checkout` does not run post-checkout at all. Repair it from the
+  #     shared root, which costs one `ln`. Escalating to
+  #     `nix run .#install-hooks` would be ~40s at a prompt to produce a
+  #     symlink whose target is already recorded; that stays the fallback for
+  #     when the root itself is missing or collected.
   if [ -z "$need" ] && [ ! -e "$repo/.pre-commit-config.yaml" ]; then
-    need=broken
+    pcc=$(readlink -f "$hooks/.hm-gcroots/pre-commit-config" 2>/dev/null) || pcc=""
+    if [ -n "$pcc" ] && [ -e "$pcc" ] &&
+      ln -sfn "$pcc" "$repo/.pre-commit-config.yaml" 2>/dev/null; then
+      # Said out loud rather than done behind the user's back. This worktree
+      # was one commit away from an error message whose folk remedy
+      # (PRE_COMMIT_ALLOW_NO_CONFIG=1) commits unlinted, and the hook set it
+      # has just been given is the installed one, not necessarily the one in
+      # this checkout's lib/pre-commit-hooks.nix.
+      echo "home-manager: linked .pre-commit-config.yaml for this worktree" >&2
+    else
+      need=broken
+    fi
   fi
 
   # (d) Linter bundle missing or collected.
@@ -123,6 +155,21 @@ __hm_dev_bootstrap() {
   #     The GC root doubles as the sentinel, so this costs no fork: `-e`
   #     follows the symlink, so a collected target reads as absent.
   if [ -z "$need" ] && [ ! -e "$hooks/.hm-gcroots/warm-direnv" ]; then
+    need=stale
+  fi
+
+  # (e2) Same shape, for the two things a fresh worktree's config is built
+  #      from: the linker the shared hooks call, and the recorded config path
+  #      they link to. Both are guarded at the point of use, so losing either
+  #      degrades to "new worktrees are not configured" -- which surfaces as a
+  #      refused commit rather than an unlinted one, but is still a state
+  #      nobody should have to live in. It is also the migration path: a clone
+  #      whose hooks were installed before any of this existed has no such
+  #      roots, reads as stale here, and reinstalls in the background.
+  if [ -z "$need" ] && [ ! -e "$hooks/.hm-gcroots/pre-commit-config" ]; then
+    need=stale
+  fi
+  if [ -z "$need" ] && [ ! -e "$hooks/.hm-gcroots/link-pc-config" ]; then
     need=stale
   fi
 
