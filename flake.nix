@@ -60,8 +60,11 @@
     };
 
     # Pre-commit / pre-push git hooks (statix/deadnix/alejandra/shellcheck on
-    # commit, `nix flake check` on push). Installed into .git/hooks via the
-    # devShell shellHook, which direnv (.envrc) loads automatically.
+    # commit, `nix flake check` on push). Installed into .git/hooks by
+    # `nix run .#install-hooks`, which the devShell starts for you -- NOT from
+    # the devShell shellHook directly. Evaluating this input is ~19s of the
+    # ~42s the old devShell put on every `cd`; the linters were the other ~22s.
+    # See lib/dev-shell.nix.
     git-hooks = {
       url = "github:cachix/git-hooks.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -214,15 +217,40 @@
     # push connection open long enough that GitHub drops it (push times out). CI
     # runs `nix flake check` on every push to the remote, and input/nixpkgs bumps
     # are checked locally by hand before pushing (see the workflow notes).
+    #
+    # NOT referenced by devShells.default any more: it was ~19s of the ~42s of
+    # evaluation the old devShell put on every `cd`, and the devShell sits on
+    # the interactive path. It reaches .git/hooks through
+    # `nix run .#install-hooks` instead -- see lib/dev-shell.nix.
     preCommitFor = system:
       git-hooks.lib.${system}.run {
         src = ./.;
-        hooks = {
-          statix.enable = true;
-          deadnix.enable = true;
-          alejandra.enable = true;
-          shellcheck.enable = true;
-        };
+        hooks = import ./lib/pre-commit-hooks.nix;
+      };
+
+    # Cheap staleness token for the installed hooks. It has to be computable
+    # WITHOUT evaluating git-hooks.nix -- that is the whole point -- so it
+    # hashes the two files that actually determine what gets installed: the
+    # hook set, and the lock the tools are resolved from. Two hashFile calls on
+    # small files; the devShell shellHook carries the result as a literal.
+    devHooksStamp =
+      builtins.hashString "sha256"
+      (builtins.hashFile "sha256" ./flake.lock
+        + builtins.hashFile "sha256" ./lib/pre-commit-hooks.nix);
+
+    # One definition, two consumers: packages.lint-tools (what verify.sh and
+    # ci.yml resolve, per the lint-tools-pinned guard) and the devShell -- which
+    # reaches it INDIRECTLY, through .direnv/lint-tools, rather than naming the
+    # derivation. Evaluating this set costs ~31s and the devShell is on the
+    # `cd` path; see lib/dev-shell.nix.
+    lintToolsFor = system: (pkgsFor system).callPackage ./lib/lint-tools.nix {};
+
+    devShellFor = system:
+      import ./lib/dev-shell.nix {
+        pkgs = pkgsFor system;
+        preCommit = preCommitFor system;
+        lintTools = lintToolsFor system;
+        hooksStamp = devHooksStamp;
       };
 
     homeDirectoryFor = {
@@ -406,7 +434,13 @@
           # which reads the runner's registry and silently gave the two
           # different versions of shellcheck (red CI, PR #21). Deliberately
           # NOT gated to one system: cross-machine agreement is the point.
-          lint-tools = pkgs.callPackage ./lib/lint-tools.nix {};
+          #
+          # It is also what the devShell puts on PATH, indirectly: evaluating
+          # this set costs ~31s, so `nix run .#install-hooks` materialises it
+          # at .direnv/lint-tools (GC-rooted) and the shellHook adds that
+          # directory, rather than the devShell naming the derivation and
+          # paying for it on every `cd`. See lib/dev-shell.nix.
+          lint-tools = lintToolsFor system;
         }
         # emacs-doctor is Linux-only (systemd/proc/WSLg); expose it only there
         # so darwin `nix flake check` doesn't try to build an unsupported pkg.
@@ -498,6 +532,20 @@
           }
           else {}
         )
+        # Pinned systems have no git-hooks.lib (see the devShells comment), so
+        # naming the installer there would re-trigger the 26.11 throw.
+        // nixpkgs.lib.optionalAttrs (!isPinned system) {
+          # The expensive half of the old devShell shellHook, lifted out of the
+          # `cd` path. devShells.default runs this itself when the installed
+          # hooks are missing (foreground) or stale (background); it is exposed
+          # as an app so it is also runnable by hand, which is the documented
+          # recovery when either of those goes wrong.
+          install-hooks = {
+            type = "app";
+            meta.description = "Install the pre-commit git hooks and the linter bundle into this clone";
+            program = "${(devShellFor system).installHooks}/bin/install-hooks";
+          };
+        }
         // {
           tmux-helper-install = {
             type = "app";
@@ -615,8 +663,11 @@
       system: let
         pkgs = pkgsFor system;
       in {
-        # `direnv allow` (or `nix develop`) installs the git hooks via this
-        # shellHook and keeps them current.
+        # `direnv allow` (or `nix develop`) bootstraps the git hooks through
+        # this shellHook and keeps them current -- but it does the expensive
+        # part out of line, in `nix run .#install-hooks`. See lib/dev-shell.nix
+        # for why, with the measurements: naming git-hooks.nix and the linters here cost ~42s
+        # of evaluation on the first `cd` after every weekly flake.lock bump.
         #
         # Pinned systems get a bare shell. git-hooks.lib.<system> is built from
         # legacyPackages.<system> of the FOLLOWED (channel) nixpkgs, so merely
@@ -626,13 +677,7 @@
         default =
           if isPinned system
           then pkgs.mkShell {}
-          else
-            pkgs.mkShell (let
-              pre-commit = preCommitFor system;
-            in {
-              inherit (pre-commit) shellHook;
-              buildInputs = pre-commit.enabledPackages;
-            });
+          else (devShellFor system).shell;
       }
     );
 
@@ -670,6 +715,7 @@
           user = userForSystem system;
           settingsText =
             homeConfigs."${user.username}@${system}".config.home.file.".claude/settings.json".text;
+          dev = devShellFor system;
         in {
           # 1. Claude Code must never attribute itself in commits/PRs, and
           #    emacs_eval (arbitrary elisp = arbitrary shell) must never be
@@ -784,6 +830,147 @@
                 exit 1
               fi
 
+              touch $out
+            '';
+
+          # 5. The devShell must stay off the expensive path, AND the hooks
+          #    must still actually get installed. These two guards are a pair:
+          #    either one alone can be satisfied by the bug the other catches.
+          #
+          #    History: devShells.default used to inherit git-hooks.nix's
+          #    shellHook AND its enabledPackages. Between them that put ~56s of
+          #    evaluation on every `cd` into the repo whenever flake.lock had
+          #    moved -- which it does every week, unattended, via
+          #    update-flake.yml. Measured cold `direnv export bash` was 55-58s
+          #    here on a warm store, and over five minutes on one that also had
+          #    to fetch.
+          #
+          #    Read off the devShell DERIVATION, not off lib/dev-shell.nix's
+          #    `shellHook` attribute: the first cut of this guard inspected the
+          #    latter, and a deliberate re-introduction of the regression --
+          #    `mkShell { shellHook = shellHook + preCommit.shellHook; }` --
+          #    sailed straight past it. A guard has to be shown failing.
+          devshell-stays-light =
+            pkgs.runCommand "devshell-stays-light" {
+              # dev.shell is verbatim what devShells.default is on this
+              # system (x86_64-linux is not pinned), and unlike `devShells` it
+              # is in scope here -- outputs is a plain attrset, not rec.
+              hookText = dev.shell.shellHook or "";
+              # The other way back in is `buildInputs = pre-commit.enabledPackages`.
+              inputPaths =
+                builtins.concatStringsSep "\n"
+                (map toString (
+                  (dev.shell.buildInputs or [])
+                  ++ (dev.shell.nativeBuildInputs or [])
+                ));
+              passAsFile = ["hookText" "inputPaths"];
+            } ''
+              # git-hooks.nix's installer is identifiable by the line it logs
+              # when it rewrites a repo. If that text is in the shellHook, the
+              # whole derivation is being evaluated on the `cd` path again.
+              if grep -q 'git-hooks.nix: updating' "$hookTextPath"; then
+                echo 'GUARD: devShells.default runs the git-hooks.nix installer again.'
+                echo '       That is ~19s of evaluation on every `cd` after a flake.lock bump.'
+                echo '       Hook installation belongs in `nix run .#install-hooks`; see lib/dev-shell.nix.'
+                exit 1
+              fi
+              # Same argument for the linters, which are the other ~22s. They reach
+              # PATH via .direnv/lint-tools, which install-hooks materialises.
+              if grep -qE '/nix/store/[a-z0-9]{32}-(shellcheck|statix|deadnix|alejandra|pre-commit)' \
+                   "$hookTextPath" "$inputPathsPath"; then
+                echo 'GUARD: devShells.default pulls in a linter or pre-commit store path directly.'
+                echo '       Use packages.lint-tools via .direnv/lint-tools instead.'
+                exit 1
+              fi
+              touch $out
+            '';
+
+          # 6. ... and the counterweight: install-hooks must really run the
+          #    upstream installer. A fast shell that quietly stopped writing
+          #    .git/hooks/pre-commit would be a regression, not a fix.
+          install-hooks-installs-hooks =
+            pkgs.runCommand "install-hooks-installs-hooks" {
+              installer = "${dev.gitHooksInstaller}/bin/hm-git-hooks-install";
+              appText = builtins.readFile ./lib/install-hooks.sh;
+              passAsFile = ["appText"];
+            } ''
+              # (a) the wrapped script really is git-hooks.nix's installer,
+              #     not an empty stub left behind by an upstream API change.
+              grep -q 'git-hooks.nix: updating' "$installer" \
+                || { echo 'GUARD: hm-git-hooks-install no longer contains the git-hooks.nix installer.'; exit 1; }
+
+              # (b) the app actually invokes it.
+              grep -q '@GIT_HOOKS_INSTALLER@' "$appTextPath" \
+                || { echo 'GUARD: lib/install-hooks.sh no longer invokes the git-hooks installer.'; exit 1; }
+
+              # (c) and refuses to stamp success it did not achieve. Without
+              #     this the devShell would believe the hooks were installed
+              #     and never retry.
+              grep -q 'was not installed' "$appTextPath" \
+                || { echo 'GUARD: lib/install-hooks.sh no longer verifies that .git/hooks/pre-commit exists before stamping.'; exit 1; }
+
+              # (d) and can still REPAIR a deleted hook. git-hooks.nix's
+              #     installer converges on .pre-commit-config.yaml alone: with
+              #     that symlink intact it returns without touching
+              #     .git/hooks, so a deleted pre-commit hook is never restored
+              #     and the devShell asks for a reinstall on every `cd`
+              #     forever. Dropping the symlink first is the repair.
+              grep -q 'rm -f "$repo/.pre-commit-config.yaml"' "$appTextPath" \
+                || { echo 'GUARD: lib/install-hooks.sh cannot repair a deleted pre-commit hook -- it must clear .pre-commit-config.yaml first.'; exit 1; }
+
+              # (e) the warm hooks must be rooted in the SHARED git dir, not
+              #     under a per-worktree .direnv. .git/hooks is shared by every
+              #     worktree, so a root that `direnv prune` or
+              #     `git worktree remove` can take away is shorter-lived than
+              #     the hook it protects -- and a collected script makes every
+              #     `git checkout` in every worktree print an exec error.
+              grep -qF 'gcroots="$hooks/.hm-gcroots"' "$appTextPath" \
+                || { echo 'GUARD: install-hooks no longer roots the warm hooks in the shared git dir.'; exit 1; }
+              grep -qF 'pin "@WARM_DIRENV_STORE@" "$gcroots/warm-direnv"' "$appTextPath" \
+                || { echo 'GUARD: warm-direnv is no longer GC-rooted; one nix-collect-garbage breaks every git checkout.'; exit 1; }
+
+              # (f) ... and the hooks must survive losing it anyway, WHILE
+              #     something notices. Both halves or neither: an unguarded
+              #     exec is noisy on every checkout, and a guarded one with no
+              #     repair is a permanent silent no-op -- the "gate that can
+              #     only pass" shape this repo keeps getting bitten by.
+              grep -qF '[ -x @WARM_DIRENV@ ] || exit 0' "$appTextPath" \
+                || { echo 'GUARD: the warm hooks exec a store path unguarded; a collected path errors on every checkout.'; exit 1; }
+              grep -qF '.hm-gcroots/warm-direnv' ${./lib/dev-shell-hook.sh} \
+                || { echo 'GUARD: the devShell no longer notices a collected warm-direnv, so the guarded exec would fail silently forever.'; exit 1; }
+              touch $out
+            '';
+
+          # 7. The background jobs must stay backgrounded. Closing the
+          #    inherited descriptors is what makes them detach: direnv hands
+          #    the .envrc an extra pipe on FD 3 and reads it to EOF, so a child
+          #    that inherits FD 3 blocks the caller no matter how completely
+          #    stdin/stdout/stderr are redirected. Measured: 9364ms without
+          #    this line, 713ms with it. nohup, setsid and double-forking all
+          #    made no difference, so "it looks detached" is not evidence.
+          background-jobs-close-fds = pkgs.runCommand "background-jobs-close-fds" {} ''
+            for f in ${./lib/dev-shell-hook.sh} ${./lib/warm-direnv.sh}; do
+              grep -q 'exec 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-' "$f" \
+                || { echo "GUARD: $f spawns a background job without closing inherited descriptors."; \
+                     echo '       FD 3 is direnv'"'"'s capture pipe; leaving it open re-blocks the caller.'; exit 1; }
+            done
+            touch $out
+          '';
+
+          # 8. The shellHook is a hand-written shell script that mkShell will
+          #    never lint for us, and it runs at an interactive prompt where a
+          #    syntax error looks like a broken terminal. Lint it here, where
+          #    nobody is waiting.
+          devshell-hook-lint =
+            pkgs.runCommand "devshell-hook-lint" {
+              nativeBuildInputs = [pkgs.shellcheck];
+            } ''
+              cp ${./lib/dev-shell-hook.sh} hook.sh
+              shellcheck --shell=bash hook.sh
+              cp ${./lib/install-hooks.sh} install-hooks.sh
+              shellcheck --shell=bash install-hooks.sh
+              cp ${./lib/warm-direnv.sh} warm-direnv.sh
+              shellcheck --shell=bash warm-direnv.sh
               touch $out
             '';
         })

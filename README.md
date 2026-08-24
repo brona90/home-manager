@@ -208,12 +208,117 @@ This repo is designed to be easily forked:
 │   └── secrets.yaml
 ├── lib/                   # Helper functions
 │   ├── docker-image.nix   # Docker image builder
-│   └── docker-test-app.nix
+│   ├── docker-test-app.nix
+│   ├── dev-shell.nix      # devShell + hook bootstrap (see "Dev shell and git hooks")
+│   ├── dev-shell-hook.sh  # the shellHook — runs on every `cd`, must stay cheap
+│   ├── install-hooks.sh   # body of `nix run .#install-hooks`
+│   ├── warm-direnv.sh     # post-merge/checkout/rewrite background cache warm
+│   └── pre-commit-hooks.nix  # the hook set handed to git-hooks.nix
 └── .github/workflows/     # CI/CD
     ├── ci.yml             # Main pipeline
     ├── update-flake.yml   # Weekly flake.lock update PRs
     └── validate.yml       # NixOS/Darwin validation (manual, weekly, or on flake/hosts changes)
 ```
+
+## Dev shell and git hooks
+
+`.envrc` is `use flake`, so every `cd` into this repo evaluates
+`devShells.default`. nix-direnv caches that, but the cache is keyed on
+`flake.nix`/`flake.lock` — and `flake.lock` moves every week on its own, via
+`update-flake.yml`. Anything the devShell mentions therefore gets re-evaluated,
+from scratch, at an interactive prompt, roughly weekly.
+
+Measured on x86_64-linux with a warm store (`nix eval --no-eval-cache`, one run
+per line so the figures are comparable — so this is evaluation alone):
+
+| evaluated | time |
+| --- | --- |
+| `packages.tmux-helper` — the bare flake-load floor | ~8 s |
+| `packages.lint-tools` — the linters alone | ~31 s |
+| the old `devShells.default` — git-hooks **and** the linters | ~50 s |
+| this `devShells.default` | ~7 s |
+
+Read the excess over the floor: the linters are ~22 s and git-hooks ~19 s, and
+they overlap. Neither one is *the* cost, so removing only one would have left
+about half the problem. `devShells.default` therefore contains **neither**. It
+is a bare `mkShell` whose shellHook is plain shell against the filesystem, and
+the expensive work lives in an app:
+
+```bash
+nix run .#install-hooks     # installs .git/hooks/* and the linter bundle
+```
+
+The hooks are still installed automatically — the shellHook runs that app for
+you. What changed is *when*:
+
+- **No working `pre-commit` hook** (fresh clone, or a `nix-collect-garbage`
+  left it dangling): the shellHook installs it in the **foreground** and the
+  prompt waits. A shell that returned fast while leaving commits unlinted would
+  be a worse bug than a slow shell.
+- **Hooks work but were built against an older `flake.lock`**: refreshed in the
+  **background**, lock-guarded so repeated `cd`s cannot stack up copies.
+
+`nix run .#install-hooks` also installs `post-merge`, `post-checkout` and
+`post-rewrite` hooks that refill the direnv cache in the background, so a
+`git pull` that moves the lock does not leave the refill to ambush your next
+`cd`. They never delay the git command and print nothing when they work.
+
+The linters are not on `PATH` directly. `install-hooks` materialises
+`packages.lint-tools` at `.direnv/lint-tools` (with a GC root) and the
+shellHook puts `.direnv/lint-tools/bin` on `PATH`, which is what keeps
+`statix`/`alejandra` typeable without the devShell having to evaluate them.
+
+Net effect on the number you actually feel — full cold `direnv export bash`,
+interleaved against a worktree of `master` on the same machine, with nix's eval
+cache cleared before each run (a real `flake.lock` bump changes the lock's
+*content*, which gives the flake a new identity and a cold eval cache;
+`touch`ing the lock does not, and measurements that only `touch` it will
+cheerfully report 6 s for the unchanged shell):
+
+| | cold | warm |
+| --- | --- | --- |
+| `master` | 54.8 s, 57.9 s | ~0.5 s |
+| this branch | 12.2 s, 10.2 s | ~0.7 s |
+
+This was not a substituter miss: `nix build --dry-run` against an empty store
+says the old devShell needs 107 paths fetched (233 MiB) and 2 derivations built
+locally, and this one 45 paths (122 MiB) and 1. The caches have it; the cost
+was evaluation plus download, so adding caching would not have helped.
+
+### These hooks belong to the clone, not to the branch
+
+`.git/hooks` is shared by every worktree. Installing from any one of them
+changes how `git` behaves in **all** of them, including worktrees checked out
+at commits that predate this arrangement. That is deliberate and safe, because
+nothing in the hooks is branch-specific:
+
+- The warm hooks read `.envrc` and `flake.nix` from whichever worktree fired
+  them, so a worktree on an older commit simply gets its own devShell warmed.
+  Nothing assumes the split described above.
+- They exit 0 having done nothing when there is no `.envrc`, when the directory
+  was never `direnv allow`ed, when `nix` is not on `PATH`, and when the
+  checkout did not touch `flake.nix`, `flake.lock` or `.envrc`.
+- They never delay the git command and print nothing on success.
+
+They are GC-rooted from `.git/hooks/.hm-gcroots/` — the same shared directory
+as the hooks themselves. A root under one worktree's `.direnv` would be
+shorter-lived than the hook it protects (`direnv prune` or `git worktree
+remove` strands it), and a collected script makes every `git checkout` in every
+worktree print an exec error. Belt and braces: the hooks test the path before
+`exec`ing it, and the devShell notices a collected root and reinstalls.
+
+To back the whole thing out — the `pre-commit` hook is left alone, since it
+predates this and removing it would stop linting commits:
+
+```bash
+nix run .#install-hooks -- --uninstall
+```
+
+If any of this looks wrong, `nix run .#install-hooks` is always safe to re-run;
+the background job's output is in `.git/hooks/.hm-install-hooks.log`. Four
+`nix flake check` guards keep the arrangement honest — `devshell-stays-light`,
+`install-hooks-installs-hooks`, `background-jobs-close-fds` and
+`devshell-hook-lint`.
 
 ## Supported Systems
 
