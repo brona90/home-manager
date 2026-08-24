@@ -210,12 +210,45 @@ open PDF buffers it produces."
          :desc "Switch buffer"  "b" #'claude-code-switch-to-buffer
          :desc "Menu"           "m" #'claude-code-transient))
   :config
-  ;; claude-code-run and friends call projectile-project-root, which returns
-  ;; nil from non-project buffers (*scratch*, etc.), causing "stringp, nil".
-  ;; Advise normalize-project-root (the single choke-point in claude-code-core)
-  ;; to fall back to default-directory.
-  (define-advice claude-code-normalize-project-root (:filter-return (root) fallback-dir)
-    (or root (directory-file-name default-directory)))
+  ;; claude-code-run and friends call `projectile-project-root', which returns
+  ;; nil from non-project buffers (*scratch*, etc.).  Advise
+  ;; `claude-code-normalize-project-root' -- the single choke-point in
+  ;; claude-code-core.el, which `claude-code-run', `claude-code-switch-to-buffer'
+  ;; and `claude-code-buffer-name' all go through -- to fall back to
+  ;; `default-directory'.
+  ;;
+  ;; THE COMBINATOR IS THE FIX; IT IS NOT COSMETIC.  This was written as
+  ;; `:filter-return' against a claude-code that RETURNED nil outside a project,
+  ;; giving "(wrong-type-argument stringp nil)" downstream.  Upstream
+  ;; (claude-code-core.el, packaged 20260812.1216) now reads
+  ;;
+  ;;   (if project-root (directory-file-name project-root)
+  ;;     (user-error "Current directory is not part of a project"))
+  ;;
+  ;; and a `:filter-return' advice NEVER RUNS WHEN THE FUNCTION SIGNALS -- there
+  ;; is no return value to filter.  The advice was therefore dead code guarding
+  ;; nothing, and `SPC l l' from *scratch* has been raising that user-error ever
+  ;; since upstream changed.
+  ;;
+  ;; `:filter-args' is the right answer rather than `:around' because the fault
+  ;; is in the ARGUMENT, not in the call: substituting `default-directory' for a
+  ;; nil PROJECT-ROOT sends the unmodified upstream function down its own success
+  ;; branch, so the guard still fires for every other caller and upstream keeps
+  ;; doing the trailing-slash normalisation.  An `:around' would have to
+  ;; re-implement or condition-case that body, and would silently swallow a real
+  ;; `user-error' from a future upstream.  Passing `default-directory' with its
+  ;; trailing slash intact is deliberate: the advised function calls
+  ;; `directory-file-name' on it.
+  ;;
+  ;; Kept deliberately identical to the vanilla port in
+  ;; modules/emacs/vanilla/config/lisp/my-claude.el -- same package, same
+  ;; upstream function; the two must not drift.
+  (define-advice claude-code-normalize-project-root
+      (:filter-args (args) fallback-dir)
+    "Fall back to `default-directory' when ARGS names no project root.
+`projectile-project-root' returns nil in *scratch* and in any other buffer
+outside a project."
+    (list (or (car args) default-directory)))
   ;; Open Claude Code in bottom third of the frame.
   ;; Doom's popup manager overrides display-buffer-alist, so use set-popup-rule!
   (set-popup-rule! "^\\*claude:"
