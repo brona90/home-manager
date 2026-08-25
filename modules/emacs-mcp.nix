@@ -7,17 +7,19 @@
   cfg = config.my.emacsMcp;
 
   # emacsclient must come from the same Emacs the daemon on the DEFAULT
-  # socket runs -- whichever flavor `my.emacs.flavor` names, Doom today.
-  # Pulling in a bare pkgs.emacs would drag a second full Emacs into the
-  # closure and risk version skew vs the daemon.  Fall back to pkgs.emacs
-  # only when the emacs module is disabled.
+  # socket runs.  Pulling in a bare pkgs.emacs would drag a second full Emacs
+  # into the closure and risk version skew vs the daemon.  Fall back to
+  # pkgs.emacs only when the emacs module is disabled.
+  #
+  # This used to read `my.emacs.primaryPackage`, which existed to resolve a
+  # two-flavour `my.emacs.flavor` enum; there is one Emacs now and `package`
+  # IS the one on the default socket.  If a second Emacs is ever added back,
+  # this is one of the three call sites that has to follow the primary one --
+  # the others are modules/emacs-doctor/default.nix and modules/orrery-mcp.nix
+  # (which deliberately does not).
   emacsPackage =
     if config.my.emacs.enable
-    # primaryPackage, NOT package: `package` is always Doom. Reading it here
-    # would keep wrapping Doom's emacsclient after my.emacs.flavor flips to
-    # "vanilla", while the DEFAULT socket is served by the vanilla daemon --
-    # a version-skew failure with a confusing error.
-    then config.my.emacs.primaryPackage
+    then config.my.emacs.package
     else pkgs.emacs;
 
   # Wrap the Python MCP server as a derivation on $PATH.

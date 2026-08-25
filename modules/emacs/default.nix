@@ -6,212 +6,108 @@
 }: let
   cfg = config.my.emacs;
 
-  # The flavor that is NOT the daily driver, or null. Deliberately symmetric:
-  # when `flavor` flips to "vanilla", Doom does not disappear -- it becomes the
-  # one on a named socket. A bad day is then `emacsclient -s doom`, not a
-  # rollback.
-  secondary =
-    if !cfg.vanilla.enable
-    then null
-    else if cfg.flavor == "doom"
-    then {
-      name = "vanilla";
-      inherit (cfg.vanilla) serverName package;
-      # Vanilla must be told where its config is; Doom bakes --init-directory
-      # into its own wrapper and would ignore this.
-      extraArgs = ["--init-directory=${config.xdg.configHome}/emacs"];
-    }
-    else {
-      name = "doom";
-      serverName = "doom";
-      inherit (cfg) package;
-      extraArgs = [];
-    };
-
-  secondaryName =
-    if secondary != null
-    then secondary.name
-    else "unused";
-
-  # Bring up a daemon if none is answering. On Linux the daemon is owned by a
-  # systemd unit, so we start *that* rather than spawning a raw `emacs
-  # --daemon`: two daemons racing for one socket deadlocks the unit into a
-  # crash loop (the standalone one squats the socket, `--fg-daemon` can never
-  # bind it, Restart=on-failure relaunches forever, pegging a core).
+  # ONE EMACS. This module used to carry a `flavor` enum ("doom" | "vanilla"),
+  # a `primaryPackage` that resolved it, a second hand-rolled systemd unit and
+  # a second pair of client wrappers, so that the hand-built config could run
+  # beside Doom on a named socket until it earned the default one. It did, and
+  # Doom is gone -- so all of that went with it rather than being left as an
+  # enum with one value. What the two-flavour period actually taught is kept
+  # below, in the places it applies to: the ExecStartPre that must name ONE
+  # FILE, and the explicit EMACS_SOCKET_NAME on the daemon unit.
   #
-  # NEW HAZARD with two flavors: the raw fallback MUST carry `=<serverName>`.
-  # A bare `emacs --daemon` from the vanilla wrapper would squat the PRIMARY's
-  # socket and reproduce that same deadlock against the daily driver.
-  mkEnsureDaemon = {
-    package,
-    unit,
-    serverName ? null,
-  }: let
-    s = lib.optionalString (serverName != null) " -s ${serverName}";
-    d = lib.optionalString (serverName != null) "=${serverName}";
-  in ''
-    if ! ${package}/bin/emacsclient${s} -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
-      echo "Starting Emacs daemon (${unit})..."
+  # Bringing a second Emacs back is a real change, not a flag flip, and that is
+  # the intended trade: `git log -- modules/emacs` has the whole design if it
+  # is ever wanted again.
+
+  # Bring up the daemon if none is answering. On Linux the daemon is owned by a
+  # systemd unit, so start *that* rather than spawning a raw `emacs --daemon`:
+  # two daemons racing for one socket deadlock the unit into a crash loop (the
+  # standalone one squats the socket, `--fg-daemon` can never bind it,
+  # Restart=on-failure relaunches forever, pegging a core). The raw call is the
+  # fallback for when systemd is not there at all, i.e. darwin.
+  ensureDaemon = ''
+    if ! ${cfg.package}/bin/emacsclient -n -e "(if (daemonp) t)" >/dev/null 2>&1; then
+      echo "Starting Emacs daemon..."
       ${
       if pkgs.stdenv.hostPlatform.isLinux
-      then "systemctl --user start ${unit} 2>/dev/null || ${package}/bin/emacs --daemon${d} || true"
-      else "${package}/bin/emacs --daemon${d} || true"
+      then "systemctl --user start emacs 2>/dev/null || ${cfg.package}/bin/emacs --daemon || true"
+      else "${cfg.package}/bin/emacs --daemon || true"
     }
       for _ in $(seq 1 100); do
-        ${package}/bin/emacsclient${s} -n -e t >/dev/null 2>&1 && break
+        ${cfg.package}/bin/emacsclient -n -e t >/dev/null 2>&1 && break
         sleep 0.1
       done
     fi
   '';
 
-  # A GUI-or-TTY wrapper plus a TTY-only wrapper, for one flavor.
-  mkClients = {
-    guiName,
-    ttyName,
-    package,
-    unit,
-    serverName ? null,
-  }: let
-    ensure = mkEnsureDaemon {inherit package unit serverName;};
-    s = lib.optionalString (serverName != null) "-s ${serverName}";
-  in [
+  # A GUI-or-TTY wrapper plus a TTY-only wrapper.
+  clients = [
     (pkgs.writeShellApplication {
-      name = guiName;
+      name = "em";
       text = ''
-        ${ensure}
+        ${ensureDaemon}
         if [ -t 0 ] && [ -z "''${DISPLAY:-}" ] && [ -z "''${WAYLAND_DISPLAY:-}" ]; then
-          exec ${package}/bin/emacsclient ${s} -t "$@"
+          exec ${cfg.package}/bin/emacsclient -t "$@"
         else
-          exec ${package}/bin/emacsclient ${s} -c "$@"
+          exec ${cfg.package}/bin/emacsclient -c "$@"
         fi
       '';
     })
     (pkgs.writeShellApplication {
-      name = ttyName;
+      name = "emt";
       text = ''
-        ${ensure}
-        exec ${package}/bin/emacsclient ${s} -t "$@"
+        ${ensureDaemon}
+        exec ${cfg.package}/bin/emacsclient -t "$@"
       '';
     })
   ];
-
-  primaryClients = mkClients {
-    guiName = "em";
-    ttyName = "emt";
-    package = cfg.primaryPackage;
-    unit = "emacs";
-  };
-
-  # Named for the flavor rather than "experimental": emv/emvt for vanilla,
-  # emd/emdt for doom. Same idea as `nix run .#tmux-experimental` -- a separate
-  # entry point that never shadows the daily driver's `em`/`emt`.
-  secondaryClients = lib.optionals (secondary != null) (mkClients {
-    guiName = "em${builtins.substring 0 1 secondaryName}";
-    ttyName = "em${builtins.substring 0 1 secondaryName}t";
-    inherit (secondary) package serverName;
-    unit = "emacs-${secondaryName}";
-  });
 in {
   options.my.emacs = {
-    enable = lib.mkEnableOption "Emacs (Doom and/or the hand-built vanilla config)";
-
-    flavor = lib.mkOption {
-      type = lib.types.enum ["doom" "vanilla"];
-      default = "doom";
-      description = ''
-        Which build is the daily driver. The primary flavor owns the DEFAULT
-        server socket (%t/emacs/server), so EDITOR, `em`, emacs-doctor and the
-        emacs MCP server all follow it with no further configuration. The other
-        flavor, when enabled, always runs on a named socket.
-
-        Graduation is this one word, and so is rollback: the two keep entirely
-        separate state (~/.local/share/nix-doom versus ~/.config/emacs plus
-        ~/.cache/emacs), so flipping back changes nothing else.
-      '';
-    };
+    enable = lib.mkEnableOption "Emacs (the hand-built config in modules/emacs/vanilla)";
 
     package = lib.mkOption {
       type = lib.types.package;
-      description = "The Doom Emacs package (built externally with nix-doom-emacs-unstraightened).";
-    };
-
-    primaryPackage = lib.mkOption {
-      type = lib.types.package;
-      readOnly = true;
-      default =
-        if cfg.flavor == "doom"
-        then cfg.package
-        else cfg.vanilla.package;
-      defaultText = lib.literalExpression ''if flavor == "doom" then package else vanilla.package'';
       description = ''
-        Resolved daily-driver package. Consumers that need emacsclient to reach
-        the daemon on the DEFAULT socket -- modules/emacs-mcp.nix and
-        modules/emacs-doctor/default.nix -- must read this rather than
-        `package`, or they will talk to the wrong Emacs the moment `flavor`
-        flips.
+        The Emacs package, built by modules/emacs/vanilla/package.nix. It owns
+        the DEFAULT server socket (%t/emacs/server), so EDITOR, `em`,
+        emacs-doctor and the emacs MCP server all reach it with no further
+        configuration.
       '';
     };
 
-    vanilla = {
-      enable = lib.mkEnableOption ''
-        the hand-built vanilla Emacs as a SECOND daemon alongside the daily
-        driver, on its own server socket. Mirrors the tmux-experimental
-        precedent: `tmux -L experimental` there, `emacsclient -s vanilla` here
+    manageConfig = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Link the elisp tree into $XDG_CONFIG_HOME/emacs. Set false to hand that
+        directory to a working copy during heavy iteration, so editing init.el
+        does not need an `hms` per keystroke.
       '';
-
-      package = lib.mkOption {
-        type = lib.types.package;
-        description = "Vanilla Emacs (modules/emacs/vanilla/package.nix).";
-      };
-
-      serverName = lib.mkOption {
-        type = lib.types.str;
-        default = "vanilla";
-        description = ''
-          `server-name` for the non-primary daemon, i.e. the argument to
-          `emacsclient -s`. Resolves to $XDG_RUNTIME_DIR/emacs/<name> -- the
-          same %t/emacs directory the primary's socket lives in, which is why
-          both units' ExecStartPre name exactly one file and never remove the
-          directory.
-        '';
-      };
-
-      manageConfig = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = ''
-          Link the elisp tree into $XDG_CONFIG_HOME/emacs. Set false to hand
-          that directory to a working copy during heavy iteration, so editing
-          init.el does not need an `hms` per keystroke.
-        '';
-      };
     };
 
     daemon.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Enable the primary Emacs daemon via a systemd user service";
+      description = "Enable the Emacs daemon via a systemd user service";
     };
   };
 
   config = lib.mkIf cfg.enable {
     home.packages =
       [
-        # EXACTLY ONE Emacs package may appear here. home.path is
-        # pkgs.buildEnv with ignoreCollisions unset, so listing both flavors is
-        # a hard build failure on bin/emacs, bin/emacsclient, bin/ctags and
-        # emacs.desktop -- not a warning. The secondary is reachable only via
-        # the wrappers below and its systemd unit, both of which reference it
-        # by absolute store path.
-        cfg.primaryPackage
+        # EXACTLY ONE Emacs package may appear here. home.path is pkgs.buildEnv
+        # with ignoreCollisions unset, so a second one is a hard build failure
+        # on bin/emacs, bin/emacsclient, bin/ctags and emacs.desktop -- not a
+        # warning. That is worth knowing before adding any Emacs-adjacent
+        # package that wraps its own.
+        cfg.package
         pkgs.ispell
         pkgs.typescript-language-server
         pkgs.pyright
         pkgs.gopls
         pkgs.jdt-language-server
       ]
-      ++ primaryClients
-      ++ secondaryClients
+      ++ clients
       # sbcl is gated to Linux: the ECL bootstrap segfaults on macOS
       # (upstream nixpkgs issue with SBCL 2.6.3). Installed via Homebrew
       # on Darwin instead (see home/darwin.nix).
@@ -225,18 +121,18 @@ in {
 
     services.emacs = lib.mkIf cfg.daemon.enable {
       enable = true;
-      package = cfg.primaryPackage;
+      inherit (cfg) package;
       # true = WantedBy default.target (any user session, works in headless WSL).
       # "graphical" = WantedBy graphical-session.target (display server required).
       startWithUserSession =
         if pkgs.stdenv.hostPlatform.isLinux
         then true
         else "graphical";
-      # home-manager appends extraOptions after --fg-daemon. Only needed when
-      # vanilla is the primary; Doom's wrapper supplies its own init directory.
-      extraOptions =
-        lib.optionals (cfg.flavor == "vanilla")
-        ["--init-directory=${config.xdg.configHome}/emacs"];
+      # home-manager appends extraOptions after --fg-daemon. Required: this
+      # Emacs keeps its config in $XDG_CONFIG_HOME/emacs and bakes no init
+      # directory into its wrapper, so without this the daemon starts against
+      # ~/.emacs.d and looks like a config that silently reverted.
+      extraOptions = ["--init-directory=${config.xdg.configHome}/emacs"];
     };
 
     # Harden the systemd-managed daemon against the socket-squat deadlock:
@@ -246,9 +142,11 @@ in {
     #     60s it stops in `failed` state (visible) instead of relaunching every
     #     ~100ms and burning a CPU core indefinitely.
     #
-    # CRITICAL NOW THAT TWO DAEMONS SHARE %t/emacs: this removes ONE FILE. It
-    # must never become `rm -rf %t/emacs`, which would delete the other
-    # flavor's live socket and drop IT into exactly this crash loop.
+    # THIS REMOVES ONE FILE and must stay that way. It was written when two
+    # daemons shared %t/emacs and `rm -rf %t/emacs` would have deleted the
+    # other one's live socket; there is one daemon again, but %t/emacs is also
+    # where emacsclient's own per-frame state lands, and a recursive remove in
+    # an ExecStartPre is never the smaller change it looks like.
     systemd.user.services.emacs = lib.mkIf (cfg.daemon.enable && pkgs.stdenv.hostPlatform.isLinux) {
       Service = {
         ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/server";
@@ -259,18 +157,18 @@ in {
         # modules/claude-code.nix runs its hooks as
         #   emacsclient ''${EMACS_SOCKET_NAME:+-s "$EMACS_SOCKET_NAME"} --eval ...
         # so with the variable UNSET a hook reaches whichever emacsclient is on
-        # PATH -- `primaryPackage', talking to the default socket. The right
-        # answer, arrived at by accident.
+        # PATH, talking to the default socket. The right answer, arrived at by
+        # accident.
         #
         # It stops being right the moment anything puts EMACS_SOCKET_NAME into
         # the systemd USER MANAGER's environment, because units inherit that.
         # One `systemctl --user import-environment' from a shell where the user
-        # had exported it to reach the second daemon by hand is enough, and it
-        # persists until the manager is restarted. The primary would then hand
-        # every Claude hook a socket name pointing at the OTHER flavor, and the
-        # diff would open in the wrong Emacs with no error anywhere. A
-        # unit-level `Environment=' overrides the inherited environment, so
-        # this makes the correct answer a guarantee rather than a coincidence.
+        # had exported it to reach some other Emacs by hand is enough, and it
+        # persists until the manager is restarted. Every Claude hook would then
+        # be handed a socket name pointing somewhere else, and the diff would
+        # open in the wrong place with no error anywhere. A unit-level
+        # `Environment=' overrides the inherited environment, so this makes the
+        # correct answer a guarantee rather than a coincidence.
         #
         # %t is $XDG_RUNTIME_DIR, expanded by systemd when the unit is loaded,
         # so the value is an ABSOLUTE path and does not depend on the hook
@@ -285,70 +183,26 @@ in {
       };
     };
 
-    # The non-primary daemon. Hand-rolled because home-manager's services.emacs
-    # is a singleton: it hardcodes systemd.user.services.emacs and the socket
-    # path %t/emacs/server, with no server-name option.
-    #
-    # LOAD-BEARING ASSUMPTION: home-manager makes %t/emacs read-only while the
-    # primary runs (ExecStartPost chmod -w) ONLY when `needsSocketWorkaround`,
-    # which is `versionOlder emacsVersion "28" && socketActivation.enable`.
-    # Emacs here is 30+, so the directory stays writable and this daemon can
-    # create its socket beside the primary's. Turning on socketActivation with
-    # an Emacs older than 28 would silently break that.
-    systemd.user.services."emacs-${secondaryName}" = lib.mkIf (secondary != null && cfg.daemon.enable && pkgs.stdenv.hostPlatform.isLinux) {
-      Unit = {
-        Description = "Emacs daemon (${secondaryName} flavor, socket '${secondary.serverName}')";
-        Documentation = "info:emacs man:emacs(1)";
-        # Deliberately the OPPOSITE of home-manager's primary unit, which
-        # sets X-RestartIfChanged = false so `hms` never eats the daily
-        # driver's unsaved buffers. This flavor is the one under active
-        # development: picking up a new config immediately is the point, and
-        # there are no precious buffers in it yet. Flip to false at
-        # graduation.
-        X-RestartIfChanged = true;
-        StartLimitIntervalSec = 60;
-        StartLimitBurst = 3;
-      };
-      Service = {
-        Type = "notify";
-        # `exec` so the sd_notify sender is MAINPID. home-manager's own unit
-        # omits it and gets away with it because sh -c execs a single
-        # command; extraArgs make this a multi-token command line, so being
-        # explicit is what stops a 90s TimeoutStartSec hang on every start.
-        ExecStart = ''${pkgs.runtimeShell} -l -c "exec ${secondary.package}/bin/emacs --fg-daemon=${secondary.serverName} ${lib.escapeShellArgs secondary.extraArgs}"'';
-        # ONE FILE -- see the primary unit's comment.
-        ExecStartPre = "-${pkgs.coreutils}/bin/rm -f %t/emacs/${secondary.serverName}";
-        # THE HALF THAT IS NOT OPTIONAL. Emacs never exports EMACS_SOCKET_NAME
-        # to its subprocesses -- the variable is read by the emacsclient BINARY
-        # and by nothing inside Emacs -- so a Claude session running in a vterm
-        # inside THIS daemon inherits it only because the unit puts it there.
-        # Without this line every claude-code.nix hook fired from this flavor
-        # runs a bare `emacsclient', resolves to the daily driver's socket, and
-        # shows the diff in the wrong Emacs.
-        #
-        # Same absolute-%t form as the primary, naming the same file the
-        # ExecStartPre above deletes.
-        Environment = ["EMACS_SOCKET_NAME=%t/emacs/${secondary.serverName}"];
-        SuccessExitStatus = 15; # Emacs exits 15 on SIGTERM
-        Restart = "on-failure";
-        RestartSec = 5;
-      };
-      Install.WantedBy = ["default.target"];
-    };
-
     # NOTE: `recursive = true` is load-bearing. Without it home-manager makes
     # ~/.config/emacs a single symlink INTO THE STORE, and Emacs can then never
     # create custom.el, transient/, eln-cache/ or its server directory inside
     # user-emacs-directory. With it, real directories are created and each file
     # is linked individually, so the tree stays writable while every .el stays
     # store-managed and reproducible.
-    xdg.configFile."emacs" = lib.mkIf (cfg.vanilla.enable && cfg.vanilla.manageConfig) {
-      source = cfg.vanilla.package.configDir;
+    #
+    # NOT gated on Linux. It was, indirectly, for the whole trial period --
+    # the old gate was `vanilla.enable`, which meant "run a SECOND daemon" and
+    # was false on darwin because home-manager drops user units there
+    # silently. This is the only Emacs now, and on darwin it is started by
+    # `services.emacs` through a launchd agent that passes the same
+    # --init-directory, so the config has to be on disk there too.
+    xdg.configFile."emacs" = lib.mkIf cfg.manageConfig {
+      source = cfg.package.configDir;
       recursive = true;
     };
 
-    # Only the primary package is on PATH, so a bare `emacsclient` here
-    # unambiguously resolves to the daily driver.
+    # Only this Emacs is on PATH, so a bare `emacsclient` here unambiguously
+    # resolves to it.
     home.sessionVariables = {
       EDITOR =
         if cfg.daemon.enable

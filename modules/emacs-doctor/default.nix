@@ -7,16 +7,15 @@
   cfg = config.my.emacsDoctor;
 
   # Resolve emacsclient from the SAME Emacs the daemon on the DEFAULT socket
-  # runs -- whichever flavor `my.emacs.flavor` names, Doom today. Version skew
-  # vs that daemon would break the emacsclient eval calls; fall back to
-  # pkgs.emacs only when the emacs module is disabled.
+  # runs. Version skew vs that daemon would break the emacsclient eval calls;
+  # fall back to pkgs.emacs only when the emacs module is disabled.
+  #
+  # This used to read `my.emacs.primaryPackage`, which existed to resolve a
+  # two-flavour `my.emacs.flavor` enum; there is one Emacs now and `package`
+  # IS the one on the default socket.
   emacsPackage =
     if config.my.emacs.enable
-    # primaryPackage, NOT package: `package` is always Doom. Reading it here
-    # would keep wrapping Doom's emacsclient after my.emacs.flavor flips to
-    # "vanilla", while the DEFAULT socket is served by the vanilla daemon --
-    # a version-skew failure with a confusing error.
-    then config.my.emacs.primaryPackage
+    then config.my.emacs.package
     else pkgs.emacs;
 
   raw = pkgs.callPackage ./package.nix {};
