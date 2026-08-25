@@ -6,8 +6,7 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 
 | Tool | Description |
 |------|-------------|
-| [Doom Emacs](https://github.com/doomemacs/doomemacs) | **Current daily driver.** Emacs distribution with sensible defaults via [nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened). Reached as `em` / `emt`. |
-| [Vanilla Emacs](modules/emacs/vanilla) | Hand-built Emacs 30 config (no distribution) running as a **second daemon** on socket `vanilla`, Linux only — `emv` / `emvt`. On trial to replace Doom; `my.emacs.flavor` in `flake.nix` swaps which one is primary. See [GRADUATION.md](modules/emacs/vanilla/GRADUATION.md). |
+| [Emacs](modules/emacs/vanilla) | Hand-built Emacs 30 config — no distribution, an explicit Nix package list, evil + an `SPC` leader, org/org-gcal, Claude Code integration, LilyPond. Reached as `em` / `emt`. Replaced Doom Emacs; see [DESIGN.md](modules/emacs/vanilla/DESIGN.md) for what it does and why, and [RETIRING-DOOM.md](modules/emacs/RETIRING-DOOM.md) for the leftovers a human has to clear. |
 | [LazyVim](https://www.lazyvim.org/) | Neovim setup with lazy.nvim plugin manager |
 | [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 38 keybinds, 25 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~2,100 LOC). |
 | [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `zsh-fast-syntax-highlighting`, `zsh-history-substring-search` |
@@ -84,10 +83,9 @@ This repo is designed to be easily forked:
 |---------|-------------|
 | `hms`   | Home Manager switch (rebuild config) |
 | `nrs`   | NixOS rebuild switch (WSL host only — defined in `home/hosts/wsl.nix`) |
-| `em`    | Emacs client (GUI frame, TTY when there is no display) for the **primary** flavour — Doom today, whichever `my.emacs.flavor` names. Starts the daemon if it is not answering. |
+| `em`    | Emacs client (GUI frame, TTY when there is no display). Starts the daemon if it is not answering. |
 | `emt`   | Same, always a terminal frame |
-| `emv` / `emvt` | The same pair for the **second** flavour, the vanilla daemon on socket `vanilla` (`emacsclient -s vanilla`) — Linux only. Named for the flavour, so after graduation Doom is `emd` / `emdt`. |
-| `emacs-doctor` | Inspect/reset/monitor the **primary** Emacs daemon + WSL health (`status`, `reset`, `gui-probe`, `watch`) — Linux only |
+| `emacs-doctor` | Inspect/reset/monitor the Emacs daemon + WSL health (`status`, `reset`, `gui-probe`, `watch`) — Linux only |
 | `lvim`  | LazyVim |
 | `dev-disk` | Show disk usage for Nix, Docker, mise, etc. |
 | `dev-clean` | Interactive cleanup of all dev tools |
@@ -196,17 +194,19 @@ This repo is designed to be easily forked:
 │   ├── zscaler-bypass.nix # Route-only Zscaler bypass (allowlisted CIDRs)
 │   ├── scripts/
 │   │   └── gpg-win-bridge.py  # WSL→Gpg4win Assuan proxy
-│   ├── emacs/             # Emacs — two flavours, one primary
-│   │   ├── default.nix    # flavor switch, both daemons, both client wrappers
-│   │   ├── doom.d/        # Doom config: init.el / packages.el / config.el
+│   ├── emacs/             # Emacs
+│   │   ├── default.nix    # the package, the daemon unit, em/emt
+│   │   ├── RETIRING-DOOM.md  # leftovers a human must clear after the switch
 │   │   └── vanilla/       # Hand-built Emacs 30: package.nix (explicit package
 │   │                      #   list) + config/{early-init,init}.el, config/lisp/*.el
+│   │                      #   + DESIGN.md, verify.sh/verify.el (the gate)
 │   ├── vim/               # LazyVim
-│   ├── tmux/              # helper-driven tmux conf + 10 theme palettes
+│   ├── tmux/              # helper-driven tmux conf + 25 theme palettes (themes.nix)
 │   └── tmux-helper/       # Go helper binary (status, clipboard, theme, navigate, ...)
 ├── secrets/               # Encrypted secrets (safe to commit)
 │   └── secrets.yaml
 ├── lib/                   # Helper functions
+│   ├── lint-tools.nix     # the pinned linter set (.#lint-tools) every gate uses
 │   ├── docker-image.nix   # Docker image builder
 │   ├── docker-test-app.nix
 │   ├── dev-shell.nix      # devShell + hook bootstrap (see "Dev shell and git hooks")
@@ -214,10 +214,14 @@ This repo is designed to be easily forked:
 │   ├── install-hooks.sh   # body of `nix run .#install-hooks`
 │   ├── warm-direnv.sh     # post-merge/checkout/rewrite background cache warm
 │   └── pre-commit-hooks.nix  # the hook set handed to git-hooks.nix
-└── .github/workflows/     # CI/CD
-    ├── ci.yml             # Main pipeline
-    ├── update-flake.yml   # Weekly flake.lock update PRs
-    └── validate.yml       # NixOS/Darwin validation (manual, weekly, or on flake/hosts changes)
+└── .github/
+    ├── workflows/         # CI/CD
+    │   ├── ci.yml             # Main pipeline
+    │   ├── update-flake.yml   # Weekly flake.lock update PRs
+    │   └── validate.yml       # NixOS/Darwin validation (manual, weekly, or on flake/hosts changes)
+    └── actions/
+        └── nix-build-retry/   # composite action: retry a build set on transient
+                               #   network failures (eval-darwin, build-home)
 ```
 
 ## Dev shell and git hooks
@@ -369,122 +373,140 @@ git pull
 hms
 ```
 
-## Emacs — two flavours
+## Emacs
 
-Two Emacs builds are configured and **exactly one of them is the daily driver**.
-Doom, built reproducibly with
-[nix-doom-emacs-unstraightened](https://github.com/marienz/nix-doom-emacs-unstraightened),
-holds that slot today. A hand-built vanilla Emacs 30 config runs beside it as a
-second daemon, on trial to take it over
-(see [`modules/emacs/vanilla/GRADUATION.md`](modules/emacs/vanilla/GRADUATION.md)).
+One Emacs, hand-built: `pkgs.emacs` 30.2 on every platform, an explicit package
+list in Nix, and a config that is a set of `.el` files rather than a
+distribution. It replaced Doom Emacs after running beside it on a second socket
+for four gated phases. The reasoning — every place it deliberately does
+something other than the obvious thing — is in
+[`modules/emacs/vanilla/DESIGN.md`](modules/emacs/vanilla/DESIGN.md).
 
-| | Doom | Vanilla |
-|---|---|---|
-| Today | **primary — the daily driver** | second daemon, Linux only |
-| Built by | `pkgs.emacsWithDoom` (flake input) | `modules/emacs/vanilla/package.nix` (`pkgs.emacs` 30.2) |
-| Config lives in | `modules/emacs/doom.d/` | `modules/emacs/vanilla/config/` → linked to `~/.config/emacs` |
-| systemd user unit | `emacs` | `emacs-vanilla` |
-| Server socket | `$XDG_RUNTIME_DIR/emacs/server` (**the default**) | `$XDG_RUNTIME_DIR/emacs/vanilla` |
-| Reach it | `em`, `emt`, bare `emacsclient` | `emv`, `emvt`, `emacsclient -s vanilla` |
-| Restarted by `hms`? | **No** (`X-RestartIfChanged = false`) | **Yes** (`X-RestartIfChanged = true`) |
-| Try it without `hms` | — | `nix run .#emacs-vanilla` |
+| | |
+|---|---|
+| Built by | `modules/emacs/vanilla/package.nix` (`pkgs.emacs` 30.2) |
+| Config lives in | `modules/emacs/vanilla/config/` → linked to `~/.config/emacs` |
+| systemd user unit | `emacs` (launchd agent on darwin) |
+| Server socket | `$XDG_RUNTIME_DIR/emacs/server` — **the default** |
+| Reach it | `em`, `emt`, bare `emacsclient` |
+| Restarted by `hms`? | **No** (`X-RestartIfChanged = false`) |
+| Try a build without `hms` | `nix run .#emacs-vanilla` |
+| Theme | `gruvbox-dark-medium` (upstream `gruvbox-theme`) |
+| Gate | `bash modules/emacs/vanilla/verify.sh` |
 
-### Which socket is authoritative
+Only one Emacs package is ever on `PATH`, and that is enforced rather than
+assumed: `home.path` is a `buildEnv` with collisions fatal, so a second one is a
+hard build failure on `bin/emacs`, `bin/emacsclient`, `bin/ctags` and
+`emacs.desktop`. A bare `emacs` or `emacsclient` is therefore unambiguous.
 
-`my.emacs.flavor` is an enum, `"doom"` or `"vanilla"`, and it is `"doom"` today.
-**The primary flavour owns the default server socket**
-(`$XDG_RUNTIME_DIR/emacs/server`); the other one always runs on a named socket.
+`my.emacs.package` is what every consumer reads — `em`/`emt`, `EDITOR`/`VISUAL`,
+`emacs-doctor`, the `emacs` MCP server, and `modules/orrery-mcp.nix` (which uses
+it only for `emacs -Q --batch`, where any Emacs would do, to avoid pulling a
+second one into the closure). There used to be a `my.emacs.flavor` enum and a
+read-only `primaryPackage` resolving it; both went with Doom rather than being
+left as an enum with one value. Each of those three call sites carries a note
+saying what it would have to do if a second Emacs ever came back.
 
-Everything that has to find "the" Emacs without being told which follows the
-primary automatically, because it reads the read-only `my.emacs.primaryPackage`
-(which tracks `flavor`) rather than `my.emacs.package` (which is always Doom):
-`em`/`emt`, `EDITOR`/`VISUAL`, `emacs-doctor`, and the `emacs` MCP server.
+### `EMACS_SOCKET_NAME`, and why the unit sets it
 
-Only one Emacs package is ever on `PATH` — `home.path` is a `buildEnv` with
-collisions fatal, so listing both would be a hard build failure on `bin/emacs`.
-A bare `emacs` or `emacsclient` is therefore unambiguously the primary; the
-secondary is reachable only through its wrappers and its unit, which name it by
-absolute store path.
+The `emacs` unit exports `EMACS_SOCKET_NAME=%t/emacs/server`. This is the
+mechanism by which a Claude Code session running in a vterm **inside** the
+daemon fires its hooks at **that** daemon: Emacs never exports the variable to
+its subprocesses — it is read by the `emacsclient` *binary* and by nothing
+inside Emacs — so a hook inherits it only because the unit put it there.
+`modules/claude-code.nix` runs its hooks as
 
-Graduation, and rollback, is one word in `flake.nix`:
-
-```nix
-my.emacs.flavor = "vanilla";   # vanilla takes the default socket
+```sh
+emacsclient ${EMACS_SOCKET_NAME:+-s "$EMACS_SOCKET_NAME"} --eval ...
 ```
 
-Doom does not disappear when that flips — it becomes the named-socket flavour,
-`emacsclient -s doom`, reachable as `emd`/`emdt`. The wrappers are named after
-the flavour, not after "experimental", precisely so this swap needs no renaming.
+With one Emacs the unset fallback is already correct — a bare `emacsclient`
+resolves to the only one on `PATH`. The line is set **explicitly anyway**, and
+that is the whole argument for it: the fallback stops being correct the moment
+anything puts `EMACS_SOCKET_NAME` into the systemd *user manager's*
+environment, because units inherit that. One `systemctl --user
+import-environment` from a shell where it had been exported by hand is enough,
+and it persists until the manager restarts. A unit-level `Environment=`
+overrides the inherited environment, so this makes the right answer a guarantee
+rather than a coincidence.
 
-One module is a deliberate exception: `modules/orrery-mcp.nix` reads
-`my.emacs.package` (Doom) on purpose. It only ever runs `emacs -Q --batch`,
-where any Emacs works, so it reuses an Emacs already in the closure rather than
-adding one. The consequence to know is that after graduation it keeps the Doom
-closure alive for batch use — which is why retiring Doom is a separate step.
+`%t` is `$XDG_RUNTIME_DIR`, expanded by systemd when the unit loads, so the
+value is an absolute path and does not depend on the hook process having
+`XDG_RUNTIME_DIR` set.
+
+### What it does
+
+Each row is one file under `config/lisp/`, and each has a section in
+[DESIGN.md](modules/emacs/vanilla/DESIGN.md) recording what it deliberately does
+**not** do — the omissions are the part worth reading, because every one of them
+is a decision rather than a gap.
+
+| | |
+|---|---|
+| **Editing** | evil-mode, an `SPC` leader with 14 named prefixes and ~150 named keys, which-key (built into Emacs 30), vertico/consult/marginalia/orderless/embark completion, magit + forge + diff-hl, vundo, avy, envrc, ws-butler |
+| **Languages** (`my-lang.el`) | 21 file types. Every one that has a tree-sitter mode in Emacs 30.2 gets a live parser; 17 grammars come from Nix as an explicit list, and five are deliberately absent because no `-ts-mode` exists for them (markdown, LaTeX, Common Lisp, elisp, Fortran are font-lock modes and a grammar would only grow the closure) |
+| **LSP** (`my-lang.el`) | eglot, hooked into **17** modes — exactly the ones whose server is actually installed. C, C++, CMake, Fortran and LaTeX get a working major mode and no eglot hook, because a hook with no server behind it logs a failed connection on every `find-file` and teaches you to ignore eglot errors. Three explicit contacts: `taplo` for TOML, a pin to `pyright-langserver` for Python (pyright *and* ruff are installed, so eglot otherwise picks one silently), and `nil` for `nix-ts-mode` |
+| **Claude Code** (`my-claude.el`, `claude-diff.el`) | the `claude-code` package on `SPC l` — four session keys and seven diff-review keys. `claude-diff.el` is the two-way review integration: a `modules/claude-code.nix` PermissionRequest hook `emacsclient --eval`s into the daemon and Emacs shows the proposed edit as a real diff you accept or reject. It is required **eagerly**, because `--eval` cannot autoload a function that has no stub |
+| **LilyPond** (`my-lilypond.el`) | `.ly`/`.ily` through a casing shim (2.26 renamed `LilyPond-mode` to `lilypond-mode`), a **flymake** backend for lilypond's diagnostics, and async build-on-save that re-renders the PDF. The backend is registered and flymake is deliberately left **off**, so the default is one lilypond process per save rather than two |
+| **Org** (`my-org.el`) | agenda, capture, refile, and org-gcal against three calendars with a 30-minute background fetch — see below |
+| **Popups** (`my-popups.el`) | `*Help*`, `*Apropos*`, `*eldoc*`, `*info*`, flymake diagnostics, `*Messages*`, `*Warnings*` and `*compilation*` in **one** bottom side window, toggled with `SPC ~`. ~60 lines of `window-sides-slots` and `display-buffer-alist` and **zero packages**; `popper` and `shackle` were both evaluated and rejected |
+| **Secrets** (`my-secrets.el`) | the org-gcal OAuth token store, and the argument for why it is a plain `0600` file |
+
+The gate exercises all of it in a **real daemon** — not `emacs --batch`, which
+does not load `init.el` at all. It walks the actual leader keymap and asserts
+every command it reaches is `fboundp`, opens one real sample file per language
+and checks the mode and parser, runs a real `lilypond` over four files and
+checks the diagnostics, and displays real buffers on the daemon's frame to
+measure the window rules. It has caught real bugs three phases running.
 
 ### Configuration Files
 
 | File | Purpose |
 |------|---------|
-| `modules/emacs/doom.d/init.el` | **Doom** — enable/disable Doom modules |
-| `modules/emacs/doom.d/packages.el` | **Doom** — declare additional packages |
-| `modules/emacs/doom.d/config.el` | **Doom** — personal configuration |
-| `modules/emacs/vanilla/package.nix` | **Vanilla** — the explicit package list, and the derivation that assembles the config |
-| `modules/emacs/vanilla/config/early-init.el` | **Vanilla** — pre-UI setup; redirects every writable path (`eln-cache`, `custom.el`, auto-save, `recentf`, `transient`) out of `user-emacs-directory` |
-| `modules/emacs/vanilla/config/init.el` | **Vanilla** — main configuration |
-| `modules/emacs/vanilla/config/lisp/*.el` | **Vanilla** — `my-bindings.el` (the `SPC` leader), `my-org.el`, `my-secrets.el` |
+| `modules/emacs/vanilla/package.nix` | The explicit package list, and the derivation that assembles the config |
+| `modules/emacs/vanilla/config/early-init.el` | Pre-UI setup; redirects every writable path (`eln-cache`, `custom.el`, auto-save, `recentf`, `transient`) out of `user-emacs-directory` |
+| `modules/emacs/vanilla/config/init.el` | Main configuration: UI, theme, completion, evil |
+| `modules/emacs/vanilla/config/lisp/*.el` | `my-bindings.el` (the `SPC` leader), `my-lang.el`, `my-org.el`, `my-claude.el`, `claude-diff.el`, `my-lilypond.el`, `my-popups.el`, `my-secrets.el` |
+| `lisp/my-nix-paths.el` | **Generated**, not a source file. `package.nix` writes it at build time with the store paths Emacs needs (lilypond and its site-lisp, and friends) and copies it into the config derivation. It is not in git and it is not under `config/lisp/` — do not go looking for it, and do not add it. Changing what it contains means editing the `nixPaths` binding in `package.nix` |
+| `modules/emacs/vanilla/verify.sh` + `verify.el` | The gate: lints by exit code, builds, then asks a **real daemon** |
+| `modules/emacs/vanilla/DESIGN.md` | Why each of the above does what it does |
 
 `~/.config/emacs/` is an **output**, not a source: `xdg.configFile."emacs"` links
-the vanilla tree there (`recursive = true`, so real directories are created and
-Emacs can still write `custom.el`, `eln-cache/` and friends while every `.el`
-stays store-managed). Editing files there is lost on the next `hms` — with one
-escape hatch: `my.emacs.vanilla.manageConfig = false` stops linking and hands
-the directory to a working copy, for iterating on `init.el` without an `hms`
-per keystroke.
+the tree there (`recursive = true`, so real directories are created and Emacs
+can still write `custom.el`, `eln-cache/` and friends while every `.el` stays
+store-managed). Editing files there is lost on the next `hms` — with one escape
+hatch: `my.emacs.manageConfig = false` stops linking and hands the directory to
+a working copy, for iterating on `init.el` without an `hms` per keystroke.
 
 ### Applying Changes
 
-**You don't run `doom sync`** — and there is no vanilla equivalent either. Every
-change to either tree requires a Home Manager rebuild:
+There is nothing to sync. Every change requires a Home Manager rebuild, and the
+daemon is deliberately **not** restarted by it:
 
 ```bash
-# After editing doom.d/ or vanilla/:
 hms
 
-# The PRIMARY unit is deliberately NOT restarted by hms
-# (X-RestartIfChanged = false, so a rebuild can never eat unsaved buffers):
+# X-RestartIfChanged = false, so a rebuild can never eat unsaved buffers.
+# Pick the new config up explicitly, when you are ready to lose the session:
 systemctl --user restart emacs      # Linux with systemd
 # Or manually:
 emacsclient -e '(kill-emacs)'
 em                                  # this restarts the daemon
-
-# The vanilla unit needs nothing: X-RestartIfChanged = true, so hms has
-# already restarted it and any open `emv` frames are gone. Just check it:
-systemctl --user status emacs-vanilla
 ```
 
-`systemctl --user restart emacs` restarts **only the primary daemon**. It does
-not touch `emacs-vanilla` — and note that after `flavor` flips, "the `emacs`
-unit" *is* the vanilla daemon and `emacs-vanilla` becomes `emacs-doom`.
+Before pushing a config change, run the gate. It is the only thing that catches
+this config's characteristic failure — `package-enable-at-startup` is nil, so a
+key can be bound, show a name in the which-key popup, and be **void** when
+pressed:
+
+```bash
+bash modules/emacs/vanilla/verify.sh
+```
 
 ### Adding Packages
 
-**Doom** — edit `modules/emacs/doom.d/packages.el`:
-
-```elisp
-;; Add a package from MELPA
-(package! some-package)
-
-;; Add a package from a git repo
-(package! another-package
-  :recipe (:host github :repo "user/repo"))
-
-;; Pin a package to a specific commit
-(package! pinned-package :pin "abc123")
-```
-
-**Vanilla** — there is no `package!`. The package list is an **explicit,
-hand-maintained list** in `modules/emacs/vanilla/package.nix`:
+There is no `package!` and nothing imperative. The package list is an
+**explicit, hand-maintained list** in `modules/emacs/vanilla/package.nix`:
 
 ```nix
 withPkgs = baseEmacs.pkgs.withPackages (epkgs:
@@ -506,54 +528,59 @@ mis-parse is worse than a list someone has to remember to update.
 > such a command look perfectly correct in the source. Add the package *and* a
 > keyword that makes it reachable, then actually invoke it once.
 
-Then rebuild: `hms`
+Then rebuild: `hms`, and run the gate.
 
-### Enabling Doom Modules
-
-Edit `modules/emacs/doom.d/init.el` and uncomment modules:
-
-```elisp
-:lang
-(python +lsp +pyright)  ; enable python with LSP
-(rust +lsp)             ; enable rust with LSP
-```
-
-Then rebuild: `hms`
-
-**Vanilla has no equivalent concept.** There is no module system and no flag
-list to uncomment: a feature exists only if some file under `config/lisp/`
-configures it *and* `package.nix` provides the package. Those two halves are
-always edited together.
+**There is no module system**, and that is the point — no flag list to
+uncomment. A feature exists only if some file under `config/lisp/` configures it
+*and* `package.nix` provides the package, and those two halves are always edited
+together.
 
 ### Keybindings — the `SPC` leader
 
-Both flavours are evil-mode with an `SPC` leader. Vanilla has its own
-discoverable menu (`config/lisp/my-bindings.el`): 14 named prefixes and roughly
-150 named leader keys, each showing a human-readable name in the which-key popup
-— which-key is built into Emacs 30, so no package is involved.
+evil-mode with an `SPC` leader and a discoverable menu
+(`config/lisp/my-bindings.el`): 14 named prefixes and roughly 150 named leader
+keys, each showing a human-readable name in the which-key popup — which-key is
+built into Emacs 30, so no package is involved.
 
-The keys follow Doom's, with about ten **deliberate divergences** — keys where
-Doom's command does not exist outside Doom, so the key is kept but the behaviour
-differs (`SPC c e`, `SPC c d`, `SPC f D`, `SPC s l`, `SPC m r` and friends). The
-divergence table lives in
-[`modules/emacs/vanilla/GRADUATION.md`](modules/emacs/vanilla/GRADUATION.md)
+Two keys worth knowing that are not obvious from the menu:
+
+- **`SPC ~`** — `window-toggle-side-windows`, hide/restore the bottom popup.
+  It is one built-in command doing the job of Doom's `+popup/toggle` *and*
+  `+popup/restore`, and it round-trips: press it twice and the popup comes back
+  where it was, with its mode line still suppressed. (That second half is
+  tested, because it was once broken —
+  `window-state-get`/`window-state-put` copy a window parameter only if it is
+  named in `window-persistent-parameters`, and `mode-line-format` is not there
+  by default.)
+- **`SPC t f`** — toggle flymake in the current buffer. It is off everywhere by
+  default except where eglot turns it on: the LilyPond backend is *registered*
+  but not *enabled*, so the default is one lilypond process per save (the
+  build, which produces the PDF) rather than two.
+
+The keys follow **Doom's**, because that is where the muscle memory came from,
+with about ten **deliberate divergences** — keys where Doom's command does not
+exist outside Doom, so the key is kept but the behaviour differs (`SPC c e`,
+`SPC c d`, `SPC f D`, `SPC s l`, `SPC m r` and friends). The divergence table
+lives in
+[`modules/emacs/vanilla/DESIGN.md`](modules/emacs/vanilla/DESIGN.md)
 ("Deliberate differences from Doom — bindings") and is deliberately not copied
 here, so the two cannot drift apart.
 
 ### Why This Approach?
 
-Traditional Doom Emacs uses `doom sync` which downloads packages imperatively. This creates reproducibility issues because packages can differ between machines.
+Doom Emacs, which this replaced, was already built reproducibly through
+nix-doom-emacs-unstraightened rather than through an imperative `doom sync`. The
+hand-built config keeps that property by a shorter route: its packages come from
+the Emacs package set of the nixpkgs pinned in `flake.lock`
+(`baseEmacs.pkgs.withPackages`), named in one explicit list in `package.nix`.
+All packages pinned in `flake.lock`, reproducible across machines, no network
+access after the build, rollback via previous generations — and no distribution
+between the config and Emacs.
 
-With nix-doom-emacs-unstraightened:
-- All packages are pinned in `flake.lock`
-- Builds are reproducible across machines
-- No network access needed after initial build
-- Rollback is trivial (previous generations)
-
-The vanilla flavour reaches the same place by a different route: its packages
-come from the Emacs package set of the nixpkgs pinned in `flake.lock`
-(`baseEmacs.pkgs.withPackages`), named in one explicit list in `package.nix`, so
-there is likewise nothing imperative to sync.
+Nothing parses the elisp to discover packages, deliberately:
+`emacsWithPackagesFromUsePackage` cannot handle the unicode box-drawing rules
+this config uses, and a silent mis-parse is worse than a list someone has to
+remember to update. That is what the gate is for.
 
 ### Org Agenda & Google Calendar (org-gcal)
 
@@ -561,37 +588,40 @@ The org config wires up an agenda + capture workflow and two-way Google
 Calendar sync. Agenda files (`inbox.org`, `todo.org`, `projects.org`, and the
 `gcal*.org` calendars) live in `~/org/`; capture templates (`SPC X`) drop todos,
 notes, and calendar events into the right file, and the TODO lifecycle is
-`TODO → NEXT → WAIT → DONE/CANCELLED`. The vanilla flavour ports this same
-setup (`config/lisp/my-org.el`); the two deliberate differences are the fetch
-timer and the token store, both below.
+`TODO → NEXT → WAIT → DONE/CANCELLED`. It lives in `config/lisp/my-org.el`.
 
 [`org-gcal`](https://github.com/kidd/org-gcal.el) syncs those `gcal*.org` files
-against Google Calendar. **Both flavours** do this, from the same sops-managed
-OAuth credentials (never in the repo): `org_gcal/client_id` and
-`org_gcal/client_secret` are decrypted to `~/.config/sops-nix/secrets/` on `hms`.
+against Google Calendar, from sops-managed OAuth credentials (never in the
+repo): `org_gcal/client_id` and `org_gcal/client_secret` are decrypted to
+`~/.config/sops-nix/secrets/` on `hms`.
 
-> **Cross-flavour data hazard.** Do **not** run a vanilla org-gcal fetch while
-> Doom has a `gcal*.org` buffer open (or the reverse). Both write the same files
-> in `~/org/`, and whichever has the buffer open hits "file changed on disk" —
-> which turns a trial config into a data-loss question about real calendar
-> entries. This is the one way the parallel instance can damage something the
-> daily driver owns. For the same reason vanilla has **no** 30-minute background
-> fetch timer (Doom keeps one); vanilla fetches by hand, `SPC m G f`.
+It fetches **in the background**, 90 seconds after the daemon starts and then
+every 30 minutes, and an around-advice saves the buffers afterwards — org-gcal
+populates them and never writes them, which is what once made a calendar look
+like it was not syncing at all. `SPC m G s/f/p` are sync, fetch and post-at-point
+by hand.
 
-The two keep **separate token stores, with deliberately different security
-postures**:
+> That timer was absent for the whole period when a second Emacs ran beside
+> Doom, because two daemons on it would write `~/org/gcal*.org` underneath each
+> other. One Emacs means one writer. The rule did not disappear, it moved: the
+> config gate (`verify.sh`) starts a *third* real daemon, so `my-org.el` sets
+> `my/org-gcal-fetch-inhibit` from the environment variable the gate exports,
+> and the gate asserts both that the timer exists and that the inhibit is on.
 
-| | Doom | Vanilla |
-|---|---|---|
-| Token store | `~/.config/org-gcal/oauth2-auto.plist` (plus `token.plstore`) | `~/.local/state/emacs/oauth2-auto.eld` |
-| Protection | GPG-encrypted plstore, to a dedicated passphrase-less key (`org_gcal/gpg_private_key`, imported with full ownertrust on activation) so it decrypts with no pinentry prompt | a plain **`0600` file**, no encryption |
+**The OAuth token store is a plain `0600` file**,
+`~/.local/state/emacs/oauth2-auto.eld` — not a GPG-encrypted plstore. That is
+deliberate and argued at length in
+`modules/emacs/vanilla/config/lisp/my-secrets.el`. Doom's store was encrypted to
+a dedicated key whose *passphrase-less private half* sat at `0600` on the same
+disk, so the encryption was never adding protection over the file mode — and it
+cost a certify-capable, always-unlocked key sitting ultimately trusted in the
+keyring. Encrypting to the YubiKey key instead is not available while the fetch
+has to run unattended; that trade-off is real and was made knowingly, and it is
+why the fetch is allowed to be a background timer at all.
 
-The vanilla choice is deliberate and argued at length in
-`modules/emacs/vanilla/config/lisp/my-secrets.el`: Doom's store is encrypted to a
-key whose *passphrase-less private half* sits at `0600` on the same disk, so the
-encryption was never adding protection over the file mode. Encrypting to the
-YubiKey key instead is not available while the fetch has to run unattended —
-that trade-off is real and was made knowingly. Doom's arrangement is unchanged.
+That key (`org_gcal/gpg_private_key`) is no longer decrypted or imported by
+activation. Deleting it from the keyring and from `secrets.yaml` is manual —
+see [`modules/emacs/RETIRING-DOOM.md`](modules/emacs/RETIRING-DOOM.md).
 
 First-time setup (once):
 
@@ -603,51 +633,49 @@ First-time setup (once):
    sops set secrets/secrets.yaml '["org_gcal"]["client_secret"]' '"...secret..."'
    ```
 3. `hms`, then in Emacs run `M-x org-gcal-sync` and complete the browser auth
-   once. That authorises **Doom**.
-4. To authorise **vanilla** without redoing the browser flow, run
-   `M-x my/oauth2-import-from-plstore` once in `emv` and accept the default
-   path. It reads Doom's plstore and writes the `.eld`; it does not move or
-   modify Doom's store. That command is the only thing in the vanilla config
-   that touches GPG, and it never runs on its own.
+   once.
+
+`M-x my/oauth2-import-from-plstore` imports a refresh token from a legacy GPG
+plstore instead of redoing the browser flow. It was the migration path off
+Doom's store; it is kept only as a recovery route, and it stops working once
+the passphrase-less key leaves the keyring.
 
 ### Troubleshooting Emacs
 
-There are **two** user units. `emacs` is the primary (Doom today); the second
-flavour's unit is named after the flavour, `emacs-vanilla`.
+One user unit, `emacs`, owning `%t/emacs/server`.
 
 ```bash
-# Check if the daemons are running
-systemctl --user status emacs           # primary — owns %t/emacs/server
-systemctl --user status emacs-vanilla   # second flavour — owns %t/emacs/vanilla
+# Check if the daemon is running
+systemctl --user status emacs
 
 # View daemon logs
 journalctl --user -u emacs -f
-journalctl --user -u emacs-vanilla -f
 
-# Force restart (each restarts only itself)
+# Force restart (this DOES lose unsaved buffers — hms never does it for you)
 systemctl --user restart emacs
-systemctl --user restart emacs-vanilla
 
-# Which daemons are actually answering?
-emacsclient -e '(emacs-version)'             # the primary
-emacsclient -s vanilla -e '(emacs-version)'  # the vanilla daemon
-ls -l "$XDG_RUNTIME_DIR/emacs/"              # both sockets live in one directory
+# Is it actually answering?
+emacsclient -e '(emacs-version)'
+ls -l "$XDG_RUNTIME_DIR/emacs/"
 
 # Run emacs without a daemon (for debugging)
-emacs --debug-init                # the primary flavour
-nix run .#emacs-vanilla           # throwaway foreground vanilla, no daemon,
-                                  # no hms, no socket — cannot collide
+emacs --debug-init
+nix run .#emacs-vanilla           # throwaway foreground build, no daemon,
+                                  # no hms, no socket — cannot collide with
+                                  # the running one
 
 # Check what packages are installed
 nix path-info -rsh $(which emacs) | sort -hk2 | tail -20
 ```
 
+A leftover `emacs-doom` unit from a generation before Doom was retired is
+disabled with `systemctl --user disable --now emacs-doom`; see
+[`modules/emacs/RETIRING-DOOM.md`](modules/emacs/RETIRING-DOOM.md).
+
 #### `emacs-doctor` — daemon health & recovery
 
-The primary daemon is owned by the `emacs` systemd **user** unit; the second
-flavour has its own, `emacs-vanilla`. `emacs-doctor` diagnoses the **primary**
-(it follows `my.emacs.primaryPackage` and the default socket) — for the other
-flavour use plain `systemctl --user`/`journalctl --user -u emacs-vanilla`. The
+The daemon is owned by the `emacs` systemd **user** unit, and `emacs-doctor`
+diagnoses it (it follows `my.emacs.package` and the default socket). The
 failure mode to know about: a stray standalone `emacs --daemon` can grab the
 server socket, the managed `--fg-daemon` can then never bind it, and
 `Restart=on-failure` relaunches it forever —
@@ -679,22 +707,18 @@ and aborts (use `--force` to override). It stops the service, kills orphan daemo
 clears the primary's stale socket (`$XDG_RUNTIME_DIR/emacs/server`), `reset-failed`s,
 and starts a single clean daemon.
 
-**`$XDG_RUNTIME_DIR/emacs/` now holds two sockets** — `server` (primary) and
-`vanilla` — so every clean-up here names **exactly one file**. Both units'
-`ExecStartPre` is `rm -f %t/emacs/<one socket>`, never `rm -rf %t/emacs`: wiping
-the directory would delete the other flavour's *live* socket and drop it into
-precisely the crash loop described above.
+Every clean-up here names **exactly one file**: the unit's `ExecStartPre` is
+`rm -f %t/emacs/server`, never `rm -rf %t/emacs`. That rule was written when
+two daemons shared the directory and a recursive remove would have deleted the
+other one's *live* socket; there is one daemon again, but `%t/emacs/` is also
+where emacsclient keeps per-frame state, and a recursive remove in an
+`ExecStartPre` is never the smaller change it looks like.
 
-The same safeguards in `modules/emacs/` prevent the deadlock forming, for both
-flavours: each client wrapper starts its own *managed* unit
-(`em`/`emt` → `systemctl --user start emacs`, `emv`/`emvt` →
-`systemctl --user start emacs-vanilla`) instead of spawning a competing
-`emacs --daemon`, and each unit clears its own stale socket on `ExecStartPre` and
-bounds its restart loop (`StartLimitBurst`) so a real failure surfaces as a
-stopped service instead of a silent CPU drain. The wrappers' raw fallback always
-carries `--daemon=<server-name>`; a bare `emacs --daemon` from the vanilla
-wrapper would squat the **primary's** socket and reproduce the deadlock against
-the daily driver.
+The safeguards in `modules/emacs/default.nix` prevent the deadlock forming:
+`em`/`emt` start the *managed* unit (`systemctl --user start emacs`) rather
+than spawning a competing `emacs --daemon`, the unit clears its own stale
+socket on `ExecStartPre`, and `StartLimitBurst` bounds the restart loop so a
+real failure surfaces as a stopped service instead of a silent CPU drain.
 
 ## LazyVim
 
@@ -841,7 +865,7 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 - `gpg/public_key` - GPG public key
 - `org_gcal/client_id` - Google OAuth client id for org-gcal calendar sync
 - `org_gcal/client_secret` - Google OAuth client secret for org-gcal
-- `org_gcal/gpg_private_key` - passphrase-less GPG key encrypting **Doom's** org-gcal OAuth token store, for a prompt-free decrypt. The vanilla flavour does not use it: its token store is a plain `0600` file (see [Emacs — two flavours](#emacs--two-flavours)). Retire this key only when Doom is retired.
+- `org_gcal/gpg_private_key` - **retired, and nothing reads it.** It was a passphrase-less GPG key encrypting Doom's org-gcal OAuth token store for a prompt-free decrypt. Activation no longer decrypts or imports it; the token store is a plain `0600` file (see [Emacs](#emacs)). Removing it from this file needs `sops unset` and deleting it from each keyring is manual — see [`modules/emacs/RETIRING-DOOM.md`](modules/emacs/RETIRING-DOOM.md).
 
 ### Edit secrets
 
@@ -959,11 +983,15 @@ nix flake update <n>
 
 ```
 ci.yml (push + PRs):
-lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
-  ├─> check (ubuntu: nix flake check + dry-run eval of the Linux config)
-  └─> eval-darwin (macos-14: dry-run eval of all 3 Darwin configs;
+lint (statix, deadnix, alejandra --check, shellcheck, actionlint — all from
+  │   .#lint-tools, this flake's own pinned nixpkgs, never the runner registry)
+  ├─> check (ubuntu: nix flake check --all-systems + dry-run eval of Linux)
+  └─> eval-darwin (macos-14: dry-run eval of all 3 Darwin home configs;
       │            x86_64-darwin via Rosetta — no hosted Intel runners)
-      └─[+check]─> build-home (push to master only: x86_64-linux + 2× aarch64-darwin, pushes to Cachix)
+      └─[+check]─> build-home (ALWAYS runs; the MATRIX is what varies —
+                     │         PRs build x86_64-linux only, pushes add
+                     │         2× aarch64-darwin. Pushes to Cachix.
+                     │         Also runs the Emacs gate, verify.sh)
                      └─> docker-build (build → load → smoke test → push if DOCKERHUB_TOKEN)
                            └─> docker-test (registry pull verification of the pushed image)
 
@@ -971,9 +999,38 @@ validate.yml (manual, weekly, or on hosts/**, flake.nix, flake.lock changes):
 nixos (NixOS system build)    darwin (aarch64-darwin home config build)
 ```
 
-Note: `nix flake check --all-systems` is intentionally not used — the Doom Emacs setup uses import-from-derivation with `allowSubstitutes = false`, so Darwin configs can only be evaluated on a Darwin builder (hence the dedicated `eval-darwin` job).
+Note: `nix flake check --all-systems` **is** used. It was not while the Doom Emacs setup was in the flake — that used import-from-derivation with `allowSubstitutes = false`, so evaluating a Darwin config required *building* Darwin derivations. It was restored after verifying it exits 0, not on the assumption that it would. It covers the Darwin home configurations indirectly but really: `flake check` does not know about `homeConfigurations`, but `perUserPackages` mirrors each into `packages.<system>.home-<username>` and those are walked. `eval-darwin` is kept for the `--dry-run` build plan on a real Darwin builder.
+
+`build-home` deliberately has **no job-level `if`**. It used to, and it
+therefore reported "skipping" on every pull request — so nothing in CI built the
+Linux closure before merge, and a local `nix build` was the only thing between a
+broken home configuration and master (observed on PR #14). A `jobs.<id>.if`
+cannot see the matrix context, so it can only skip the whole job; the
+event-dependence lives in the matrix instead. The `ci-emacs-gate` check below
+guards exactly that.
 
 The CI is fork-friendly - lint and check always run, push operations only run if secrets are configured.
+
+### Regression guards
+
+`nix flake check` builds these. Each one encodes a bug that already happened, so
+none of them is a style preference — if one fails, read what it caught rather
+than relaxing it. They are defined on `x86_64-linux` only, because the content
+they guard is identical across systems.
+
+| Check | What it refuses to let back in |
+|---|---|
+| `claude-settings-guards` | Claude Code attributing itself in commits/PRs (`attribution` must be `{commit: "", pr: ""}`), and `mcp__emacs__emacs_eval` being auto-allowed — arbitrary elisp is arbitrary shell |
+| `docker-terminal-no-ssh-mount` | `~/.ssh` being bind-mounted into a container. It holds the sops-decrypted private key; SSH into containers is agent-forwarding only |
+| `ci-emacs-gate` | (a) `build-home` regaining a job-level `if`, (b) no step running `modules/emacs/vanilla/verify.sh`, (c) anything in `ci.yml` running `emacs --batch` — batch does not load `init.el`, so a batch check reports success having loaded nothing |
+| `lint-tools-pinned` | A linter resolved through `nixpkgs#` (that is the *runner's* registry, not this flake) in either the CI lint job or `verify.sh`, and `--impure` reappearing in `verify.sh` |
+| `devshell-stays-light` | The git-hooks.nix installer or the linters getting back onto the `cd` path. That was ~56s of evaluation on every `cd` into the repo after a lock bump — and the lock bumps weekly, unattended |
+| `install-hooks-installs-hooks` | The counterweight to the above: `nix run .#install-hooks` must really run the upstream installer and must not stamp success it did not achieve |
+| `background-jobs-close-fds` | A background job in the dev-shell hooks that does not close inherited descriptors. direnv hands `.envrc` a pipe on FD 3 and reads it to EOF, so a child holding FD 3 blocks the caller — measured at 9364ms versus 713ms. `nohup`, `setsid` and double-forking all made no difference |
+| `devshell-hook-lint` | A shell syntax error in `lib/dev-shell-hook.sh`, `lib/install-hooks.sh` or `lib/warm-direnv.sh`. `mkShell` never lints the `shellHook`, and it runs at an interactive prompt where a syntax error looks like a broken terminal |
+
+Plus `tmux-helper-build` and `tmux-helper-vet`, which are ordinary builds rather
+than guards.
 
 See [.github/SETUP.md](.github/SETUP.md) for detailed CI setup instructions.
 
@@ -984,10 +1041,18 @@ Things you can `nix run` from this flake without switching your profile:
 | App | What it does |
 |---|---|
 | `nix run '.#docker-test'` | Build the terminal Docker image and test it locally (Linux only) |
-| `nix run '.#emacs-vanilla'` | Throwaway **foreground** vanilla Emacs — no daemon, no socket, no `hms`, so it cannot collide with either running daemon. Its `--init-directory` is a read-only store path on purpose: that run *is* the test that `early-init.el` redirects every writable path out of `user-emacs-directory`. |
-| `nix run '.#tmux-experimental'` | tmux on the parallel `experimental` socket (`tmux -L experimental`), same precedent as the second Emacs flavour |
+| `nix run '.#install-hooks'` | Install the git pre-commit hooks, and materialise the pinned linters at `.direnv/lint-tools` (GC-rooted) so the dev-shell can put them on `PATH` without evaluating them on every `cd`. `--uninstall` removes them |
+| `nix run '.#emacs-vanilla'` | Throwaway **foreground** Emacs — no daemon, no socket, no `hms`, so it cannot collide with the running daemon. Its `--init-directory` is a read-only store path on purpose: that run *is* the test that `early-init.el` redirects every writable path out of `user-emacs-directory`. |
+| `nix run '.#tmux-experimental'` | tmux on the parallel `experimental` socket (`tmux -L experimental`) — the parallel-instance pattern this repo uses to trial a config before it takes the default slot |
 | `nix run '.#tmux-helper-install'` | Install `/usr/local/bin/tmux-helper` (macOS/BeyondTrust stable path) |
 | `nix run '.#update-vim-plugins'` | Print refreshed lazy.nvim / LazyVim revisions and hashes for `modules/vim/default.nix` |
+
+Buildable packages, not apps: `.#lint-tools` is the symlinkJoin of every
+linter this repo gates on — `alejandra`, `statix`, `deadnix`, `shellcheck`,
+`actionlint` — out of *this* flake's nixpkgs. `verify.sh` and the CI lint job
+both resolve that derivation rather than `nix run nixpkgs#<tool>`, so local and
+CI agree by construction instead of by coincidence; `lint-tools-pinned` guards
+it. `.#home-<username>` is any declared user's activation package.
 
 `packages.emacs-vanilla` and `packages.emacs-doctor` are exposed on Linux only,
 so `nix flake check` does not try to build them on darwin.

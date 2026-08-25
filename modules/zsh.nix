@@ -246,7 +246,7 @@ in {
             local nix_size nix_paths hm_gens
             local mise_install_size mise_cache_size mise_runtimes
             local rt rt_name rt_vers rt_size
-            local doom_size nvim_data nvim_state nvim_cache
+            local nvim_data nvim_state nvim_cache
             local cache_info cache_size human_size general_cache_size
 
             echo ""
@@ -306,29 +306,25 @@ in {
               echo ""
             fi
 
-            # Doom Emacs (primary flavour today; drop this block when Doom
-            # is retired -- see modules/emacs/vanilla/GRADUATION.md)
-            if [ -d ~/.local/share/nix-doom ]; then
-              doom_size=$(_dd_size ~/.local/share/nix-doom)
-              echo "''${magenta}👿 Doom Emacs''${nc}"
-              echo "   Size: ''${bold}$doom_size''${nc}"
-              echo ""
-            fi
-
-            # Vanilla Emacs (second flavour). The .el files under ~/.config/emacs
-            # are store symlinks and cost nothing; the caches beside them are
-            # real and do grow -- eln-cache in particular. Config is measured
-            # anyway: on a machine that has not switched since the vanilla
-            # module landed, that path is still the multi-GB pre-Nix doomemacs
-            # checkout, which is exactly what wants seeing. Such a tree also
-            # blows the inline du budget in _dd_size, so the first run prints
-            # the background-measure message instead of a number -- that is the
-            # helper working, not this block failing.
+            # Emacs. There used to be a second block above this one for
+            # ~/.local/share/nix-doom; it went with Doom. NOTE for anyone
+            # wondering where the space went on a machine that has not been
+            # cleaned since: that directory is not removed by `hms`, and
+            # deleting it is a manual step -- see docs/doom-retirement.md.
+            #
+            # The .el files under ~/.config/emacs are store symlinks and cost
+            # nothing; the caches beside them are real and do grow, eln-cache
+            # in particular. Config is measured anyway: on a machine that has
+            # not switched in a long time that path may still be the multi-GB
+            # pre-Nix doomemacs checkout, which is exactly what wants seeing.
+            # Such a tree also blows the inline du budget in _dd_size, so the
+            # first run prints the background-measure message instead of a
+            # number -- that is the helper working, not this block failing.
             if [ -d ~/.config/emacs ] || [ -d ~/.cache/emacs ] || [ -d ~/.local/state/emacs ]; then
               vemacs_config=$(_dd_size ~/.config/emacs)
               vemacs_cache=$(_dd_size ~/.cache/emacs)
               vemacs_state=$(_dd_size ~/.local/state/emacs)
-              echo "''${magenta}🪶 Vanilla Emacs''${nc}"
+              echo "''${magenta}🪶 Emacs''${nc}"
               echo "   Config: $vemacs_config"
               echo "   Cache:  ''${bold}$vemacs_cache''${nc}"
               echo "   State:  $vemacs_state"
