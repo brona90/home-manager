@@ -54,7 +54,6 @@ in {
               "${secretsDir}/porkbun_secret_key.tmp" \
               "${secretsDir}/org_gcal_client_id.tmp" \
               "${secretsDir}/org_gcal_client_secret.tmp" \
-              "${secretsDir}/org_gcal_gpg_private_key.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" \
               "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" \
               "${secretsDir}/gpg_private_key.tmp" \
@@ -112,10 +111,12 @@ in {
                 mv -f "${secretsDir}/org_gcal_client_secret.tmp" "${secretsDir}/org_gcal_client_secret"
               fi
 
-              if ${pkgs.sops}/bin/sops -d --extract '["org_gcal"]["gpg_private_key"]' "${secretsFile}" > "${secretsDir}/org_gcal_gpg_private_key.tmp" 2>/dev/null; then
-                chmod 0600 "${secretsDir}/org_gcal_gpg_private_key.tmp"
-                mv -f "${secretsDir}/org_gcal_gpg_private_key.tmp" "${secretsDir}/org_gcal_gpg_private_key"
-              fi
+              # NOTE: org_gcal/gpg_private_key is deliberately NOT decrypted.
+              # It was a passphrase-less key encrypting Doom's org-gcal token
+              # plstore; Doom is retired and the current token store is a plain
+              # 0600 file. The key is still in secrets.yaml -- removing it there
+              # needs `sops unset`, and deleting it from each keyring is manual.
+              # See modules/emacs/RETIRING-DOOM.md, step 3.
 
               # Decrypt SSH keys - write directly, not via symlink
               if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["${cfg.sshKeyName}"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" 2>/dev/null; then
@@ -159,22 +160,27 @@ in {
             if [ -f "$GPG_PRIVATE_KEY" ]; then
               timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$GPG_PRIVATE_KEY" 2>/dev/null || true
             fi
-            # Passphrase-less key that encrypts the org-gcal OAuth token store so it
-            # decrypts with zero prompts (see modules/emacs plstore-encrypt-to).
-            ORG_GCAL_KEY="${config.sops.secrets."org_gcal/gpg_private_key".path}"
-            if [ -f "$ORG_GCAL_KEY" ]; then
-              timeout 10 ${pkgs.gnupg}/bin/gpg --batch --pinentry-mode loopback --import "$ORG_GCAL_KEY" 2>/dev/null || true
-              # Ownertrust :6: (ultimate) marks the key VALID so gpg encrypts to it
-              # non-interactively (prompt-free token-store decryption). DELIBERATE
-              # TRADEOFF: ultimate also makes it a trusted introducer, and the key is
-              # passphrase-less + certify-capable — i.e. an always-unlocked CA for
-              # THIS keyring. Accepted because nothing here verifies signatures against
-              # ~/.gnupg (git signing uses the YubiKey key; nix doesn't use it), so the
-              # blast radius is nil today. To fully close it later: regenerate as an
-              # encryption-subkey-only key (no certify secret present), keeping :6: for
-              # validity. Do NOT drop to :3: — that reintroduces the encryption prompt.
-              echo "050C399D3A6B013DD2C93F899BC379782DFE1930:6:" | timeout 10 ${pkgs.gnupg}/bin/gpg --import-ownertrust 2>/dev/null || true
-            fi
+            # REMOVED, and worth knowing why rather than rediscovering it.
+            #
+            # This used to import a second key -- org_gcal/gpg_private_key,
+            # 050C399D3A6B013DD2C93F899BC379782DFE1930 -- and mark it :6:
+            # (ultimate) so gpg would encrypt to it with no prompt. Its only
+            # job was Doom's org-gcal OAuth token plstore, which had to decrypt
+            # unattended in a headless daemon with no frame to draw a pinentry
+            # in.
+            #
+            # It was a passphrase-less, certify-capable key sitting ultimately
+            # trusted in this keyring -- an always-unlocked CA for it -- and
+            # the thing it protected was a refresh token whose own private key
+            # sat unprotected at 0600 on the same disk. The current Emacs
+            # stores that token as a plain 0600 file instead and is honest
+            # about it; see the commentary in
+            # modules/emacs/vanilla/config/lisp/my-secrets.el.
+            #
+            # This change stops the key being re-imported on every activation.
+            # It does NOT remove it from keyrings it already reached, and it
+            # does not touch secrets.yaml. Both are manual: see
+            # modules/emacs/RETIRING-DOOM.md, step 3.
           '';
         };
 
@@ -228,10 +234,6 @@ in {
         };
         "org_gcal/client_secret" = {
           path = "${secretsDir}/org_gcal_client_secret";
-        };
-        "org_gcal/gpg_private_key" = {
-          path = "${secretsDir}/org_gcal_gpg_private_key";
-          mode = "0600";
         };
         "ssh/${cfg.sshKeyName}" = {
           path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}";

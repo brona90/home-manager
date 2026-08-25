@@ -31,14 +31,17 @@
 #     -----BEGIN PGP PUBLIC KEY BLOCK-----
 #     ...
 #     -----END PGP PUBLIC KEY BLOCK-----
-# org_gcal:                      # Google Calendar sync. client_id/client_secret
-#   client_id: xxxxxxxx.apps.googleusercontent.com    # are used by BOTH Emacs
-#   client_secret: GOCSPX-xxxxxxxxxxxxxxxx            # flavours (Doom+vanilla).
-#   gpg_private_key: |           # Doom only: passphrase-less key that encrypts
-#     -----BEGIN PGP PRIVATE KEY BLOCK-----   # Doom's OAuth token plstore, so
-#     ...                                     # it decrypts with no pinentry.
-#     -----END PGP PRIVATE KEY BLOCK-----     # Vanilla keeps its token in a
-#                                             # plain 0600 file and ignores it.
+# org_gcal:                      # Google Calendar sync. Both keys are read by
+#   client_id: xxxxxxxx.apps.googleusercontent.com    # Emacs on every host.
+#   client_secret: GOCSPX-xxxxxxxxxxxxxxxx
+#
+# NOTE: this file also still carries org_gcal/gpg_private_key, and nothing
+# reads it. It was a passphrase-less key encrypting Doom's OAuth token
+# plstore; Doom is retired and the token store is a plain 0600 file now.
+# Nothing decrypts or imports it any more, but removing it from secrets.yaml
+# needs `sops unset` (a hand edit corrupts the file's MAC) and deleting it
+# from each keyring is manual. Both steps are written up in
+# modules/emacs/RETIRING-DOOM.md.
 #
 # Save and close. The file will be encrypted automatically.
 # You can then safely commit secrets/secrets.yaml to git.
