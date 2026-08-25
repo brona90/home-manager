@@ -247,6 +247,7 @@ in {
             local mise_install_size mise_cache_size mise_runtimes
             local rt rt_name rt_vers rt_size
             local nvim_data nvim_state nvim_cache
+            local vemacs_config vemacs_cache vemacs_state
             local cache_info cache_size human_size general_cache_size
 
             echo ""
