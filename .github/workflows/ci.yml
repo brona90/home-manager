@@ -91,52 +91,68 @@ jobs:
         with:
           name: nix-community
           extraPullNames: emacs,${{ env.CACHIX_CACHE }}
-      # NOTE: deliberately NOT `--all-systems`: the Doom Emacs setup
-      # (nix-doom-emacs-unstraightened) uses import-from-derivation, and its
-      # intermediate derivations set allowSubstitutes = false. Evaluating a
-      # Darwin config therefore requires *building* Darwin derivations, which
-      # a Linux runner cannot do (verified: `nix flake check --all-systems`
-      # fails on x86_64-linux with "required system not available"). Darwin
-      # eval coverage lives in the eval-darwin job below instead.
-      # Retried for the same reason eval-darwin and build-home are: the IFD
-      # described above sets allowSubstitutes = false, so this FETCHES every
-      # elisp source uncached -- from GitHub, GitLab and codeberg. Any one host
-      # refusing a connection fails the job over a change that touched nothing
-      # related. Observed on PRs #20 and #21 within a minute of each other:
+      # `--all-systems` is back, and it took retiring Doom to get it.
+      #
+      # It was dropped because nix-doom-emacs-unstraightened uses
+      # import-from-derivation and its intermediate derivations set
+      # allowSubstitutes = false, so evaluating a Darwin config required
+      # *building* Darwin derivations -- which a Linux runner cannot do
+      # ("required system not available"). No Doom, no IFD. Verified rather
+      # than assumed: `nix flake check --all-systems` exits 0 on x86_64-linux
+      # against this flake.
+      #
+      # WHAT IT NOW COVERS, measured from the run log rather than assumed:
+      # `nix flake check` walks apps, devShells, packages and checks. It does
+      # not know about `homeConfigurations` -- that is not a standard flake
+      # output -- but `perUserPackages` mirrors every one of them into
+      # `packages.<system>.home-<username>`, and those ARE walked. A local
+      # `--all-systems` run evaluated packages.x86_64-darwin.home-gfoster,
+      # packages.aarch64-darwin.home-gfoster and
+      # packages.aarch64-darwin.home-888973 on x86_64-linux. So Darwin home
+      # configurations now get EVAL coverage from this job.
+      #
+      # eval-darwin below is therefore weaker justification than it was, and
+      # it is left in place deliberately rather than by oversight: it does a
+      # `nix build --dry-run`, which resolves a build PLAN against
+      # substituters as well as evaluating, and it does it on a real Darwin
+      # builder. If that is judged not worth a macOS runner on every PR, it is
+      # a reasonable thing to delete -- but delete it as a decision, having
+      # read this, not on the assumption that it was always redundant.
+      #
+      # The retry loop that used to wrap this is gone with the same cause.
+      # It existed because the IFD refetched every elisp source uncached --
+      # from GitHub, GitLab and codeberg -- so any one host refusing a
+      # connection failed the job over a change that touched nothing related.
+      # PRs #20 and #21 both died within a minute of each other on
       #
       #   error: Failed to fetch git repository
       #          'https://gitlab.com/sawyerjgardner/demap.el.git'
       #
-      # demap.el is referenced nowhere in this repo; it arrives through Doom's
-      # module set. This retry, and the whole class of failure, goes away when
-      # Doom does -- see modules/emacs/vanilla/GRADUATION.md.
-      #
-      # Inline rather than ./.github/actions/nix-build-retry: that action takes
-      # a LIST OF BUILD TARGETS and leaves ./result for the Cachix step. This
-      # is one command with neither. Sharing it would mean an input that
-      # switches the action between two shapes, which is worse than six lines.
+      # a package referenced nowhere in this repo, pulled in by Doom's module
+      # set. This step now substitutes from the binary caches like everything
+      # else and fetches nothing by hand. The retries on eval-darwin and
+      # build-home STAY: those build real closures over the network, and
+      # their flakiness was never Doom-specific.
       - name: Flake check
-        run: |
-          set -uo pipefail
-          for attempt in 1 2 3; do
-            nix flake check && exit 0
-            [ "$attempt" -lt 3 ] || break
-            echo "::warning::transient nix failure; retrying in 60s (attempt $attempt/3)"
-            sleep 60
-          done
-          echo "::error::nix flake check still failing after 3 attempt(s)"
-          exit 1
+        run: nix flake check --all-systems
       # PR-time eval coverage for the Linux config. `nix build --dry-run`
       # evaluates and plans the build without building the final closure.
       - name: Evaluate Linux home configuration (dry-run)
         run: nix build --dry-run '.#homeConfigurations."gfoster@x86_64-linux".activationPackage'
 
-  # PR-time evaluation coverage for all Darwin configs declared in config.nix.
-  # Runs on PRs too (unlike build-home), so a PR that breaks Darwin eval can
-  # no longer merge green. Must run on macOS: the unstraightened IFD steps
-  # (elisp compilation) have allowSubstitutes = false and need a Darwin
-  # builder even for a dry-run. x86_64-darwin has no hosted runners, so it is
-  # evaluated on this arm64 runner via Rosetta 2 (extra-platforms).
+  # PR-time evaluation coverage for all Darwin HOME CONFIGURATIONS declared in
+  # config.nix. Runs on PRs too (unlike build-home), so a PR that breaks Darwin
+  # eval can no longer merge green.
+  #
+  # OVERLAPPING, since `--all-systems` came back to the check job above: that
+  # job now evaluates packages.<darwin>.home-<user>, which are these same
+  # activation packages. What is left here that is not there is the `--dry-run`
+  # (a build PLAN resolved against substituters, not just an evaluation) on a
+  # real Darwin builder. Kept on that basis; see the note in the check job for
+  # why deleting it would be a defensible decision rather than a cleanup.
+  #
+  # x86_64-darwin has no hosted runners, so it is evaluated on this arm64
+  # runner via Rosetta 2 (extra-platforms).
   eval-darwin:
     name: Evaluate Darwin Configurations
     runs-on: macos-14
@@ -159,9 +175,11 @@ jobs:
         with:
           name: nix-community
           extraPullNames: emacs,${{ env.CACHIX_CACHE }}
-      # The retry loop that used to be inlined here now lives in the
-      # composite action, which build-home shares -- the same closure, the
-      # same transient IFD fetch failures, one implementation.
+      # Retried through the composite action, which build-home shares. The
+      # original reason was the unstraightened IFD's uncached elisp fetches;
+      # that is gone with Doom, but this job still resolves a full Darwin
+      # closure over the network and a transient 408 from cache.nixos.org
+      # fails it just as dead. Kept on that basis, not by inertia.
       - name: Evaluate Darwin home configurations (dry-run)
         uses: ./.github/actions/nix-build-retry
         with:
@@ -229,7 +247,7 @@ jobs:
 
       # This job PUSHES to cachix (has authToken). skipPush disables the
       # action's post-run drain, which FAILS the whole job when a single
-      # upload stalls past its timeout (seen with the large fresh doom/emacs
+      # upload stalls past its timeout (first seen with a large fresh Emacs
       # closure). The explicit best-effort push step below replaces it: a
       # cache push must never fail CI after a successful build.
       - uses: cachix/cachix-action@v17
@@ -245,10 +263,9 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
 
-      # Retried, exactly like eval-darwin: this job builds the same
-      # unstraightened closure and so has always had the same transient-IFD
-      # failure mode -- it simply had no retry, so a GitHub 408 mid-build
-      # failed a push that was fine. The rationale lives with the action.
+      # Retried, exactly like eval-darwin: this job builds a full closure over
+      # the network, so a GitHub or cache.nixos.org 408 mid-build fails a push
+      # that was otherwise fine. The rationale lives with the action.
       # nix-args: -L (print-build-logs) so a hanging derivation surfaces its
       # actual build phase output instead of "building '...drv'..." silence.
       - name: Build home configuration

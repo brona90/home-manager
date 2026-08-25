@@ -79,14 +79,21 @@ jobs:
       - name: Update flake.lock
         run: nix flake update
 
-      # NOTE: not `--all-systems`: the unstraightened (Doom Emacs) IFD
-      # derivations set allowSubstitutes = false, so evaluating Darwin configs
-      # requires building Darwin derivations — impossible on this Linux
-      # runner. Darwin eval coverage for the resulting PR comes from ci.yml's
-      # eval-darwin job (which requires FLAKE_UPDATE_TOKEN to fire, see below).
+      # `--all-systems` is back. It was omitted while the unstraightened
+      # (Doom Emacs) IFD derivations set allowSubstitutes = false, which made
+      # evaluating Darwin configs require BUILDING Darwin derivations on this
+      # Linux runner. Doom is retired; verified exiting 0 before this changed.
+      #
+      # This is the job that gains most from it. `nix flake check` does not know
+      # about `homeConfigurations`, but `perUserPackages` mirrors each one into
+      # `packages.<system>.home-<username>`, and `--all-systems` walks those --
+      # so an unattended weekly lock bump that breaks only the Darwin
+      # configuration is now caught HERE, before the PR is opened, instead of
+      # relying on ci.yml's eval-darwin firing (which needs FLAKE_UPDATE_TOKEN,
+      # see below) on a PR that may never get CI at all.
       - name: Validate updated flake
         run: |
-          nix flake check
+          nix flake check --all-systems
           nix build --dry-run '.#homeConfigurations."gfoster@x86_64-linux".activationPackage'
 
       # GITHUB_TOKEN trap: PRs created with the default workflow token do NOT
