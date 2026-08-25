@@ -517,10 +517,13 @@ LABEL is an inline keymap label, which is name enough on its own."
                          (length my/verify-claude-code-deferred))
         (my/verify--fail "%S did not resolve after loading claude-code" bad)))
     ;; The advice.  Upstream's `claude-code-normalize-project-root' SIGNALS a
-    ;; user-error on nil, so Doom's `:filter-return' version of this advice is
-    ;; dead code -- measured: with it installed, the call below still signals.
-    ;; `:filter-args' normalises before the guard.  `SPC l l' from *scratch*
-    ;; depends on this.
+    ;; user-error on nil, so a `:filter-return' version of this advice is dead
+    ;; code -- measured: with that version installed, the call below still
+    ;; signals.  `:filter-args' normalises before the guard reaches it.
+    ;; `SPC l l' from *scratch* depends on this, so the assertion is on the
+    ;; RESULT (a string comes back) rather than on which combinator is
+    ;; installed: the combinator is the current means, the string is the
+    ;; requirement.
     (let ((res (condition-case e
                    (claude-code-normalize-project-root nil)
                  (error e))))
@@ -923,6 +926,176 @@ REGEXP is only used for the message.  Returns non-nil on success."
 
 
 ;;;; ---------------------------------------------------------------------
+;;;; (h) Appearance: the gruvbox palette, and the italics that outlive it
+;;;; ---------------------------------------------------------------------
+
+;; Added when `doom-themes' was dropped for upstream `gruvbox-theme'.  The two
+;; palettes are near-identical, so the swap is exactly the kind of change that
+;; looks fine in a screenshot and is wrong in a detail nobody rechecks.
+;;
+;; WHY THIS READS `theme-settings' AND NOT `face-attribute'.  Measured: the
+;; daemon's initial frame F1 has `(display-color-cells)' = 0, and
+;; `(face-attribute 'default :background)' on it returns "unspecified-bg" no
+;; matter which theme is loaded.  An assertion against that would have been
+;; green with NO theme at all.  `theme-settings' holds the spec the theme
+;; actually installed, so this asks the theme what it will paint with rather
+;; than asking a colourless frame what it painted.
+;;
+;; The italics are the opposite case and ARE read off the face: :slant is
+;; frame-independent here, and it is the half of this section with real
+;; history.  `my/italicize-syntax-faces' hangs on `enable-theme-functions', and
+;; a theme swap is precisely when a hook keyed on theme loading gets lost --
+;; the graduation notes flagged that a naive port drops the italics the moment
+;; `load-theme' runs.  Asserting them here means the next theme change cannot
+;; drop them quietly.
+
+(defconst my/verify-theme 'gruvbox-dark-medium
+  "The theme init.el is expected to have enabled.")
+
+(defconst my/verify-theme-colors '(:background "#282828" :foreground "#ebdbb2")
+  "Expected truecolor `default' face of `my/verify-theme'.
+Written out rather than read from the theme, so this cannot agree with
+itself.  #282828 is gruvbox `dark0', which is what makes MEDIUM the variant
+that matches the retired `doom-gruvbox' -- hard is #1d2021 and soft #32302f.")
+
+(defun my/verify--theme-default-spec ()
+  "Return the `default' face spec `my/verify-theme' installed, or nil."
+  (nth 3 (seq-find (lambda (e)
+                     (and (eq (nth 0 e) 'theme-face)
+                          (eq (nth 1 e) 'default)))
+                   (get my/verify-theme 'theme-settings))))
+
+(defun my/verify-appearance ()
+  "Assert the theme, its palette, and the italic syntax faces."
+  (my/verify--say "\n== (h) appearance: gruvbox palette, italics, modeline ==")
+
+  ;; EXACTLY one theme.  `equal' against a one-element list, not `memq': two
+  ;; stacked themes is a real and silent failure mode -- the second one wins
+  ;; for the faces it defines and the first shows through everywhere else.
+  (if (equal custom-enabled-themes (list my/verify-theme))
+      (my/verify--ok "custom-enabled-themes = %S" custom-enabled-themes)
+    (my/verify--fail "custom-enabled-themes = %S, expected exactly (%s)"
+                     custom-enabled-themes my/verify-theme))
+
+  ;; Doom is retired, so its theme pack must be OUT OF THE CLOSURE and not
+  ;; merely unloaded.  `locate-library' searches load-path, which is what the
+  ;; Nix package set builds -- so this fails if doom-themes comes back into
+  ;; package.nix even if nothing loads it.
+  (if (locate-library "doom-themes")
+      (my/verify--fail "doom-themes is still on load-path (%s) -- it should have left package.nix with Doom"
+                       (locate-library "doom-themes"))
+    (my/verify--ok "doom-themes is not on load-path"))
+
+  ;; ... whereas doom-modeline is a standalone MELPA package that only wants
+  ;; nerd-icons, and it deliberately STAYED.  Asserted so that "drop the other
+  ;; doom-* package too" is a gate failure and therefore a decision.
+  (if (bound-and-true-p doom-modeline-mode)
+      (my/verify--ok "doom-modeline-mode is on (kept: not a Doom artefact)")
+    (my/verify--fail "doom-modeline-mode is off"))
+
+  ;; -- the palette ----------------------------------------------------------
+  (let ((spec (my/verify--theme-default-spec)))
+    (if (null spec)
+        (my/verify--fail "%s installed no `default' face spec" my/verify-theme)
+      ;; The truecolor branch, i.e. the one a real GUI or 24-bit terminal gets.
+      ;; Selected by min-colors rather than by position: autothemer's ordering
+      ;; is an implementation detail, and taking `car' would make this
+      ;; assertion depend on it.
+      (let ((truecolor
+             (seq-find (lambda (branch)
+                         (let ((disp (car branch)))
+                           (and (consp disp)
+                                (seq-some (lambda (c)
+                                            (and (consp c)
+                                                 (eq (car c) 'min-colors)
+                                                 (>= (cadr c) 16777215)))
+                                          disp))))
+                       spec)))
+        (if (null truecolor)
+            (my/verify--fail "%s `default' has no min-colors>=16777215 branch: %S"
+                             my/verify-theme spec)
+          (let ((attrs (cadr truecolor)))
+            (dolist (k '(:background :foreground))
+              (let ((got (plist-get attrs k))
+                    (want (plist-get my/verify-theme-colors k)))
+                (if (equal got want)
+                    (my/verify--ok "%s default %s = %s" my/verify-theme k got)
+                  (my/verify--fail "%s default %s = %S, expected %S"
+                                   my/verify-theme k got want)))))))))
+
+  ;; -- the italics ----------------------------------------------------------
+  ;; All four faces `my/italicize-syntax-faces' touches, because the hook
+  ;; either ran or it did not, and a single face would not tell that apart
+  ;; from a theme that happens to italicise comments on its own.
+  (dolist (face '(font-lock-comment-face
+                  font-lock-keyword-face
+                  font-lock-string-face
+                  font-lock-doc-face))
+    (let ((slant (face-attribute face :slant)))
+      (if (eq slant 'italic)
+          (my/verify--ok "%s is italic" face)
+        (my/verify--fail "%s :slant is %S, expected italic -- `my/italicize-syntax-faces' did not survive `load-theme'"
+                         face slant)))))
+
+
+;;;; ---------------------------------------------------------------------
+;;;; (i) org-gcal: the background timer, and the gate NOT firing it
+;;;; ---------------------------------------------------------------------
+
+;; RUNS FIRST.  See the driver.
+;;
+;; The 30-minute fetch timer came back when Doom was retired: it was withheld
+;; for the whole parallel period because two daemons cannot both own
+;; ~/org/gcal*.org.  This gate starts a THIRD real daemon out of the store,
+;; and a gate daemon that fetched would recreate that exact two-writer case
+;; against the user's live one -- with real calendar data on the losing side.
+;;
+;; my-org.el therefore keys `my/org-gcal-fetch-inhibit' off the environment
+;; variable verify.sh already exports.  Both halves are asserted here, because
+;; either alone is satisfiable by the bug the other catches: a gate that only
+;; checked the timer would go green on a config that fetches during the gate,
+;; and one that only checked the inhibit would go green on a config that has
+;; lost the timer entirely.
+;;
+;; Then the timer is CANCELLED.  The inhibit already makes it a no-op; this is
+;; the belt to those braces, and it costs one line against the case where the
+;; daemon took most of verify.sh's 120s readiness budget to come up and the
+;; 90-second initial delay has already elapsed.
+
+(defconst my/verify-gcal-fetch-interval (* 30 60)
+  "Expected repeat interval of the background fetch, in seconds.
+Duplicated from my-org.el on purpose -- a gate that imports the number it
+checks can only agree with itself.")
+
+(defun my/verify-org-gcal-timer ()
+  "Assert the background fetch timer exists and is inhibited here, then cancel it."
+  (my/verify--say "\n== (i) org-gcal: background fetch timer (and why it must not fire here) ==")
+
+  (if (fboundp 'my/org-gcal-fetch-safe)
+      (my/verify--ok "my/org-gcal-fetch-safe is defined")
+    (my/verify--fail "my/org-gcal-fetch-safe is VOID -- the timer would error every 30 minutes"))
+
+  (if (bound-and-true-p my/org-gcal-fetch-inhibit)
+      (my/verify--ok "my/org-gcal-fetch-inhibit is non-nil -- this daemon will not touch ~/org/gcal*.org")
+    (my/verify--fail
+     "my/org-gcal-fetch-inhibit is nil in the GATE daemon: it would fetch the real calendar and write ~/org/gcal*.org underneath the user's Emacs.  verify.sh must export EMACS_VANILLA_VERIFY_OUT before the daemon starts"))
+
+  (let ((timer (bound-and-true-p my/org-gcal-fetch-timer)))
+    (cond
+     ((not (timerp timer))
+      (my/verify--fail "my/org-gcal-fetch-timer is %S, expected a timer -- the background fetch is gone"
+                       timer))
+     ((not (equal (timer--repeat-delay timer) my/verify-gcal-fetch-interval))
+      (my/verify--fail "my/org-gcal-fetch-timer repeats every %Ss, expected %d"
+                       (timer--repeat-delay timer) my/verify-gcal-fetch-interval))
+     (t
+      (my/verify--ok "my/org-gcal-fetch-timer repeats every %ds"
+                     my/verify-gcal-fetch-interval)
+      (cancel-timer timer)
+      (my/verify--ok "timer cancelled for the remainder of the gate")))))
+
+
+;;;; ---------------------------------------------------------------------
 ;;;; Driver
 ;;;; ---------------------------------------------------------------------
 
@@ -936,6 +1109,11 @@ REGEXP is only used for the message.  Returns non-nil on success."
     (my/verify--say "config: %s" user-emacs-directory)
     (condition-case err
         (progn
+          ;; FIRST, before anything else can take time: cancel the org-gcal
+          ;; background fetch. Its initial delay is 90 seconds from daemon
+          ;; start and verify.sh allows up to 120 for readiness alone, so
+          ;; every section below is potentially past it. See section (i).
+          (my/verify-org-gcal-timer)
           (my/verify-leader)
           ;; Languages BEFORE eglot: opening a file is what LOADS each mode,
           ;; and an unloaded mode has not declared its derived-mode parents yet.
@@ -950,6 +1128,11 @@ REGEXP is only used for the message.  Returns non-nil on success."
           ;; open. Losing that ordering turns two independent measurements into
           ;; one.
           (my/verify-popups)
+          ;; AFTER the popup section: (g) measures window heights against
+          ;; the frame, and this one only reads faces and theme data so it
+          ;; cannot disturb that -- but putting it before would mean any
+          ;; frame surgery added here later silently changed (g)'s numbers.
+          (my/verify-appearance)
           (if samples
               (my/verify-lilypond samples)
             (my/verify--fail "EMACS_VANILLA_VERIFY_SAMPLES is unset"))

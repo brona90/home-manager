@@ -41,7 +41,7 @@
 ;; modules/lang/org/config.el for the localleader) so ten years of muscle
 ;; memory transfers.  Where Doom's command does not exist outside Doom the key
 ;; is kept and pointed at the nearest vanilla equivalent; those are listed in
-;; GRADUATION.md.  Doom keys whose feature simply is not here (workspaces,
+;; ../../DESIGN.md.  Doom keys whose feature simply is not here (workspaces,
 ;; popups, treemacs, snippets, lookup/docsets, ssh-deploy, crdt) are left
 ;; UNBOUND rather than repurposed -- an unbound key is honest, a key that does
 ;; something surprising is not.

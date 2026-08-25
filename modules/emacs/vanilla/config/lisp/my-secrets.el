@@ -173,7 +173,7 @@ the unattended-pinentry problem the plain store exists to remove.
 
 Use it once to inherit Doom's authorisation instead of redoing the browser
 flow; after that it never runs again.  Doom keeps its own encrypted store --
-this reads it, it does not move it -- so both flavours stay working during
+this reads it, it does not move it -- so both stayed working during
 the parallel period.  Google issues independent access tokens from the same
 refresh token, so two live caches do not fight."
   (interactive

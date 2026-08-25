@@ -1,16 +1,22 @@
 ;;; init.el --- vanilla Emacs, hand-built -*- lexical-binding: t; -*-
 
-;; Phase 1 scaffold.  Deliberately small: enough to open files, complete, edit
-;; with evil, and run magit -- so that `emacsclient -s vanilla' is a real editor
-;; and the daemon/socket plumbing can be tested.  Org, gcal, LilyPond and the
-;; Claude integration land in later phases and are NOT here yet; Doom remains
-;; the daily driver until they are.
+;; The UI, completion, editing and version-control layer.  Everything with a
+;; subject of its own lives in lisp/: org and gcal (my-org.el), languages and
+;; eglot (my-lang.el), Claude Code (my-claude.el, claude-diff.el), LilyPond
+;; (my-lilypond.el), the leader map (my-bindings.el), popups (my-popups.el)
+;; and the token store (my-secrets.el).  This file requires them at the bottom.
 ;;
-;; FLOOR: Emacs 30.  Linux gets emacs-unstable (31.x) and both Macs get 30.2,
-;; because emacs-overlay publishes no darwin binaries and building 31 from
-;; source there is an hour on the least-tested stdenv.  So anything 31-only
-;; will build fine and then fail on the Macs -- keep to 30 APIs until the Intel
-;; Mac question is resolved.
+;; This config replaced Doom Emacs, and it is the ONLY Emacs -- it owns the
+;; default server socket.  ../DESIGN.md is where every deliberate difference
+;; from the Doom config it replaced is written down, including the ones that
+;; look like omissions and are not.
+;;
+;; FLOOR: Emacs 30, and 30.2 is what every platform actually gets.  NOT 31,
+;; even though emacs-overlay offers it and caches it on Linux: its hydraJobs
+;; cover x86_64-linux and aarch64-linux only, so 31 on either Mac is an
+;; uncached source build on the least-tested stdenv, and taking it on Linux
+;; alone creates a skew where 31-only code builds fine here and fails there.
+;; Moving is a deliberate one-line change in ../package.nix.
 ;;
 ;; Packages come from Nix (see ../package.nix).  Nothing here may fetch.
 
@@ -173,12 +179,24 @@
     (set-face-attribute face nil :slant 'italic)))
 (add-hook 'enable-theme-functions #'my/italicize-syntax-faces)
 
-(use-package doom-themes
+;; gruvbox-theme, not doom-themes.  `gruvbox-dark-medium' is the variant whose
+;; bg0 is #282828, which is what `doom-gruvbox' used; hard (#1d2021) and soft
+;; (#32302f) are different backgrounds, so this is the match rather than a
+;; taste.  See package.nix for the palette comparison and for what is lost.
+;;
+;; `load-theme' is called with NO-ENABLE nil (the second arg is NO-CONFIRM),
+;; so it enables the theme, which runs `enable-theme-functions' -- the hook
+;; `my/italicize-syntax-faces' is on.  The explicit call after it is still
+;; needed for the daemon's first frame, exactly as before.
+(use-package gruvbox-theme
   :demand t
   :config
-  (load-theme 'doom-gruvbox t)
+  (load-theme 'gruvbox-dark-medium t)
   (my/italicize-syntax-faces))
 
+;; doom-modeline is a standalone MELPA package, not a Doom artefact: it needs
+;; nerd-icons and nothing else from that world, and it survived the retirement
+;; of Doom on that basis.
 (use-package doom-modeline
   :demand t
   :config (doom-modeline-mode 1))

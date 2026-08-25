@@ -57,7 +57,7 @@
 ;; windows put two bottom slots SIDE BY SIDE (`window-sides-vertical' is nil,
 ;; and full-width bottom popups are the point), so a second slot would give two
 ;; 40-column popups on an 80-column frame rather than Doom's two stacked ones.
-;; Reuse is the better failure mode; see "vslot" in GRADUATION.md.
+;; Reuse is the better failure mode; see "vslot" in ../../DESIGN.md.
 ;;
 ;; WHAT THIS FILE DOES NOT TOUCH, AND MUST NOT.  `display-buffer-alist' already
 ;; has two entries when this file loads, and both deliberately produce ORDINARY
@@ -91,7 +91,7 @@
 ;; gate asserts the *Help* popup IS reachable by `other-window', so this
 ;; decision is checked rather than merely written down.
 ;;
-;; `:ttl' IS NOT PORTED.  See GRADUATION.md for the full argument; the short
+;; `:ttl' IS NOT PORTED.  See ../../DESIGN.md for the full argument; the short
 ;; version is that with one bottom slot the VISIBLE clutter Doom's reaper
 ;; existed for cannot happen, what is left is buffer-list clutter that
 ;; `SPC b O' already answers, and a wall-clock timer that kills buffers is the
