@@ -3,14 +3,21 @@ description: >-
   Build (or dry-run) one or more flake targets, retrying the whole set on
   transient failures.
 
-  WHY THIS EXISTS: nix-doom-emacs-unstraightened resolves every elisp source
-  through import-from-derivation, and its intermediate derivations set
-  allowSubstitutes = false. Those are plain git fetches of non-GitHub hosts
-  (codeberg, gitlab, savannah) that no binary cache can serve, and nix's own
-  download-attempts setting covers substituter downloads only -- NOT these.
-  One transient 408/504 therefore fails an otherwise-green job. Retrying is
-  cheap: whatever a failed attempt did fetch is already in the store, so a
-  retry resumes rather than restarts.
+  WHY THIS EXISTS: the jobs that use it build or dry-run a full closure over
+  the network. A single transient 408/504 -- from cache.nixos.org, from
+  GitHub, from any fetcher -- fails an otherwise-green job over a change that
+  touched nothing related. nix's own download-attempts setting covers
+  substituter downloads only, not fixed-output fetches. Retrying is cheap:
+  whatever a failed attempt did fetch is already in the store, so a retry
+  resumes rather than restarts.
+
+  ORIGINALLY it existed for a sharper case that is now gone:
+  nix-doom-emacs-unstraightened resolved every elisp source through
+  import-from-derivation with allowSubstitutes = false, i.e. plain git fetches
+  of codeberg/gitlab/savannah that no binary cache could serve. PRs #20 and
+  #21 both died inside a minute on one of them. Doom is retired, and the
+  `check` job's copy of this retry went with it -- these two stayed because
+  their exposure is to the network in general, not to that IFD.
 
 inputs:
   targets:

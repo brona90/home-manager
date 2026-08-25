@@ -23,18 +23,17 @@
 }: let
   cfg = config.my.orreryMcp;
 
-  # THE DELIBERATE EXCEPTION: this is the one consumer that reads
-  # `my.emacs.package` (always Doom) rather than `my.emacs.primaryPackage`.
-  # emacs-mcp.nix and emacs-doctor/default.nix must follow the primary because
-  # they talk to the daemon on the DEFAULT socket and would hit version skew.
   # Nothing here talks to a daemon: orrery's build and CLI are `emacs -Q
-  # --batch`, so ANY Emacs works and this is purely about closure size -- reuse
-  # an Emacs that is already in the closure instead of adding a second one.
+  # --batch`, so ANY Emacs works and reading `my.emacs.package` is purely about
+  # closure size -- reuse an Emacs that is already in the closure instead of
+  # adding a second one.
   #
-  # Consequence to know after `flavor` flips to "vanilla": this keeps the Doom
-  # closure alive for batch use even though nothing interactive uses it. That
-  # is a cheap, correct default; the line to change is here, not upstream, and
-  # only when Doom is actually retired (see modules/emacs/vanilla/GRADUATION.md).
+  # This used to be flagged as a deliberate exception, because `package` was
+  # always Doom while emacs-mcp.nix and emacs-doctor/default.nix had to follow
+  # `primaryPackage`. There is one Emacs now, so all three read the same
+  # option and the exception is only worth knowing if a second one comes back:
+  # THIS is the site that would stay on `package` while the other two follow
+  # the primary.
   emacsPackage =
     if config.my.emacs.enable
     then config.my.emacs.package

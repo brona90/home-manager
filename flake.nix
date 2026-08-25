@@ -14,21 +14,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    doom-emacs = {
-      url = "github:marienz/nix-doom-emacs-unstraightened";
-      inputs.nixpkgs.follows = "nixpkgs";
-      # Dedupe against the promoted input below. Without this the lock keeps a
-      # second emacs-overlay node that drifts independently, so Doom and the
-      # vanilla build would resolve two different MELPA snapshots -- two full
-      # elisp closures, and packages that differ between the two flavors we
-      # are trying to compare.
-      inputs.emacs-overlay.follows = "emacs-overlay";
-    };
-
-    # Promoted from a transitive input of doom-emacs, which has been pulling it
-    # all along. Wanted directly for a MELPA/ELPA snapshot fresher than the
-    # channel's, and for the emacs-unstable* attributes when Emacs 31 is worth
-    # moving to.
+    # A MELPA/ELPA snapshot fresher than the channel's, and the source of
+    # the emacs-unstable* attributes when Emacs 31 is worth moving to.
+    #
+    # It arrived as a transitive input of nix-doom-emacs-unstraightened and was
+    # promoted to a direct one so both could share a single node; that input is
+    # gone and this one stayed, because pkgs.emacs.pkgs is where every package
+    # in modules/emacs/vanilla/package.nix comes from.
     #
     # follows: emacs-overlay's own nixpkgs inputs are read ONLY by its
     # packages/lib/hydraJobs outputs. overlays.default is a plain
@@ -107,7 +99,6 @@
     nixpkgs,
     home-manager,
     nixos-wsl,
-    doom-emacs,
     sops-nix,
     claude-code,
     git-hooks,
@@ -200,12 +191,11 @@
             allowDeprecatedx86_64Darwin = true;
           };
         overlays = [
-          # First: doom-emacs pulls emacsPackagesFor out of this same overlay
-          # by hand, so applying the whole thing here does not change the Doom
-          # closure -- it only makes the same package set reachable as
-          # pkgs.emacs.pkgs for the vanilla build.
+          # Makes the overlay's MELPA/ELPA snapshot reachable as
+          # pkgs.emacs.pkgs, which is the package set
+          # modules/emacs/vanilla/package.nix draws its whole explicit list
+          # from.
           emacs-overlay.overlays.default
-          doom-emacs.overlays.default
           claude-code.overlays.default
           skipDirenvChecksOnDarwin
           (pinMiseOnDarwin system)
@@ -324,29 +314,10 @@
                 tmuxHelper.enable = true;
                 emacs = {
                   enable = true;
-                  # Daily driver. Stays "doom" until the vanilla config
-                  # graduates; flipping this one word moves vanilla onto the
-                  # DEFAULT socket and demotes Doom to `emacsclient -s doom`.
-                  # Rollback is the same word -- the two keep entirely separate
-                  # state (~/.local/share/nix-doom vs ~/.config/emacs).
-                  flavor = "doom";
-                  package = pkgs.emacsWithDoom {
-                    doomDir = ./modules/emacs/doom.d;
-                    doomLocalDir = "~/.local/share/nix-doom";
-                  };
-                  vanilla = {
-                    # Second daemon on socket "vanilla", reachable as
-                    # `emacsclient -s vanilla` or the `emv`/`emvt` wrappers.
-                    # Same shape as tmux-experimental: a parallel instance that
-                    # never shadows the daily driver.
-                    #
-                    # Linux only: home-manager's systemd.enable defaults to
-                    # isLinux and drops the unit SILENTLY on darwin -- no
-                    # assertion, no warning. On macOS use
-                    # `nix run .#emacs-vanilla` instead.
-                    enable = isLinux;
-                    package = pkgs.callPackage ./modules/emacs/vanilla/package.nix {};
-                  };
+                  # The only Emacs, on every platform. Doom was retired here;
+                  # see modules/emacs/vanilla/DESIGN.md for what this config
+                  # is and modules/emacs/default.nix for what went with it.
+                  package = pkgs.callPackage ./modules/emacs/vanilla/package.nix {};
                 };
                 emacsDoctor.enable = true;
                 zsh.extraAliases.hms = ''home-manager switch --flake "$HOME/.config/home-manager#${username}@${system}" -b backup'';
@@ -581,8 +552,8 @@
             }}/bin/tmux-experimental";
           };
 
-          # Throwaway foreground Emacs for trying the vanilla config without
-          # an `hms`, mirroring `nix run .#tmux-experimental`.
+          # Throwaway foreground Emacs for trying a config change without an
+          # `hms`, mirroring `nix run .#tmux-experimental`.
           #
           # --init-directory points at a READ-ONLY store path deliberately:
           # this run IS the test that early-init.el has redirected every
@@ -592,12 +563,12 @@
           # directory writable.
           #
           # No --daemon: it opens no server socket, so it cannot collide with
-          # either running daemon.
+          # the running daemon.
           emacs-vanilla = let
             vanilla = pkgs.callPackage ./modules/emacs/vanilla/package.nix {};
           in {
             type = "app";
-            meta.description = "Vanilla Emacs trial build, parallel to the Doom daily driver";
+            meta.description = "Throwaway foreground Emacs from this flake, no daemon and no socket";
             program = "${pkgs.writeShellApplication {
               name = "emacs-vanilla";
               text = ''

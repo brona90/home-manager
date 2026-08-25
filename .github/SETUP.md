@@ -100,12 +100,16 @@ lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
                            └─> docker-test (registry pull verification)
 ```
 
-`nix flake check --all-systems` is intentionally not used: the Doom Emacs setup (nix-doom-emacs-unstraightened) relies on import-from-derivation whose intermediate derivations set `allowSubstitutes = false`, so evaluating a Darwin config requires *building* Darwin derivations — impossible on a Linux runner. The `eval-darwin` job provides that coverage on macOS instead, on PRs as well as pushes.
+`nix flake check --all-systems` **is** used. It was not, for as long as the Doom Emacs setup (nix-doom-emacs-unstraightened) was in the flake: that relies on import-from-derivation whose intermediate derivations set `allowSubstitutes = false`, so evaluating a Darwin config required *building* Darwin derivations, which a Linux runner cannot do. Doom is retired and the flag was restored after verifying it exits 0, rather than on the assumption that it would.
+
+Darwin home configurations are covered by it, which is worth spelling out because it is indirect: `nix flake check` walks apps, devShells, packages and checks and does not know about `homeConfigurations`, but `perUserPackages` mirrors every one of them into `packages.<system>.home-<username>`. A local `--all-systems` run on x86_64-linux evaluated `packages.x86_64-darwin.home-gfoster`, `packages.aarch64-darwin.home-gfoster` and `packages.aarch64-darwin.home-888973`.
+
+The `eval-darwin` job is kept anyway. It adds a `nix build --dry-run` — a build plan resolved against substituters, not only an evaluation — on a real Darwin builder. That overlap is now large enough that removing the job would be a defensible decision; it is left in place so that removing it is one, rather than a cleanup that quietly drops coverage.
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
 | `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck, actionlint |
-| `check` | After lint | `nix flake check` + `nix build --dry-run` eval of the Linux config |
+| `check` | After lint | `nix flake check --all-systems` + `nix build --dry-run` eval of the Linux config |
 | `eval-darwin` | After lint (pushes/PRs) | `nix build --dry-run` eval of all Darwin configs in `config.nix`; x86_64-darwin via Rosetta 2 (`extra-platforms`) |
 | `build-home` | **PRs and pushes** | On a PR: builds `gfoster@x86_64-linux` only, then runs the Emacs gate (`modules/emacs/vanilla/verify.sh`). On a push to master: also both aarch64-darwin. Gated by the **matrix**, not a job-level `if` — the `if` is what made it skip on every PR. x86_64-darwin is eval-only (no hosted Intel macOS runners). The Cachix push is filtered: only paths *not* already signed by cache.nixos.org are uploaded (no point mirroring thousands of upstream paths), and it runs *before* the Emacs gate so a red gate still leaves the closure cached |
 | `docker-build` | After build-home | Builds Docker image, loads it, smoke-tests it locally, and only then pushes to Docker Hub if token set |

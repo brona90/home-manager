@@ -1,6 +1,6 @@
 ---
 name: nix-module-author
-description: Use this agent when a change has to be made to the home-manager flake at ~/.config/home-manager rather than to the dotfile it generates. Typical triggers include adding or editing a module under modules/, changing Claude Code settings, hooks, skills, agents or MCP server registration, adjusting either Emacs flavour (Doom under modules/emacs/doom.d, vanilla under modules/emacs/vanilla) or shell configuration, and diagnosing why an edit to a file in the home directory had no effect. See "When to invoke" in the agent body for worked scenarios.
+description: Use this agent when a change has to be made to the home-manager flake at ~/.config/home-manager rather than to the dotfile it generates. Typical triggers include adding or editing a module under modules/, changing Claude Code settings, hooks, skills, agents or MCP server registration, adjusting the Emacs config (modules/emacs/vanilla) or shell configuration, and diagnosing why an edit to a file in the home directory had no effect. See "When to invoke" in the agent body for worked scenarios.
 model: inherit
 color: cyan
 tools: Read, Write, Edit, Grep, Glob, Bash
@@ -13,9 +13,10 @@ build outputs; you always change the input and rebuild.
 ## When to invoke
 
 - **An edit did not stick.** Someone changed `~/.claude/settings.json`,
-  `~/.claude/CLAUDE.md`, or an Emacs config file of either flavour (`~/.config/emacs/`
-  is the managed vanilla tree) directly and the change vanished or never
-  appeared. Find the owning module and make the change there.
+  `~/.claude/CLAUDE.md`, or an Emacs config file (`~/.config/emacs/` is a
+  managed tree, linked from `modules/emacs/vanilla/config/`) directly and the
+  change vanished or never appeared. Find the owning module and make the change
+  there.
 - **New Claude Code tooling.** A skill, agent, command, hook, or MCP server has
   to exist on every machine. It belongs in a module, not in `~/.claude`.
 - **A module needs extending.** New options, a new contributed hook command, a

@@ -189,7 +189,31 @@
       ws-butler # trims only lines you touched
 
       # -- appearance -------------------------------------------------------
-      doom-themes
+      #
+      # gruvbox-theme, NOT doom-themes: doom-themes exists to ship ~60 themes
+      # plus Doom-specific extras, and the only one ever loaded here is
+      # `doom-gruvbox'. Upstream gruvbox-theme is the same palette from its
+      # source -- bg0 #282828, bg1 #3c3836, fg1 #ebdbb2, yellow #fabd2f, green
+      # #b8bb26, blue #83a598, purple #d3869b, aqua #8ec07c are identical; only
+      # red differs by one digit (#fb4934 upstream, #fb4933 in doom-gruvbox).
+      # `gruvbox-dark-medium' is the variant whose bg0 is #282828; hard is
+      # #1d2021 and soft is #32302f, so medium is the match, not a preference.
+      #
+      # WHAT DOES DIFFER, and is accepted: doom-themes carries extra face
+      # definitions for magit, org and a handful of other packages that
+      # upstream gruvbox does not. Those faces fall back to their package
+      # defaults against the same background rather than to nothing, so the
+      # loss is polish, not legibility. verify.el asserts the palette so a
+      # future theme change is a gate change.
+      #
+      # `autothemer' is a hard dependency and is PROPAGATED by this
+      # derivation (nix-support/propagated-user-env-packages), so it is
+      # deliberately not listed -- same convention as org-gcal above.
+      gruvbox-theme
+
+      # doom-modeline is NOT a Doom artefact and stays. It is a standalone
+      # MELPA package with no dependency on doom-themes or on Doom itself; it
+      # only wants nerd-icons, which is listed below.
       doom-modeline
       nerd-icons
       rainbow-delimiters

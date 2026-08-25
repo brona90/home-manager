@@ -17,18 +17,19 @@
 ;; reproduce beyond the module's package set -- of which only `evil-org' is
 ;; load-bearing for muscle memory.
 ;;
-;; Two deliberate differences from Doom, both about running as a SECOND Emacs
-;; beside the daily driver.  Both are listed in GRADUATION.md and both revert
-;; when this becomes the only Emacs:
+;; One deliberate difference from Doom remains:
 ;;
-;;   1. No background fetch timer.  Doom re-fetches every 30 minutes.  Two
-;;      daemons on that timer would write ~/org/gcal*.org underneath each
-;;      other, and the one with the buffer open would hit
-;;      "file changed on disk" -- turning a trial config into a data-loss
-;;      question about real calendar entries.  Fetch here is manual.
-;;   2. The OAuth token store is a plain 0600 file, not a GPG-encrypted
-;;      plstore.  See the commentary in my-secrets.el for why that is not the
-;;      downgrade it looks like.
+;;   The OAuth token store is a plain 0600 file, not a GPG-encrypted plstore.
+;;   See the commentary in my-secrets.el for why that is not the downgrade it
+;;   looks like.  This one is permanent.
+;;
+;; The other -- no background fetch timer -- was a property of running as a
+;; SECOND Emacs beside Doom, and it expired with Doom.  Two daemons on a
+;; 30-minute timer would have written ~/org/gcal*.org underneath each other
+;; and the one holding the buffer would have hit "file changed on disk", which
+;; is a data-loss question about real calendar entries rather than a
+;; preference.  With one daemon there is one writer, and the timer is restored
+;; at the bottom of this file.
 
 ;;; Code:
 
@@ -268,14 +269,72 @@ async and a plain value when it did not, so both paths are handled."
 ;;
 ;; `.eld' rather than `.plist': the format is a plain alist, and reusing the
 ;; name of the file it replaces would invite someone to open it with plstore
-;; and be told it is corrupt.  A separate path from Doom's, so both flavours
-;; keep working through the parallel period.
+;; and be told it is corrupt.  It was also a separate path from Doom's so both
+;; could keep working through the parallel period; Doom is retired and this is
+;; simply the store now.
 (my/oauth2-auto-use-plain-store
  (expand-file-name "oauth2-auto.eld" no-littering-etc-directory))
 
-;; NO background fetch timer here.  Doom runs `org-gcal-fetch' every 30
-;; minutes; see the commentary at the top for why a second daemon must not.
-;; Restore it from doom.d/config.el when this config graduates and Doom stops.
+;;;; Background fetch
+;;
+;; ~90s after the daemon starts, then every 30 minutes.  Ported verbatim in
+;; behaviour from the Doom config this replaced; it was omitted for the whole
+;; parallel period because two daemons cannot both own ~/org/gcal*.org, and
+;; restored here now that there is one Emacs again.
+;;
+;; The `my/org-gcal--save-after' advice installed above is what makes this
+;; worth having: org-gcal populates buffers and never saves them, so without
+;; the advice a background fetch would leave the agenda current only in memory
+;; and the files stale on disk.
+;;
+;; `require' rather than a bare call: org-gcal is deferred (`:commands'
+;; above), so on a daemon that has not yet run a gcal command the package is
+;; not loaded and `org-gcal-client-id' is not even bound.  Loading it is what
+;; runs the `:config' block that reads the sops credentials -- and the
+;; `bound-and-true-p' guard after it is what stops an unconfigured machine
+;; (no sops age key, so no client id) from firing a fetch every 30 minutes
+;; that can only fail.  NOERROR on the `require' covers the same case one
+;; level up.
+;; THE GATE MUST NOT FETCH.  modules/emacs/vanilla/verify.sh starts a real
+;; daemon from the store config -- that is the whole point of it -- and a
+;; daemon with this timer running would, 90 seconds in, pull the real Google
+;; Calendar and write ~/org/gcal*.org while the user's actual daemon has those
+;; files open.  That is precisely the two-writer data-loss case the timer was
+;; withheld for during the parallel period, reintroduced by the test harness.
+;;
+;; Keyed on the variable verify.sh already exports to tell the daemon where to
+;; write its report, so there is nothing extra for the gate to remember to set.
+;; verify.el asserts this is non-nil in the gate daemon AND that the timer is
+;; installed anyway, so neither half can rot silently: drop the export and the
+;; gate goes red rather than quietly fetching.
+(defvar my/org-gcal-fetch-inhibit (and (getenv "EMACS_VANILLA_VERIFY_OUT") t)
+  "Non-nil to suppress the background Google Calendar fetch.
+Set from the environment at load time so a gate daemon never races the real
+one for ~/org/gcal*.org.  Also settable by hand to pause the fetch without
+cancelling `my/org-gcal-fetch-timer'.")
+
+(defun my/org-gcal-fetch-safe ()
+  "Background-fetch Google Calendar if org-gcal is configured.
+Does nothing when `my/org-gcal-fetch-inhibit' is non-nil, when org-gcal
+cannot be loaded, or when it has no client id -- so an unconfigured machine
+gets silence rather than a failure every 30 minutes."
+  (when (and (not my/org-gcal-fetch-inhibit)
+             (require 'org-gcal nil t)
+             (bound-and-true-p org-gcal-client-id))
+    (org-gcal-fetch)))
+
+(defvar my/org-gcal-fetch-timer nil
+  "Repeating timer for the background Google Calendar fetch.")
+
+;; Cancel-then-set, so re-evaluating this file (M-x eval-buffer while editing
+;; it, or a second `load') replaces the timer instead of adding a second one.
+;; Two timers would double the API traffic and race each other into the same
+;; files -- the exact failure the parallel period was avoiding, reintroduced
+;; inside a single daemon.
+(when (timerp my/org-gcal-fetch-timer)
+  (cancel-timer my/org-gcal-fetch-timer))
+(setq my/org-gcal-fetch-timer
+      (run-at-time 90 (* 30 60) #'my/org-gcal-fetch-safe))
 
 ;;;; Bindings
 ;;

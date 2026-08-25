@@ -9,10 +9,12 @@
 > testing future config changes on a parallel socket).
 
 This doc is also the **template** for the pattern: a parallel instance on its
-own socket, kept until it earns the default slot.
-[`modules/emacs/vanilla/GRADUATION.md`](../emacs/vanilla/GRADUATION.md) mirrors
-it for the second Emacs flavour (`emacsclient -s vanilla` in place of
-`tmux -L experimental`), and is the live example of a trial still in progress.
+own socket, kept until it earns the default slot. The hand-built Emacs config
+followed it — `emacsclient -s vanilla` in place of `tmux -L experimental` — and
+has since graduated and replaced Doom;
+[`modules/emacs/vanilla/DESIGN.md`](../emacs/vanilla/DESIGN.md) is what its
+trial document turned into once the trial was over, which is the other half of
+the pattern.
 
 ## 1. Current state
 

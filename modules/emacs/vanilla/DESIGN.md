@@ -1,38 +1,51 @@
-# Vanilla Emacs — graduation
+# Emacs — the design
 
-Mirrors `modules/tmux/GRADUATION.md`: a parallel instance that runs beside the
-daily driver until it earns the default slot.
+This is the only Emacs. It replaced Doom, which it ran beside on a second
+socket for four phases before taking the default one; this file was that
+trial's `GRADUATION.md` and is now the design document for what came out of
+it. What is still here is the reasoning — every place this config does
+something other than the obvious thing, and why. What was removed is the
+checklist, the phase table and the rollback instructions, because the
+graduation happened.
 
-## Current state
+Anything left for a **human** after the retirement — the passphrase-less GPG
+key, `~/.local/share/nix-doom`, the sops entry — is in
+[`../RETIRING-DOOM.md`](../RETIRING-DOOM.md), not here.
+
+Several files under `config/lisp/` say they were ported from
+`modules/emacs/doom.d/config.el`. That path no longer exists; the statements
+are provenance, not directions, and `git log -- modules/emacs/doom.d` has the
+originals. They are left as written because "this was transcribed from X, with
+these three changes" stops being checkable the moment X is renamed out of the
+sentence.
+
+## What it is
 
 | | |
 |---|---|
-| Daily driver | **Doom** (`my.emacs.flavor = "doom"` in `flake.nix`) |
-| Vanilla | second daemon, socket `vanilla`, Linux only |
-| Reach it | `emv` (GUI-or-TTY), `emvt` (TTY), or `emacsclient -s vanilla` |
-| Try it without `hms` | `nix run .#emacs-vanilla` |
 | Base Emacs | `pkgs.emacs` 30.2 on **every** platform |
+| Package set | explicit list in `package.nix`, from the `emacs-overlay` MELPA/ELPA snapshot |
 | Config | `modules/emacs/vanilla/config/`, linked to `~/.config/emacs` |
-| Phase | **4 — Claude Code, LilyPond, popups**. What is left is org-gcal's data check and two weeks of use. |
+| Reach it | `em` (GUI-or-TTY), `emt` (TTY), or a bare `emacsclient` — the DEFAULT socket |
+| Daemon | `systemctl --user status emacs`, or launchd on darwin |
+| Try a build without `hms` | `nix run .#emacs-vanilla` |
 | Gate | `bash modules/emacs/vanilla/verify.sh` — lints, builds, then asks a real daemon |
+| Theme | `gruvbox-dark-medium` from upstream `gruvbox-theme` |
 
-Doom is untouched. Nothing about the daily driver changes until `flavor` flips.
+The daemon unit exports `EMACS_SOCKET_NAME=%t/emacs/server`. That is what makes
+a Claude session running in a vterm inside the daemon fire its hooks at *that*
+daemon: Emacs never exports that variable to subprocesses, it is read by the
+`emacsclient` binary, and `modules/claude-code.nix` has passed
+`-s "$EMACS_SOCKET_NAME"` since #17 with nothing setting it. The unit sets it
+explicitly even though the unset fallback already resolves correctly — see the
+comment in `modules/emacs/default.nix` for why that was not left to chance.
 
-Both systemd units now export `EMACS_SOCKET_NAME` (`%t/emacs/server` and
-`%t/emacs/vanilla`). That is what makes a Claude session running in a vterm
-inside *this* daemon fire its hooks at *this* daemon: Emacs never exports that
-variable to subprocesses, it is read by the `emacsclient` binary, and
-`modules/claude-code.nix` has passed `-s "$EMACS_SOCKET_NAME"` since #17 with
-nothing setting it. The primary sets it too, explicitly — see the comment in
-`modules/emacs/default.nix` for why the already-correct fallback was not left
-to chance.
-
-## How to trial
+## Running it
 
 ```sh
 nix run .#emacs-vanilla     # throwaway foreground Emacs, no daemon, no hms
-hms && emv                  # the real parallel daemon
-systemctl --user status emacs-vanilla
+hms && em                   # the real thing
+systemctl --user status emacs
 ```
 
 `nix run .#emacs-vanilla` points `--init-directory` at a **read-only store
@@ -42,18 +55,20 @@ every writable path — `eln-cache`, `custom.el`, `auto-save`, `recentf`,
 store, the redirect is incomplete: fix `early-init.el`, do not make the
 directory writable.
 
-## Graduation criteria
+## What it covers
 
-Not yet met. In rough order of how much they hurt when missing:
+Built in four phases, each one gated by `verify.sh` against a real daemon. In
+rough order of how much each would hurt if it broke:
 
-- [x] **Org**: agenda, capture, refile, the daily dashboard. Ported verbatim
+- **Org**: agenda, capture, refile, the daily dashboard. Ported verbatim
       from the `after! org` block; `evil-org` carries the folding and motions
-- [ ] **org-gcal**: three calendars and sops credentials are wired and load
-      (see "Deliberate differences" below for the two things that are not
-      copies of Doom). What is **not** done is the part that matters: fetch
-      once and diff `gcal*.org` against what Doom produces. Whether it errored
-      is not the test — a fetch that silently writes half a calendar exits 0
-- [x] **claude-diff.el** ported to `lisp/claude-diff.el`, required **eagerly**
+- **org-gcal**: three calendars, sops credentials, and a 30-minute background
+      fetch. The acceptance test was not "did it error" — a fetch that
+      silently writes half a calendar exits 0 — but a real fetch diffed
+      against Doom's output: 243 entries conserved across live and archive,
+      lossless. See "Deliberate differences — org" for the token store, which
+      is the one place this is not a copy of Doom
+- **claude-diff.el** ported to `lisp/claude-diff.el`, required **eagerly**
       because the PermissionRequest hook `--eval`s into a daemon that may never
       have loaded `claude-code.el`, and `--eval` cannot autoload a function
       with no stub. The Claude popup is a **bottom** window, and the caller
@@ -62,13 +77,13 @@ Not yet met. In rough order of how much they hurt when missing:
       option would have cost. `claude-code` is the nixpkgs package (the same
       `yuya373/claude-code-emacs` Doom runs), `SPC l` is Doom's eleven keys,
       and `projectile` comes with it as private plumbing that takes no key
-- [x] **LilyPond**: `lisp/my-lilypond.el`. Mode loading through a casing shim,
+- **LilyPond**: `lisp/my-lilypond.el`. Mode loading through a casing shim,
       the flycheck checker **ported to flymake**, async build-on-save, and an
       explicit display rule for the failure buffer that Doom's popup manager
       used to place. The gate runs a real `lilypond` over four sample files
       and checks the diagnostics, because the interesting half of that checker
       is the case where 2.26 emits a warning with **no column**
-- [x] **Languages**: `lisp/my-lang.el`. 21 file types checked in a live daemon —
+- **Languages**: `lisp/my-lang.el`. 21 file types checked in a live daemon —
       every one lands in the intended major mode, and every one that has a
       tree-sitter mode in Emacs 30.2 has a live parser. 17 grammars come from
       Nix (an explicit list; see `package.nix` for why it is not
@@ -81,7 +96,7 @@ Not yet met. In rough order of how much they hurt when missing:
       `nix-mode` entry match it) is **false** in `nix-ts-mode 20260705.1600`.
       `haskell-ts-mode` 1.3.5 does make that call and needs nothing. The gate
       found the difference; the design had not
-- [x] **Bindings**: `lisp/my-bindings.el`. 14 named prefixes and ~150 named
+- **Bindings**: `lisp/my-bindings.el`. 14 named prefixes and ~150 named
       leader keys on Doom's key choices, every one of them showing a
       human-readable name in the which-key popup — the whole point of a leader
       key, and the thing that was still missing. Gate: a real daemon walks the
@@ -89,7 +104,7 @@ Not yet met. In rough order of how much they hurt when missing:
       reachable, 0 void) and that no key or prefix renders as a raw symbol
       (490 named, 0 unnamed). What is still absent is the long tail behind
       features this config does not have — see below
-- [x] **Popups**: `lisp/my-popups.el`. Doom's `:ui popup` is ~1400 lines; this
+- **Popups**: `lisp/my-popups.el`. Doom's `:ui popup` is ~1400 lines; this
       is ~60 and **no packages** — `window-sides-slots`, four
       `display-buffer-alist` rules and `SPC ~`. `popper` and `shackle` were
       both evaluated and rejected. Three Doom behaviours are deliberately not
@@ -99,8 +114,6 @@ Not yet met. In rough order of how much they hurt when missing:
       line, the weak dedication, and the `SPC ~` round trip **in both
       directions** — which is how it caught that `mode-line-format` is not in
       `window-persistent-parameters` and was silently lost on restore
-- [ ] Two weeks as `emv` without reaching for `em`
-
 ## Deliberate differences from Doom — languages
 
 **`eglot-ensure` is hooked only where the server is actually installed.** The
@@ -233,7 +246,7 @@ Doom's *manager*, and there is no manager here.
    thing in this config that could destroy work, it is the first piece of
    background state that mutates buffers, and it is untestable by this gate
    without sleeping in it. **What would change the answer:** if `buffer-list`
-   after a two-week `emv` session is more than ~20% transient buffers, revisit.
+   after a two-week session is more than ~20% transient buffers, revisit.
 
 3. **ESC-to-close.** Doom closes popups from `doom-escape-hook`. There is no
    such hook here and nothing to hang one on: grepping `my-bindings.el` for
@@ -309,11 +322,16 @@ Claude vterm in this daemon and a real GUI frame), and rewriting layout code on
 the one untestable path is where bugs ship. The full argument is in
 `lisp/my-claude.el`.
 
-**The `claude-code-normalize-project-root` advice is `:filter-args`, not
-Doom's `:filter-return`.** Upstream now *signals* a `user-error` on a nil
-project root instead of returning nil, so a `:filter-return` advice never
-runs — Doom's is dead code today. Measured: with Doom's advice installed,
-`(claude-code-normalize-project-root nil)` still signals.
+**The `claude-code-normalize-project-root` advice is `:filter-args`, and the
+obvious `:filter-return` does not work.** Upstream *signals* a `user-error` on
+a nil project root rather than returning nil, and a `:filter-return` advice
+never runs when the advised function signals — so it is dead code against this
+upstream. Measured, not reasoned: with the `:filter-return` version installed,
+`(claude-code-normalize-project-root nil)` still signals. It was correct
+against an older claude-code that returned nil, and it stopped working silently
+when upstream tightened the guard. `SPC l l` from `*scratch*` depends on the
+fix, and the gate asserts the **result** — a string comes back — rather than
+which combinator is installed.
 
 **`projectile` is installed and enables nothing.** It is a hard dependency of
 seven of claude-code's files (`projectile-project-root`,
@@ -371,67 +389,103 @@ poppler in the closure — a decision, not an oversight, and not taken here.
 
 ## Deliberate differences from Doom — org
 
-Two, both in `lisp/my-org.el`. Neither is an omission.
+One, in `lisp/my-org.el`, and it is not an omission.
 
-**No 30-minute background fetch timer.** Doom re-fetches every 30 minutes. Two
-daemons doing that would write `~/org/gcal*.org` underneath each other, and
-whichever has the buffer open hits "file changed on disk" — turning a trial
-config into a data-loss question about real calendar entries. Fetch here is
-`SPC m G f`, by hand. Restore the timer from `doom.d/config.el` at graduation,
-when Doom stops.
+**The 30-minute background fetch timer is back, and it is why the gate does
+not fetch.** It was withheld for the whole parallel period: two daemons on that
+timer would have written `~/org/gcal*.org` underneath each other, and whichever
+held the buffer would have hit "file changed on disk" — a data-loss question
+about real calendar entries rather than a preference. One daemon means one
+writer, so the timer was restored with Doom's timings (90s after start, then
+every 30 minutes).
 
-For the same reason: **do not run a vanilla fetch while Doom has a `gcal*.org`
-buffer open.** That is the one way this parallel instance can damage something
-the daily driver owns.
+That reasoning did not evaporate, it moved: `verify.sh` starts a **third** real
+daemon out of the store, and a gate daemon on that timer would recreate the
+two-writer case against the live one. `my/org-gcal-fetch-inhibit` is set from
+the environment variable `verify.sh` already exports, and section (i) of the
+gate asserts **both** that the timer exists and that the inhibit is on — either
+check alone is satisfiable by the bug the other catches.
 
 **The OAuth token store is a plain `0600` file, not a GPG-encrypted plstore.**
-`~/.local/state/emacs/oauth2-auto.eld`, separate from Doom's, so both keep
-working. The reasoning is written out at length in `lisp/my-secrets.el`; the
-short version is that Doom's store is encrypted to a key with no passphrase
-whose private half sits at `0600` on the same disk, so the encryption was
-never adding protection over the file mode. Encrypting to the YubiKey key
-instead is not an option while the fetch has to run unattended — that trade is
-real and it was made knowingly.
+`~/.local/state/emacs/oauth2-auto.eld`. It was a separate path from Doom's so
+both could keep working through the parallel period; it is now simply the
+store. The reasoning is written out at length in `lisp/my-secrets.el`; the
+short version is that Doom's store was encrypted to a key with **no
+passphrase** whose private half sat at `0600` on the same disk, so the
+encryption was never adding protection over the file mode — and it cost a
+certify-capable, always-unlocked key sitting ultimately trusted in the keyring.
+Encrypting to the YubiKey key instead is not an option while the fetch has to
+run unattended: that trade is real and it was made knowingly, and it is the
+reason the fetch is allowed to be a background timer at all.
 
-To authorise this Emacs without redoing the browser flow, run
-`M-x my/oauth2-import-from-plstore` once and accept the default path. It reads
-Doom's store; it does not move it. That command is the only thing in this
-config that touches GPG, and it never runs on its own.
+`M-x my/oauth2-import-from-plstore` reads Doom's plstore into the `.eld`. It
+was the migration path and it has already been used; it is kept only as the
+recovery route from a lost `.eld`, and it stops working the moment the
+passphrase-less key leaves the keyring (see `../RETIRING-DOOM.md`, step 3).
+That command is the only thing in this config that touches GPG, and it never
+runs on its own.
 
-## Graduating
+## What retiring Doom changed outside this directory
 
-One word in `flake.nix`:
+Recorded because each of these was a workaround whose *cause* is now gone, and
+a workaround with no visible cause is the kind of thing that gets reinstated.
 
-```nix
-my.emacs.flavor = "vanilla";
-```
+- **`my.emacs` collapsed to one package.** The `flavor` enum, the
+  `primaryPackage` resolver, the second pair of client wrappers (`emd`/`emdt`)
+  and the hand-rolled `emacs-<flavor>` systemd unit are deleted rather than
+  left as an enum with one value. `modules/emacs-mcp.nix` and
+  `modules/emacs-doctor/default.nix` read `my.emacs.package` again; each
+  carries a note naming itself as a site that would have to follow the primary
+  if a second Emacs ever came back, and `modules/orrery-mcp.nix` carries the
+  note that it is the one that would not.
+- **`nix flake check --all-systems` is back**, in `ci.yml` and
+  `update-flake.yml`. It was dropped because nix-doom-emacs-unstraightened's
+  import-from-derivation sets `allowSubstitutes = false` on its intermediate
+  derivations, so *evaluating* a darwin config required *building* darwin
+  derivations, which a Linux runner cannot do. No IFD, no problem — verified
+  by running it, not assumed. It reaches the Darwin home configurations too,
+  which is not obvious: `flake check` has no idea what `homeConfigurations`
+  is, but `perUserPackages` mirrors each one into
+  `packages.<system>.home-<username>`, and those get walked.
+- **The `check` job's retry loop went with it.** That loop existed because the
+  same IFD refetched 528 elisp sources uncached, from GitHub, GitLab and
+  codeberg, on every run — PRs #20 and #21 both died inside a minute on
+  `gitlab.com/sawyerjgardner/demap.el`, a package referenced nowhere in this
+  repo and pulled in by Doom's module set. `nix flake check` now substitutes
+  from the binary caches like everything else. The retries on `eval-darwin`
+  and `build-home` **stayed**: those jobs build real closures over the network
+  and their flakiness was never Doom-specific.
+- **`doom-themes` became `gruvbox-theme`.** `doom-modeline` did not move: it is
+  a standalone MELPA package that wants `nerd-icons` and nothing else from that
+  world. See "Deliberate differences — appearance".
+- **`dev-disk` lost its Doom row.** `~/.local/share/nix-doom` is not removed by
+  `hms`; deleting it is step 2 of `../RETIRING-DOOM.md`.
 
-Then vanilla owns the default socket and `em`, `EDITOR`, `emacs-doctor` and the
-emacs MCP server follow it automatically — they read `primaryPackage`, not
-`package`. Doom does not disappear; it becomes `emacsclient -s doom`, reachable
-as `emd`/`emdt`. Rollback is the same word.
+## Deliberate differences from Doom — appearance
 
-Also flip `X-RestartIfChanged` to `false` on the vanilla unit at that point.
-It is `true` today because picking up a new config immediately is the whole
-point while iterating, and there are no precious buffers in it yet — that stops
-being true the day it becomes the daily driver.
+**`gruvbox-theme`, `gruvbox-dark-medium`.** doom-themes exists to ship ~60
+themes plus Doom-specific extras and the only one ever loaded here was
+`doom-gruvbox`. The palettes are near-identical — bg0 `#282828`, bg1 `#3c3836`,
+fg1 `#ebdbb2`, yellow `#fabd2f`, green `#b8bb26`, blue `#83a598`, purple
+`#d3869b`, aqua `#8ec07c` all match, and only red differs by one digit
+(`#fb4934` upstream, `#fb4933` in doom-gruvbox). **Medium**, not hard or soft,
+because bg0 `#282828` is medium's; hard is `#1d2021` and soft `#32302f`.
 
-## Retiring Doom (after graduation)
+**What is genuinely lost** is doom-themes' extra face definitions for magit,
+org and a few other packages. Those faces fall back to their own package
+defaults against the same background, so the cost is polish rather than
+legibility. That is the accepted half of the trade and it is written here so
+nobody re-adds a 60-theme package to get eight faces back without deciding to.
 
-- Delete `modules/emacs/doom.d/` and the `doom-emacs` flake input
-- Restore the 30-minute `org-gcal` fetch timer (see above)
-- Retire the passphrase-less GPG key `050C399D3A6B013DD2C93F899BC379782DFE1930`
-  once `~/.config/org-gcal/oauth2-auto.plist` is gone: delete the key from the
-  keyring, drop its sops secret and the sops-nix decrypt block, and revoke it.
-  Nothing else uses it — that is the "one secret system" this was for, and it
-  is not finished until the key is actually gone rather than merely unused
-- Restore `--all-systems` to `nix flake check` — the IFD is what forced its
-  removal
-- Drop the `android-mode` and `org-pdftools` disables from `packages.el`, and
-  the codeberg/IFD workarounds from `ci.yml`. The uncached-fetch flakiness that
-  fails builds on a transient GitHub 408 goes with them
-- Drop the nix-doom row from `dev-disk`
-- Rewrite the README's first table row
+**The italics are the part that could have been lost silently.** Doom's
+`custom-set-faces!` hooked `doom-customize-theme-hook`, which is the only
+reason the italic comment/keyword/string/doc faces survived `load-theme`
+running afterwards; the vanilla equivalent is Emacs 29+
+`enable-theme-functions`, and a theme swap is exactly when a hook keyed on
+theme loading gets dropped. Section (h) of the gate asserts all four faces, so
+the next theme change cannot drop them quietly. It also asserts that
+`doom-themes` is **not on `load-path`** — out of the closure, not merely
+unloaded.
 
 ## The gate
 
@@ -487,6 +541,18 @@ What `verify.el` asserts, section by section:
   popup on screen, a `*claude:*` buffer and a ` *lilypond: *` buffer must each
   still get an ordinary window, and `delete-other-windows` from the Claude
   window must still clear the popup
+- **(h)** appearance: exactly one enabled theme, `doom-themes` absent from
+  `load-path`, `doom-modeline-mode` on, the truecolor `default` face read out
+  of the theme's own `theme-settings`, and all four italic faces. It reads
+  `theme-settings` rather than `face-attribute` because the daemon's initial
+  frame reports `(display-color-cells)` = 0 and answers `"unspecified-bg"` for
+  every theme, including none — an assertion against that would have been green
+  with no theme loaded at all
+- **(i)** org-gcal: the background fetch timer exists and repeats at 1800s,
+  **and** `my/org-gcal-fetch-inhibit` is non-nil in this daemon. Runs
+  **first**, and cancels the timer afterwards: its initial delay is 90 seconds
+  and `verify.sh` allows 120 for readiness alone, so every other section is
+  potentially past it
 - **(c)** `*Messages*` carries no warnings or errors — run last, so anything
   the other sections provoked has landed
 

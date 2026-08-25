@@ -141,32 +141,37 @@
              claude-code-switch-to-buffer
              claude-code-transient)
   :config
-  ;; THE DOOM ADVICE, WITH ITS ADVICE-COMBINATOR CHANGED, AND THE CHANGE IS
-  ;; THE POINT.
+  ;; WHY THE COMBINATOR IS `:filter-args' AND NOT `:filter-return'.
   ;;
-  ;; doom.d/config.el has
-  ;;
-  ;;   (define-advice claude-code-normalize-project-root
-  ;;       (:filter-return (root) fallback-dir)
-  ;;     (or root (directory-file-name default-directory)))
-  ;;
-  ;; written against a claude-code whose `claude-code-normalize-project-root'
-  ;; RETURNED nil outside a project, giving "(wrong-type-argument stringp
-  ;; nil)".  Upstream has since fixed that -- the packaged version reads
+  ;; `SPC l l' from *scratch* -- or from any buffer outside a project --
+  ;; depends entirely on this, and the obvious version of the advice does not
+  ;; work.  Upstream's `claude-code-normalize-project-root' reads
   ;;
   ;;   (if project-root (directory-file-name project-root)
   ;;     (user-error "Current directory is not part of a project"))
   ;;
-  ;; and its docstring says the `user-error' exists so callers get a readable
-  ;; message.  A `:filter-return' advice never runs when the function SIGNALS,
-  ;; so the Doom advice is now dead code guarding nothing: `SPC l l' from
-  ;; *scratch* raises the user-error either way.
+  ;; and its docstring says the `user-error' is there so callers get a
+  ;; readable message.  A `:filter-return' advice NEVER RUNS when the advised
+  ;; function signals, so
   ;;
-  ;; `:filter-args' normalises the argument BEFORE the guard sees it, which
-  ;; restores the intended behaviour against both the old and the new upstream.
+  ;;   (:filter-return (root) ...) (or root (directory-file-name default-directory))
+  ;;
+  ;; is dead code against this upstream: it cannot see a return value there is
+  ;; not one of.  Measured, not reasoned: with that version installed,
+  ;; (claude-code-normalize-project-root nil) still signals.  It was the right
+  ;; advice against an OLDER claude-code that returned nil instead of
+  ;; signalling, and it silently stopped working when upstream tightened the
+  ;; guard -- which is the failure mode worth remembering, because nothing
+  ;; announces it.
+  ;;
+  ;; `:filter-args' normalises the argument BEFORE the guard sees it, so it
+  ;; works against both the old and the new upstream.
   ;; `claude-code-normalize-project-root' is the single choke-point -- every
   ;; caller in claude-code-core.el goes through it -- so one advice covers
   ;; `claude-code-run', `claude-code-switch-to-buffer' and the buffer namer.
+  ;;
+  ;; verify.el section (e) asserts the result rather than the shape: it calls
+  ;; (claude-code-normalize-project-root nil) and requires a string back.
   (define-advice claude-code-normalize-project-root
       (:filter-args (args) fallback-dir)
     "Fall back to `default-directory' when ARGS names no project root.
