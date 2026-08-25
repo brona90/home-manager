@@ -92,7 +92,8 @@ Also update the config names in the `check` job's dry-run step and the `eval-dar
 ## CI Pipeline
 
 ```
-lint (statix, deadnix, alejandra --check, shellcheck, actionlint)
+lint (statix, deadnix, alejandra --check, shellcheck, actionlint
+  │    — all from `.#lint-tools`, this flake's nixpkgs, never the registry)
   ├─> check (ubuntu: nix flake check + dry-run eval of the Linux config)
   └─> eval-darwin (macos-14: dry-run eval of all Darwin configs; x86_64-darwin via Rosetta)
       └─[+check]─> build-home (PRs: x86_64-linux · pushes: + 2× aarch64-darwin; Cachix; runs the Emacs gate)
@@ -108,7 +109,7 @@ The `eval-darwin` job is kept anyway. It adds a `nix build --dry-run` — a buil
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck, actionlint |
+| `lint` | All pushes/PRs | statix, deadnix, alejandra formatting check, shellcheck, actionlint — each run from `nix build .#lint-tools`, **not** `nix run nixpkgs#<tool>`. See "Linters are pinned" below |
 | `check` | After lint | `nix flake check --all-systems` + `nix build --dry-run` eval of the Linux config |
 | `eval-darwin` | After lint (pushes/PRs) | `nix build --dry-run` eval of all Darwin configs in `config.nix`; x86_64-darwin via Rosetta 2 (`extra-platforms`) |
 | `build-home` | **PRs and pushes** | On a PR: builds `gfoster@x86_64-linux` only, then runs the Emacs gate (`modules/emacs/vanilla/verify.sh`). On a push to master: also both aarch64-darwin. Gated by the **matrix**, not a job-level `if` — the `if` is what made it skip on every PR. x86_64-darwin is eval-only (no hosted Intel macOS runners). The Cachix push is filtered: only paths *not* already signed by cache.nixos.org are uploaded (no point mirroring thousands of upstream paths), and it runs *before* the Emacs gate so a red gate still leaves the closure cached |
@@ -116,6 +117,49 @@ The `eval-darwin` job is kept anyway. It adds a `nix build --dry-run` — a buil
 | `docker-test` | After docker-build | Pulls the pushed image from Docker Hub and verifies it runs; reports "skipped — no token" in the job summary if `DOCKERHUB_TOKEN` is unset |
 
 NixOS and Darwin full system builds are in `.github/workflows/validate.yml` (manual, weekly, or on `hosts/**`/`flake.lock`/`flake.nix` changes).
+
+### Linters are pinned to this flake
+
+Every linter in the `lint` job comes from `packages.<system>.lint-tools`
+(`lib/lint-tools.nix`), built once into `/tmp/lint-tools` and invoked by
+absolute path.
+
+These steps used to be `nix run nixpkgs#<tool>`, which resolves through the
+**runner's** flake registry — a property of the machine, not of the repo. CI and
+a developer's laptop therefore ran different versions of the same tool, and the
+failure mode is invisible until the day the versions disagree: PR #21 went red
+because shellcheck renumbered a finding (`SC2329` in 0.11, `SC2317` before it),
+`modules/emacs/vanilla/verify.sh` suppressed only the newer code, and the
+registry served an older shellcheck than the local profile had.
+
+`modules/emacs/vanilla/verify.sh` resolves the same derivation, so the two agree
+by construction, and the `lint-tools-pinned` flake check fails the build if
+either one reaches for `nixpkgs#` again.
+
+The cost is that the `lint` job now evaluates the flake — fetching every input
+rather than just the registry's nixpkgs. That is paid once per job, and the
+`check` job pays it anyway. Do not "optimise" it back.
+
+The job's last step prints the dereferenced store path of each linter. That is
+the artefact to compare against a local run the next time anyone suspects
+version skew (`statix` has no `--version` flag, so paths rather than versions).
+
+### Retrying transient fetch failures
+
+`.github/actions/nix-build-retry` is a composite action that builds (or dry-runs)
+a set of flake targets and retries the **whole set** on failure — three attempts,
+60 s apart by default.
+
+It exists because nix-doom-emacs-unstraightened resolves elisp sources through
+import-from-derivation, and those intermediate derivations set
+`allowSubstitutes = false`. They are plain git fetches of non-GitHub hosts
+(codeberg, gitlab, savannah) that no binary cache can serve, and nix's own
+`download-attempts` covers *substituter* downloads only — not these. One
+transient 408 or 504 therefore fails an otherwise-green job.
+
+Retrying is cheap: whatever a failed attempt did fetch is already in the store,
+so a retry resumes rather than restarts. Note the `nix-args` input is
+deliberately word-split, so it must not contain arguments with spaces.
 
 ## Flake Updates
 

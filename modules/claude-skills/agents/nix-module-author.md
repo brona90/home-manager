@@ -50,11 +50,27 @@ Validate with, in order of cost:
 alejandra <file>                                  # formatting; pre-commit enforces it
 nix build ~/.config/home-manager#home-gfoster --no-link
 nix flake check                                   # guards + statix + deadnix
+bash modules/emacs/vanilla/verify.sh              # ONLY if you touched modules/emacs/vanilla
 ```
 
 `nix build` of the activation package is the real check — it runs
 `writeShellApplication`'s shellcheck over every embedded script, so a shell
 typo in a hook fails here rather than at runtime.
+
+Two things that ladder does **not** cover:
+
+- **Anything under `modules/emacs/vanilla` needs `verify.sh`.** It starts a real
+  daemon and walks the actual keymap. Neither `nix build` nor `nix flake check`
+  loads `init.el`, and `emacs --batch` does not either — which is how six leader
+  keys shipped bound to void commands with CI green.
+- **New files must be `git add`ed first.** Flakes see only git-tracked files, so
+  an untracked file is absent from the store and the failure names the
+  `require`, not the missing `git add`.
+
+Get linters from `packages.<system>.lint-tools` (`nix build '.#lint-tools'`),
+never `nix run nixpkgs#<tool>` — that resolves through the machine's registry
+and a guard rejects it. Check each by **exit code**; an unresolvable linter is a
+failure, not a skip.
 
 ## Hard boundaries
 

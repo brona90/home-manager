@@ -16,6 +16,23 @@
 > flake evaluates all 4 configs; dry-run build of gfoster@x86_64-linux succeeds;
 > lvim verified empirically (7 → 333 treesitter parsers, Mason gone, grug-far present).
 
+> **Addendum, 2026-08-24 — H1 was not fully closed on the day.** The status
+> above records H1 as addressed via deviation 1, but that deviation covers only
+> the *Darwin evaluation* half. H1's first bullet — "PRs never build configs",
+> `build-home` gated to `push` — stayed open: PR #14 later observed the job
+> reporting `skipping` on a pull request while every other check passed, and it
+> was fixed in **#21**, which moved the event-dependence into the matrix and
+> made `build-home` report on PRs. The "Overall assessment" sentence claiming
+> PRs "merge without any build validation" was therefore accurate for longer
+> than this header implies.
+>
+> Now closed, and guarded: `checks.ci-emacs-gate` fails the build if
+> `build-home` regains a job-level `if`, if no step runs the Emacs gate, or if
+> anything in `ci.yml` runs Emacs under `--batch`. The remaining H1 bullets —
+> the flake-update PAT and validate.yml's silently no-opping Darwin job — were
+> addressed as described. Findings below are left exactly as written; this note
+> exists so nobody reads the header as "all clear" and stops checking.
+
 Five parallel review passes: Nix core, security, Go tmux-helper, CI/docs, editor+Docker.
 All findings verified against the actual code (go vet clean, all Go tests pass; Neovim
 findings verified empirically with `lvim --headless`).
