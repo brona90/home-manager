@@ -220,13 +220,26 @@
 
     # Cheap staleness token for the installed hooks. It has to be computable
     # WITHOUT evaluating git-hooks.nix -- that is the whole point -- so it
-    # hashes the two files that actually determine what gets installed: the
-    # hook set, and the lock the tools are resolved from. Two hashFile calls on
-    # small files; the devShell shellHook carries the result as a literal.
+    # hashes the files that actually determine what gets installed, rather than
+    # the derivations they produce. A handful of hashFile calls on small files;
+    # the devShell shellHook carries the result as a literal.
+    #
+    # The hook set and the lock the tools are resolved from were the original
+    # two. The three script bodies are here because they were an oversight:
+    # `install-hooks` writes lib/warm-direnv.sh and lib/link-pc-config.sh into
+    # .git/hooks as store paths, and lib/install-hooks.sh decides what else
+    # lands there, so editing any of them changes the installed hooks while
+    # leaving the stamp -- and therefore every existing clone -- unmoved. The
+    # bug that exposed this was a change to the hook BODIES with no change to
+    # flake.lock. Hashing flake.nix instead is still wrong: it moves on every
+    # unrelated edit and would force a reinstall each time.
     devHooksStamp =
       builtins.hashString "sha256"
       (builtins.hashFile "sha256" ./flake.lock
-        + builtins.hashFile "sha256" ./lib/pre-commit-hooks.nix);
+        + builtins.hashFile "sha256" ./lib/pre-commit-hooks.nix
+        + builtins.hashFile "sha256" ./lib/install-hooks.sh
+        + builtins.hashFile "sha256" ./lib/warm-direnv.sh
+        + builtins.hashFile "sha256" ./lib/link-pc-config.sh);
 
     # One definition, two consumers: packages.lint-tools (what verify.sh and
     # ci.yml resolve, per the lint-tools-pinned guard) and the devShell -- which
@@ -909,6 +922,86 @@
                 || { echo 'GUARD: the warm hooks exec a store path unguarded; a collected path errors on every checkout.'; exit 1; }
               grep -qF '.hm-gcroots/warm-direnv' ${./lib/dev-shell-hook.sh} \
                 || { echo 'GUARD: the devShell no longer notices a collected warm-direnv, so the guarded exec would fail silently forever.'; exit 1; }
+
+              # (g) a FRESH WORKTREE MUST BE ABLE TO COMMIT, AND BE LINTED.
+              #
+              #     .git/hooks belongs to the clone; .pre-commit-config.yaml
+              #     does not, because the generated hook passes a relative
+              #     --config. So `git worktree add` used to leave behind a
+              #     worktree the shared pre-commit hook fires in with no config,
+              #     and every commit in it died with "No .pre-commit-config.yaml
+              #     file was found". This repo's workflow is entirely
+              #     worktree-based, so that was every new branch.
+              #
+              #     Three parts, and all three are needed: record the config
+              #     path in the shared git dir, root the linker that reads it,
+              #     and actually call the linker from the shared hooks.
+              grep -qF 'pin "$pc_config" "$gcroots/pre-commit-config"' "$appTextPath" \
+                || { echo 'GUARD: install-hooks no longer records the pre-commit config in the shared git dir.'; \
+                     echo '       Without it `git worktree add` produces a worktree that cannot commit.'; exit 1; }
+              grep -qF 'pin "@LINK_PC_CONFIG_STORE@" "$gcroots/link-pc-config"' "$appTextPath" \
+                || { echo 'GUARD: hm-link-pc-config is no longer GC-rooted.'; exit 1; }
+              grep -qF 'if [ -x @LINK_PC_CONFIG@ ]; then @LINK_PC_CONFIG@ || true; fi' "$appTextPath" \
+                || { echo 'GUARD: the shared post-checkout hook no longer links a new worktree its .pre-commit-config.yaml.'; \
+                     echo '       That hook firing on `git worktree add` is the only moment the worktree can be fixed'; \
+                     echo '       before its first commit is refused.'; exit 1; }
+              grep -qF '.hm-gcroots/pre-commit-config' ${./lib/dev-shell-hook.sh} \
+                || { echo 'GUARD: the devShell can no longer repair a worktree with no .pre-commit-config.yaml.'; exit 1; }
+
+              # (g2) core.hooksPath must be cleared after the installer runs.
+              #
+              #     git-hooks.nix's last act is
+              #       git config --local core.hooksPath "$common_dir/hooks"
+              #     with $common_dir stripped of the working copy prefix. Run
+              #     from the main checkout that stores the RELATIVE `.git/hooks`
+              #     -- and in a linked worktree `.git` is a file, so that names
+              #     nothing, git finds no hooks, and every commit in every
+              #     worktree of the clone goes through UNLINTED in silence.
+              #     Demonstrated, not deduced: a deliberately misformatted .nix
+              #     file committed clean in a fresh worktree.
+              #
+              #     Which of the two broken states a clone is in depends only on
+              #     whether install-hooks last ran from the main checkout
+              #     (silently unlinted) or from a worktree (every commit
+              #     refused). Neither is acceptable, and unsetting fixes both:
+              #     git resolves hooks against the common dir on its own.
+              #     Anchored to the start of a line on purpose. The first cut of
+              #     this guard was a plain -F for the command text, and deleting
+              #     the actual `git config` call did not fail it: the same
+              #     string survives in the "Fix with: ..." advice this script
+              #     prints when the unset fails. A guard a COMMENT can satisfy
+              #     is not a guard, and this one was caught by being run against
+              #     a tree with the invariant deliberately broken.
+              grep -qE '^[[:space:]]*git config --local --unset-all core\.hooksPath' "$appTextPath" \
+                || { echo 'GUARD: install-hooks no longer clears core.hooksPath after the git-hooks installer sets it.'; \
+                     echo '       A relative core.hooksPath makes linked worktrees run NO hooks and commit unlinted.'; exit 1; }
+
+              # (g3) ... and nothing may resolve the hooks directory through
+              #     core.hooksPath alone, because that call FAILS in a linked
+              #     worktree while the config is still relative -- which is the
+              #     state of every clone that has not re-run install-hooks yet.
+              #     All three scripts need the common-dir fallback.
+              for f in ${./lib/install-hooks.sh} ${./lib/link-pc-config.sh} ${./lib/dev-shell-hook.sh}; do
+                grep -qF 'path-format=absolute --git-common-dir' "$f" \
+                  || { echo "GUARD: $f resolves the hooks directory without a common-dir fallback."; \
+                       echo '       `--git-path hooks` fatals in a linked worktree when core.hooksPath is relative.'; exit 1; }
+              done
+
+              # (h) ... and it must be fixed by CONFIGURING the worktree, never
+              #     by making the config optional. `pre-commit install
+              #     --allow-missing-config` unblocks the commit by skipping
+              #     every linter, and so does the PRE_COMMIT_ALLOW_NO_CONFIG
+              #     escape hatch pre-commit advertises in that error. Both
+              #     convert "this worktree is misconfigured" into "this worktree
+              #     is not linted", silently. A blocked commit is recoverable; a
+              #     quietly unlinted one is the gate that can only pass.
+              if grep -q -- '--allow-missing-config' "$appTextPath" "$installer"; then
+                echo 'GUARD: the pre-commit hook is being installed with --allow-missing-config.'
+                echo '       That makes a worktree without a config commit UNLINTED instead of'
+                echo '       being told it is misconfigured. Give the worktree a config instead;'
+                echo '       see lib/link-pc-config.sh.'
+                exit 1
+              fi
               touch $out
             '';
 
@@ -942,6 +1035,8 @@
               shellcheck --shell=bash install-hooks.sh
               cp ${./lib/warm-direnv.sh} warm-direnv.sh
               shellcheck --shell=bash warm-direnv.sh
+              cp ${./lib/link-pc-config.sh} link-pc-config.sh
+              shellcheck --shell=bash link-pc-config.sh
 
               touch $out
             '';

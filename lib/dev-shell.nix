@@ -95,6 +95,29 @@
     text = builtins.readFile ./warm-direnv.sh;
   };
 
+  # The other half of those three hooks, and the only correctness-critical
+  # half. .git/hooks is shared by the clone but .pre-commit-config.yaml is not
+  # (the generated hook passes a RELATIVE --config), so `git worktree add`
+  # leaves behind a worktree the shared pre-commit hook fires in and that has no
+  # config -- and every commit there is refused. This links it, at the moment
+  # the worktree is created.
+  #
+  # A separate script from warmDirenv on purpose: that one is an optimisation
+  # with several early exits and is allowed to do nothing at all, this one is
+  # not, and folding a must-run job into a may-no-op one loses the distinction.
+  #
+  # `readlink -f` and `ln` are why this is a derivation with coreutils on PATH
+  # rather than a couple of lines inlined into the generated hook body: a git
+  # hook fired from magit or a GUI gets /usr/bin, not the nix profile.
+  linkPcConfig = pkgs.writeShellApplication {
+    name = "hm-link-pc-config";
+    runtimeInputs = [pkgs.git pkgs.coreutils];
+    # No errexit, for warmDirenv's reason: this runs on ordinary git commands.
+    # It reads its own exit codes and reports rather than aborting a checkout.
+    bashOptions = ["nounset" "pipefail"];
+    text = builtins.readFile ./link-pc-config.sh;
+  };
+
   installHooks = pkgs.writeShellApplication {
     name = "install-hooks";
     runtimeInputs = [pkgs.git pkgs.coreutils];
@@ -110,6 +133,8 @@
         "@LINT_TOOLS@"
         "@WARM_DIRENV@"
         "@WARM_DIRENV_STORE@"
+        "@LINK_PC_CONFIG@"
+        "@LINK_PC_CONFIG_STORE@"
         "@HOOKS_STAMP@"
       ]
       [
@@ -118,6 +143,8 @@
         "${lintTools}"
         "${warmDirenv}/bin/hm-warm-direnv"
         "${warmDirenv}"
+        "${linkPcConfig}/bin/hm-link-pc-config"
+        "${linkPcConfig}"
         hooksStamp
       ]
       (builtins.readFile ./install-hooks.sh);

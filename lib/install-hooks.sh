@@ -14,7 +14,48 @@ repo=$(git rev-parse --show-toplevel) || {
   echo "install-hooks: not inside a git working tree" >&2
   exit 1
 }
-hooks=$(git rev-parse --path-format=absolute --git-path hooks) || {
+
+# WHY THIS IS NOT ONE `git rev-parse` (the same reasoning applies in
+# lib/link-pc-config.sh and lib/dev-shell-hook.sh, which resolve it the same
+# way).
+#
+# `--git-path hooks` honours core.hooksPath, and git-hooks.nix's installer sets
+# that config itself -- to a value it deliberately makes RELATIVE to the working
+# copy it was run from:
+#
+#     common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+#     common_dir=${common_dir#$GIT_WC/}          # "/repo/.git" -> ".git"
+#     git config --local core.hooksPath "$common_dir/hooks"
+#
+# Run from the main checkout that yields `core.hooksPath=.git/hooks`, and in a
+# LINKED WORKTREE `.git` is a file, not a directory, so `.git/hooks` names
+# nothing. Two consequences, both demonstrated rather than reasoned about:
+#
+#   * `git rev-parse --path-format=absolute --git-path hooks` fails outright
+#     there -- "fatal: Invalid path '<worktree>/.git/hooks': Not a directory" --
+#     so the old single call made this script exit 1 in exactly the worktrees it
+#     needed to serve.
+#   * far worse, `git commit` in such a worktree finds no hooks at all and
+#     commits UNLINTED, in silence. Whether a clone is in that state or in the
+#     "every commit is refused" state depends only on whether install-hooks was
+#     last run from the main checkout or from a worktree.
+#
+# So: prefer git's answer, but fall back to the common dir, which is where the
+# hooks actually are and which resolves correctly from any worktree. The
+# lasting repair is the `--unset-all core.hooksPath` after the installer below.
+resolve_hooks_dir() {
+  local h
+  if h=$(git rev-parse --path-format=absolute --git-path hooks 2>/dev/null) &&
+    [ -n "$h" ]; then
+    printf '%s\n' "$h"
+    return 0
+  fi
+  h=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  [ -n "$h" ] || return 1
+  printf '%s\n' "$h/hooks"
+}
+
+hooks=$(resolve_hooks_dir) || {
   echo "install-hooks: cannot resolve the hooks directory" >&2
   exit 1
 }
@@ -69,6 +110,42 @@ if [ "$status" -ne 0 ]; then
   exit "$status"
 fi
 
+# 1b. Undo the installer's parting shot: core.hooksPath.
+#
+#     Its last act is `git config --local core.hooksPath "$common_dir/hooks"`
+#     with $common_dir made relative to the working copy it ran in (see the long
+#     note at the top of this file). Run from the main checkout that writes
+#     `.git/hooks`, which in a linked worktree -- where `.git` is a file --
+#     names nothing at all, so git finds NO hooks there and every commit in
+#     every worktree goes through unlinted, silently. That is a gate that can
+#     only pass, and it is one `nix run .#install-hooks` from the wrong
+#     directory away at all times.
+#
+#     Unsetting is the fix rather than rewriting it absolute. git already
+#     resolves `hooks` against the common git dir when the config is absent, in
+#     the main checkout and in every linked worktree alike (verified: with no
+#     core.hooksPath a worktree's `git rev-parse --git-path hooks` returns the
+#     shared directory), so the config is redundant when it is correct. An
+#     absolute value would also break silently the moment the clone is moved or
+#     renamed -- the same failure shape, just rarer.
+#
+#     Nothing is lost: the installer *itself* unsets any pre-existing value
+#     before it installs, because pre-commit refuses to install at all while
+#     core.hooksPath is set, so no user setting survives this script anyway.
+if git config --local --get core.hooksPath >/dev/null 2>&1; then
+  git config --local --unset-all core.hooksPath || {
+    echo "install-hooks: could not unset core.hooksPath; worktrees of this clone" >&2
+    echo "  may run no hooks at all. Fix with: git config --local --unset-all core.hooksPath" >&2
+  }
+fi
+
+# Re-resolve now that the config no longer redirects it: this is the directory
+# every worktree of the clone will actually look in.
+hooks=$(resolve_hooks_dir) || {
+  echo "install-hooks: cannot resolve the hooks directory after install" >&2
+  exit 1
+}
+
 # 2. Pin the store paths the installed hooks point at.
 #
 #    Every hook this script writes is an absolute /nix/store path, and nothing
@@ -116,16 +193,54 @@ pin "@LINT_TOOLS@" "$repo/.direnv/lint-tools" || {
 # as absent) and schedules a reinstall.
 pin "@WARM_DIRENV_STORE@" "$gcroots/warm-direnv" || true
 pin "@GIT_HOOKS_INSTALLER_STORE@" "$gcroots/git-hooks-installer" || true
+pin "@LINK_PC_CONFIG_STORE@" "$gcroots/link-pc-config" || true
 
-# 3. Background cache-warm hooks. Deliberately hand-installed rather than
-#    declared as git-hooks.nix stages, even though it supports these three:
-#    pre-commit's own wrapper insists on a per-worktree .pre-commit-config.yaml
-#    and complains on every checkout in a worktree that has not got one yet --
-#    which is precisely the state `git worktree add` leaves behind -- and it
-#    would put a python interpreter start in front of every checkout and merge.
-#    A hook whose entire job is to be silent and instant is the wrong place for
-#    either. These are written AFTER the git-hooks installer above, which is
-#    the only thing in the repo that runs `pre-commit uninstall`.
+# 2b. The generated pre-commit config, rooted in the SHARED git dir for the
+#     benefit of worktrees that do not exist yet.
+#
+#     `.git/hooks` is shared by the whole clone but .pre-commit-config.yaml is
+#     not: the generated hook passes a RELATIVE --config, so pre-commit resolves
+#     it against whichever worktree fired the hook. `git worktree add` therefore
+#     produces a worktree the shared hook fires in and that has no config, and
+#     every commit there is refused. Recording the path here is what lets the
+#     post-checkout hook (lib/link-pc-config.sh) and the devShell hand a fresh
+#     worktree its own link without re-evaluating anything.
+#
+#     Read back off the symlink the installer just wrote rather than
+#     substituted from Nix: that is the config actually in use, so the root
+#     cannot drift from it, and it stays correct if git-hooks.nix renames the
+#     attribute it would otherwise have come from.
+pc_config=$(readlink "$repo/.pre-commit-config.yaml" 2>/dev/null) || pc_config=""
+if [ -n "$pc_config" ]; then
+  pin "$pc_config" "$gcroots/pre-commit-config" || true
+else
+  echo "install-hooks: $repo/.pre-commit-config.yaml is not a symlink into the store;" >&2
+  echo "  new worktrees will not be given a config automatically" >&2
+fi
+
+# 3. The shared post-checkout / post-merge / post-rewrite hooks. Two jobs, in
+#    order: give this worktree a .pre-commit-config.yaml if it has not got one,
+#    then warm the direnv cache in the background.
+#
+#    The config link goes FIRST and is not allowed to be silent, because it is
+#    the correctness half: `git worktree add` fires post-checkout in the new
+#    worktree (verified -- cwd is the new worktree and $1 is the null OID), and
+#    that is the one moment at which the worktree that is about to refuse every
+#    commit can be fixed before anybody notices. The warm-up is the optimisation
+#    half and is allowed to do nothing. They are separate scripts for exactly
+#    that reason -- warm-direnv.sh exits early on a missing .envrc, an untouched
+#    flake.lock or an absent `nix`, and the config link must happen anyway.
+#
+#    Still hand-installed rather than declared as git-hooks.nix stages, even
+#    though it supports these three: pre-commit's own wrapper insists on a
+#    per-worktree .pre-commit-config.yaml and complains on every checkout in a
+#    worktree that has not got one yet -- which is precisely the state
+#    `git worktree add` leaves behind, i.e. the state this hook exists to
+#    repair, so routing the repair through the thing that needs repairing would
+#    be circular -- and it would put a python interpreter start in front of
+#    every checkout and merge. These are written AFTER the git-hooks installer
+#    above, which is the only thing in the repo that runs `pre-commit
+#    uninstall`.
 warn_marker="home-manager: managed by nix run .#install-hooks"
 install_warm_hook() {
   local stage=$1 path tmp
@@ -142,6 +257,17 @@ install_warm_hook() {
     echo "# $warn_marker -- see lib/warm-direnv.sh"
     echo "HM_WARM_STAGE=$stage"
     echo "export HM_WARM_STAGE"
+    # The per-worktree pre-commit config. Guarded like the exec below, and for
+    # the same reason, but the consequence of it going missing is different:
+    # this one degrading to a no-op means a fresh worktree gets no config and
+    # the pre-commit hook then refuses the commit -- loudly, at commit time,
+    # never silently unlinted. The devShell watches $gcroots/link-pc-config so
+    # that state is repaired rather than lived with.
+    #
+    # Not `exec`ed and not given "$@": it takes no arguments, and warm-direnv
+    # has to run after it. Runs on all three stages, so a config collected by
+    # `nix-collect-garbage` is repaired by the next pull or rebase too.
+    echo "if [ -x @LINK_PC_CONFIG@ ]; then @LINK_PC_CONFIG@ || true; fi"
     # Belt as well as braces. The root above should mean this path never
     # disappears, but if it ever does, the right failure for a hook whose only
     # job is an invisible optimisation is to do nothing -- not to print an
@@ -187,6 +313,18 @@ fi
 # schedule a reinstall forever, so refuse to stamp rather than set up a loop.
 if [ ! -e "$gcroots/warm-direnv" ]; then
   echo "install-hooks: BUG: $gcroots/warm-direnv was not rooted" >&2
+  exit 1
+fi
+# Same argument for the two halves of the worktree config repair. Without the
+# rooted config path a `git worktree add` produces a worktree that cannot
+# commit, and without the linker nothing puts it there -- stamping over either
+# would tell the devShell the job was done and stop it retrying.
+if [ ! -e "$gcroots/pre-commit-config" ]; then
+  echo "install-hooks: BUG: $gcroots/pre-commit-config was not rooted -- new worktrees could not commit" >&2
+  exit 1
+fi
+if [ ! -e "$gcroots/link-pc-config" ]; then
+  echo "install-hooks: BUG: $gcroots/link-pc-config was not rooted" >&2
   exit 1
 fi
 
