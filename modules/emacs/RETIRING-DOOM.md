@@ -58,83 +58,31 @@ The Doom closure itself leaves the store on the next `ncgd` + `nsc` once no
 generation references it. `dev-disk` no longer prints a Doom row, so this is
 the only reminder that the directory is there.
 
-## 3. Retire the passphrase-less GPG key
+## 3. The `org-gcal-token` GPG key — nothing to do
 
-**Key: `050C399D3A6B013DD2C93F899BC379782DFE1930`** (uid `org-gcal-token`).
+**This is not a task.** It is here so that finding a stray key in your keyring
+later does not read as a mystery.
 
-### What it was for
+`050C399D3A6B013DD2C93F899BC379782DFE1930`, uid `org-gcal-token`, is a
+passphrase-less key generated for one purpose: encrypting Doom's org-gcal
+plstore so a headless daemon could read a refresh token without a pinentry
+prompt it had no frame to draw. **It is not a signing key and has nothing to do
+with commit signing** — that is `ECA2632B08E80FC6`, on the YubiKey.
 
-It encrypted Doom's org-gcal OAuth token store
-(`~/.config/org-gcal/oauth2-auto.plist`, a GPG plstore) with no passphrase, so
-a headless daemon could decrypt a refresh token without a pinentry prompt it
-had no frame to draw. It was imported into the keyring on every activation and
-marked ultimately trusted so gpg would encrypt to it non-interactively.
+The code change already shipped (`9fcf26f`): `modules/sops.nix` no longer
+decrypts `org_gcal/gpg_private_key`, no longer imports it, and no longer sets
+its ownertrust. Nothing reads the key. It sits inert in `~/.gnupg` and costs
+nothing to leave there indefinitely.
 
-Nothing uses it now. The vanilla config stores the same refresh token in
-`~/.local/state/emacs/oauth2-auto.eld` as a plain `0600` file — see the
-commentary in `modules/emacs/vanilla/config/lisp/my-secrets.el` for why that is
-not the downgrade it looks like. The short version: the plstore was encrypted
-to a key whose private half sat unprotected at `0600` on the same disk, so the
-encryption was never adding anything over the file mode, and it cost a
-certify-capable always-unlocked key in the keyring.
+If you ever do want it gone, the only ordering that matters is that
+`M-x my/oauth2-import-from-plstore` stops working once the secret key is
+deleted — so confirm `~/.local/state/emacs/oauth2-auto.eld` exists and org-gcal
+fetches without a browser round-trip first. `secrets/secrets.yaml` would then
+need `sops unset '["org_gcal"]["gpg_private_key"]'` rather than a text edit,
+because the file carries a MAC. `org_gcal/client_id` and
+`org_gcal/client_secret` stay either way — those are the Google OAuth
+application credentials and org-gcal still reads them.
 
-### The code change is already done
-
-`modules/sops.nix` no longer decrypts `org_gcal/gpg_private_key`, no longer
-imports it into `~/.gnupg`, and no longer sets its ownertrust. After an `hms`,
-`~/.config/sops-nix/secrets/org_gcal_gpg_private_key` is removed.
-
-### What you have to do by hand
-
-**Before anything else**, confirm you do not still need to read Doom's plstore.
-If `~/.local/state/emacs/oauth2-auto.eld` exists and org-gcal fetches without
-sending you to a browser, you do not. If it is missing and you would rather not
-redo the OAuth flow, run `M-x my/oauth2-import-from-plstore` **first** — it
-reads the plstore, and once the key is gone that command cannot work again.
-
-```sh
-# a) prove nothing else is encrypted to it
-gpg --list-keys 050C399D3A6B013DD2C93F899BC379782DFE1930
-
-# b) the last consumer, once you no longer need it
-rm -f ~/.config/org-gcal/oauth2-auto.plist ~/.config/org-gcal/token.plstore
-rmdir ~/.config/org-gcal 2>/dev/null || true
-
-# c) delete the key -- SECRET FIRST, gpg refuses the public half otherwise
-gpg --batch --yes --delete-secret-keys 050C399D3A6B013DD2C93F899BC379782DFE1930
-gpg --batch --yes --delete-keys        050C399D3A6B013DD2C93F899BC379782DFE1930
-
-# d) and the decrypted copy, if an hms has not already removed it
-rm -f ~/.config/sops-nix/secrets/org_gcal_gpg_private_key
-```
-
-Repeat (c) and (d) on **every** machine that has ever run `hms` — the key was
-imported by the activation script, so it is in each keyring independently.
-
-### Then drop it from the encrypted secrets file
-
-`secrets/secrets.yaml` is **not** edited by hand: the whole file carries a MAC
-and a text edit corrupts it. Use sops, which re-MACs:
-
-```sh
-cd ~/.config/home-manager
-SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt \
-  sops unset secrets/secrets.yaml '["org_gcal"]["gpg_private_key"]'
-git diff --stat secrets/secrets.yaml     # one file, and it still decrypts
-sops -d secrets/secrets.yaml | head -20  # prove it before committing
-```
-
-`org_gcal/client_id` and `org_gcal/client_secret` **stay** — they are the
-Google OAuth application credentials and org-gcal still reads them out of
-`~/.config/sops-nix/secrets/`.
-
-### Revocation
-
-The key never left this machine and was never published to a keyserver, so
-there is nothing to revoke *to*. If a revocation certificate was generated at
-creation time it is at `~/.gnupg/openpgp-revocs.d/050C…1930.rev`; deleting the
-secret key in (c) makes generating one afterwards impossible, so if you want
-one, take it before step (c).
 
 ## 4. Windows side
 
@@ -152,6 +100,6 @@ by hand.
   `modules/emacs/vanilla/config/lisp/my-secrets.el`. It is the only recovery
   path from a lost `.eld` back to Doom's plstore, and deleting it in the same
   change that removes the plstore's key would remove the recovery path and the
-  thing it recovers from at once. Once step 3 is done it is genuinely dead and
-  can go.
+  thing it recovers from at once. It stays as long as the key does, which is
+  indefinitely — see section 3.
 - **`org_gcal/client_id` and `org_gcal/client_secret`** in sops. Still used.
