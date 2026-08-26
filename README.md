@@ -7,7 +7,6 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 | Tool | Description |
 |------|-------------|
 | [Emacs](modules/emacs/vanilla) | Hand-built Emacs 30 config — no distribution, an explicit Nix package list, evil + an `SPC` leader, org/org-gcal, Claude Code integration, LilyPond. Reached as `em` / `emt`. Replaced Doom Emacs; see [DESIGN.md](modules/emacs/vanilla/DESIGN.md) for what it does and why, and [RETIRING-DOOM.md](modules/emacs/RETIRING-DOOM.md) for the leftovers a human has to clear. |
-| [LazyVim](https://www.lazyvim.org/) | Neovim setup with lazy.nvim plugin manager |
 | [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 38 keybinds, 25 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~2,100 LOC). |
 | [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `zsh-fast-syntax-highlighting`, `zsh-history-substring-search` |
 | [Starship](https://starship.rs/) | Fast, customizable shell prompt |
@@ -86,7 +85,6 @@ This repo is designed to be easily forked:
 | `em`    | Emacs client (GUI frame, TTY when there is no display). Starts the daemon if it is not answering. |
 | `emt`   | Same, always a terminal frame |
 | `emacs-doctor` | Inspect/reset/monitor the Emacs daemon + WSL health (`status`, `reset`, `gui-probe`, `watch`) — Linux only |
-| `lvim`  | LazyVim |
 | `dev-disk` | Show disk usage for Nix, Docker, mise, etc. |
 | `dev-clean` | Interactive cleanup of all dev tools |
 
@@ -120,12 +118,6 @@ This repo is designed to be easily forked:
 | `mcp`   | Mise clean prune (remove unused versions) |
 | `mcc`   | Mise cache clear |
 | `mca`   | Mise clean all (prune + cache) |
-
-### Neovim (v = vim)
-
-| Command | Description |
-|---------|-------------|
-| `vcc`   | Vim cache clean (removes all nvim data/cache) |
 
 ### Cache
 
@@ -200,7 +192,7 @@ This repo is designed to be easily forked:
 │   │   └── vanilla/       # Hand-built Emacs 30: package.nix (explicit package
 │   │                      #   list) + config/{early-init,init}.el, config/lisp/*.el
 │   │                      #   + DESIGN.md, verify.sh/verify.el (the gate)
-│   ├── vim/               # LazyVim
+│   ├── dev-tools.nix      # compilers, formatters, linters, CLI utilities
 │   ├── tmux/              # helper-driven tmux conf + 25 theme palettes (themes.nix)
 │   └── tmux-helper/       # Go helper binary (status, clipboard, theme, navigate, ...)
 ├── secrets/               # Encrypted secrets (safe to commit)
@@ -811,133 +803,6 @@ than spawning a competing `emacs --daemon`, the unit clears its own stale
 socket on `ExecStartPre`, and `StartLimitBurst` bounds the restart loop so a
 real failure surfaces as a stopped service instead of a silent CPU drain.
 
-## LazyVim
-
-This configuration provides a Nix-managed LazyVim setup where all plugins are pre-fetched and pinned. The wrapper script `lvim` handles the complexity of running LazyVim in a reproducible way.
-
-### How It Works
-
-The `modules/vim/default.nix` module:
-
-1. **Pre-fetches plugins** - LazyVim and all plugins are fetched at Nix build time using `fetchFromGitHub`
-2. **Uses nixpkgs treesitter grammars** - All grammars are pre-compiled, no runtime compilation
-3. **Creates a wrapper script** (`lvim`) that:
-   - Sets up environment variables (fonts, SSL, paths)
-   - Copies pre-fetched plugins to `~/.local/share/nvim/lazy/`
-   - Creates `.git` markers so lazy.nvim thinks plugins are installed
-   - Runs neovim with the bundled config
-
-### Configuration Files
-
-| File | Purpose |
-|------|---------|
-| `modules/vim/nvim-config/init.lua` | Main entry point, loads LazyVim |
-| `modules/vim/nvim-config/lua/config/options.lua` | Neovim options |
-| `modules/vim/nvim-config/lua/plugins/theme.lua` | Theme configuration |
-| `modules/vim/nvim-config/lua/plugins/treesitter.lua` | Treesitter overrides |
-
-### Applying Changes
-
-For config changes (lua files):
-```bash
-hms  # Rebuild home-manager
-```
-
-For plugin version updates, edit `modules/vim/default.nix`:
-```nix
-# Update lazy.nvim version
-lazyNvim = pkgs.fetchFromGitHub {
-  owner = "folke";
-  repo = "lazy.nvim";
-  rev = "v11.16.2";  # Change this
-  sha256 = "...";     # nix will tell you the new hash
-};
-
-# Update LazyVim version
-lazyVimDistro = pkgs.fetchFromGitHub {
-  owner = "LazyVim";
-  repo = "LazyVim";
-  rev = "v15.13.0";  # Change this
-  sha256 = "...";
-};
-```
-
-Then rebuild and clear cache:
-```bash
-hms
-vcc  # Clear nvim cache to force plugin reinstall
-lvim
-```
-
-### Adding Plugins
-
-Edit `modules/vim/default.nix` and add to the `pluginsDir` linkFarm:
-
-```nix
-pluginsDir = pkgs.linkFarm "lazy-plugins" [
-  # ... existing plugins ...
-  { name = "new-plugin.nvim"; path = vp.new-plugin-nvim; }  # from nixpkgs
-  # Or fetch directly:
-  { name = "custom-plugin"; path = pkgs.fetchFromGitHub {
-      owner = "author";
-      repo = "custom-plugin";
-      rev = "v1.0.0";
-      sha256 = "sha256-...";
-    };
-  }
-];
-```
-
-Then create a lua config in `modules/vim/nvim-config/lua/plugins/`:
-
-```lua
--- modules/vim/nvim-config/lua/plugins/new-plugin.lua
-return {
-  { "author/new-plugin.nvim", opts = {} }
-}
-```
-
-Rebuild: `hms && vcc && lvim`
-
-### Why This Approach?
-
-Traditional LazyVim downloads plugins at runtime, which:
-- Requires network access
-- Can break if GitHub is slow/down
-- Results in different versions across machines
-
-With Nix-managed LazyVim:
-- All plugins pinned in Nix
-- No network access after build
-- Reproducible across machines
-- Treesitter grammars pre-compiled (faster startup)
-
-### Limitations & Caveats
-
-1. **Plugin updates require manual Nix changes** - You can't just run `:Lazy update`
-2. **Mason is disabled** - LSP servers are managed by Nix, not Mason
-3. **Some lazy.nvim features don't work** - Plugin installation, updates via UI
-4. **Cache clearing sometimes needed** - After updates, run `vcc` to clear state
-
-### Troubleshooting LazyVim
-
-```bash
-# Clear all nvim state (nuclear option)
-vcc
-
-# Check what's in the lazy plugins dir
-ls -la ~/.local/share/nvim/lazy/
-
-# Run with verbose output
-lvim --startuptime /tmp/startup.log
-
-# Check treesitter grammars
-lvim -c ':TSInstallInfo'
-
-# Debug LSP
-lvim -c ':LspInfo'
-```
-
 ## Secrets Management
 
 Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
@@ -1136,7 +1001,6 @@ Things you can `nix run` from this flake without switching your profile:
 | `nix run '.#emacs-vanilla'` | Throwaway **foreground** Emacs — no daemon, no socket, no `hms`, so it cannot collide with the running daemon. Its `--init-directory` is a read-only store path on purpose: that run *is* the test that `early-init.el` redirects every writable path out of `user-emacs-directory`. |
 | `nix run '.#tmux-experimental'` | tmux on the parallel `experimental` socket (`tmux -L experimental`) — the parallel-instance pattern this repo uses to trial a config before it takes the default slot |
 | `nix run '.#tmux-helper-install'` | Install `/usr/local/bin/tmux-helper` (macOS/BeyondTrust stable path) |
-| `nix run '.#update-vim-plugins'` | Print refreshed lazy.nvim / LazyVim revisions and hashes for `modules/vim/default.nix` |
 
 Buildable packages, not apps: `.#lint-tools` is the symlinkJoin of every
 linter this repo gates on — `alejandra`, `statix`, `deadnix`, `shellcheck`,

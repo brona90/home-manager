@@ -91,10 +91,7 @@ assert pkgs.lib.assertMsg (profile == "slim" || homeConfiguration != null)
 
         mkdir -p "$HOME/.cache/oh-my-zsh/completions"
         mkdir -p "$HOME/.cache/starship"
-        mkdir -p "$HOME/.local/share/nvim/lazy"
-        mkdir -p "$HOME/.local/state/nvim"
         mkdir -p "$HOME/.config/tmux"
-        mkdir -p "$HOME/.config/nvim"
         mkdir -p "$HOME/.config/zsh"
         mkdir -p "$HOME/.zsh/plugins"
         mkdir -p "$HOME/.tmux/plugins"
