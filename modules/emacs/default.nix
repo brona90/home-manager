@@ -113,8 +113,11 @@ in {
         # eglot connection failure, which is exactly the "config that cries
         # wolf" the hook list was written to avoid.
         #
-        # Ten of these moved here from modules/vim/default.nix when LazyVim was
-        # removed. They were never neovim's -- eglot is the only consumer left.
+        # Nine of the entries below moved here from modules/vim/default.nix when
+        # LazyVim was removed -- marksman, further down under its Darwin gate,
+        # is the tenth. They were never neovim's; eglot is the only consumer
+        # left. The four that were already here: gopls, jdt-language-server,
+        # pyright, typescript-language-server.
         pkgs.bash-language-server
         pkgs.dockerfile-language-server
         pkgs.gopls

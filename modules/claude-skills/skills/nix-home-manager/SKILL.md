@@ -165,6 +165,13 @@ message.)
   retired and nothing in the flake references either. They look like config and
   have no effect. Deleting them is a manual step —
   `modules/emacs/RETIRING-DOOM.md`.
+- `~/.config/nvim/`, `~/.local/share/nvim/`, `~/.local/state/nvim/` and
+  `~/.cache/nvim/` are the same class: LazyVim was removed and `modules/vim/`
+  no longer exists, so nothing in the flake references any of them. The `vcc`
+  alias that used to clear them went with it. `~/.local/share/nvim` is the big
+  one (plugin copies plus an orphaned `mason/` tree). Removing it needs
+  `chmod -R u+w` first: the plugins were `cp`d out of the read-only store and
+  their directories have no write bit, so `rm -rf` fails partway.
 - Never hardcode a `/nix/store/<hash>/` path into anything outside the flake —
   the hash changes on every rebuild. Use the stable wrappers in
   `~/.nix-profile/bin/` (`kg-server`, `searxng-mcp`, `emacs-mcp-server`).

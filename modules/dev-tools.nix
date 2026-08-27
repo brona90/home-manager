@@ -24,6 +24,11 @@
   cfg = config.my.devTools;
 in {
   options.my.devTools = {
+    # NOT safe to turn off to slim a profile, despite reading like it is.
+    # Emacs needs cmake and a C compiler from this list at RUNTIME -- vterm
+    # compiles its module on first use and treesit compiles grammars -- so
+    # disabling this while my.emacs.enable is true gives a working build and a
+    # broken editor. Drop individual packages instead.
     enable = lib.mkEnableOption "developer toolchain (compilers, formatters, linters, CLI utilities)";
   };
 
@@ -92,6 +97,12 @@ in {
         # NOT -- CoreText only sees ~/Library/Fonts -- so the Mac installs this
         # same font by symlinking it there itself, in home/darwin.nix.  Listing
         # it in home.packages on Darwin was decorative.
+        #
+        # The consumer is `my/font-family' in
+        # modules/emacs/vanilla/config/init.el, which asks for the family by
+        # name ("VictorMono Nerd Font").  Nothing asserts that the name it asks
+        # for is the family either installer provides; if Emacs ever comes up
+        # with fallback glyphs, check that pairing first.
         nerd-fonts.victor-mono
       ];
   };

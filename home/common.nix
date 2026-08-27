@@ -68,10 +68,14 @@ in {
         # versions through the flake lockfile. mise stays available as a
         # CLI for per-project version pinning via direnv's use_mise.
         # Node and python pinned to the versions that were already coming
-        # in transitively (the LSP/formatter tooling in modules/dev-tools.nix
-        # pulled nodejs_22; emacs/texlive pulled python3 default = 3.13) so we
-        # get exactly one of each in buildEnv -- otherwise pkgs.buildEnv
-        # conflicts on shared paths like corepack/yarn.js or python3-embed.pc.
+        # in transitively (the node language servers in modules/emacs/default.nix
+        # and the node formatters/linters in modules/dev-tools.nix pulled
+        # nodejs_22; emacs/texlive pulled python3 default = 3.13) so we get
+        # exactly one of each in buildEnv -- otherwise pkgs.buildEnv conflicts
+        # on shared paths like corepack/yarn.js or python3-embed.pc.
+        #
+        # BOTH modules, deliberately: prune either one and this pin stops being
+        # redundant, so neither can be read as the sole reason for it.
         nodejs_22
         python3
         gh # was: mise global gh@latest

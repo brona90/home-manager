@@ -12,6 +12,7 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 | [Starship](https://starship.rs/) | Fast, customizable shell prompt |
 | [mise](https://mise.jdx.dev/) | Polyglot runtime manager. Used **per-project only** via `direnv use_mise` -- the global zsh integration is intentionally off (5+ s/prompt cost on WSL). Globally needed runtimes live in nixpkgs (`home.packages`). |
 | [btop](https://github.com/aristocratos/btop) | Resource monitor with TUI |
+| [dev toolchain](modules/dev-tools.nix) | `my.devTools.enable` — compilers (gcc/cmake/make/pkg-config), formatters (alejandra, stylua, black, isort, prettier, gofumpt, shfmt), linters, debuggers, `lazygit`, `delta`, and the VictorMono Nerd Font on Linux. **Not a safe thing to disable:** Emacs compiles vterm and treesit grammars at runtime with the compilers in here. Language servers are *not* here — they live beside the config that hooks them, in `modules/emacs/default.nix`. |
 | [fzf](https://github.com/junegunn/fzf) | Fuzzy finder |
 | [ripgrep](https://github.com/BurntSushi/ripgrep) | Fast grep replacement |
 | [fd](https://github.com/sharkdp/fd) | Fast find replacement |
