@@ -34,6 +34,11 @@
 # org_gcal:                      # Google Calendar sync. Both keys are read by
 #   client_id: xxxxxxxx.apps.googleusercontent.com    # Emacs on every host.
 #   client_secret: GOCSPX-xxxxxxxxxxxxxxxx
+# cloudflare:
+#   orrery_token: xxxxxxxx       # Pages + DNS + Access on the fosterthecode.com
+#                                #   zone. CI uses it.
+#   tunnel_token: xxxxxxxx       # Tunnel:Edit only — provisions the warealien
+#                                #   tunnel.
 #
 # NOTE: this file also still carries org_gcal/gpg_private_key, and nothing
 # reads it. It was a passphrase-less key encrypting Doom's OAuth token
