@@ -943,8 +943,8 @@ ci.yml (push + PRs):
 lint (statix, deadnix, alejandra --check, shellcheck, actionlint — all from
   │   .#lint-tools, this flake's own pinned nixpkgs, never the runner registry)
   ├─> check (ubuntu: nix flake check --all-systems + dry-run eval of Linux)
-  └─> eval-darwin (macos-14: dry-run eval of all 3 Darwin home configs;
-      │            x86_64-darwin via Rosetta — no hosted Intel runners)
+  └─> eval-darwin (ubuntu-latest: dry-run eval of all 3 Darwin home configs,
+      │            named explicitly from config.nix)
       └─[+check]─> build-home (ALWAYS runs; the MATRIX is what varies —
                      │         PRs build x86_64-linux only, pushes add
                      │         2× aarch64-darwin. Pushes to Cachix.
@@ -956,7 +956,7 @@ validate.yml (manual, weekly, or on hosts/**, flake.nix, flake.lock changes):
 nixos (NixOS system build)    darwin (aarch64-darwin home config build)
 ```
 
-Note: `nix flake check --all-systems` **is** used. It was not while the Doom Emacs setup was in the flake — that used import-from-derivation with `allowSubstitutes = false`, so evaluating a Darwin config required *building* Darwin derivations. It was restored after verifying it exits 0, not on the assumption that it would. It covers the Darwin home configurations indirectly but really: `flake check` does not know about `homeConfigurations`, but `perUserPackages` mirrors each into `packages.<system>.home-<username>` and those are walked. `eval-darwin` is kept for the `--dry-run` build plan on a real Darwin builder.
+Note: `nix flake check --all-systems` **is** used. It was not while the Doom Emacs setup was in the flake — that used import-from-derivation with `allowSubstitutes = false`, so evaluating a Darwin config required *building* Darwin derivations. It was restored after verifying it exits 0, not on the assumption that it would. It covers the Darwin home configurations indirectly but really: `flake check` does not know about `homeConfigurations`, but `perUserPackages` mirrors each into `packages.<system>.home-<username>` and those are walked. `eval-darwin` is kept, but not for the reason it was created. It was on `macos-14` because the Doom IFD meant evaluating a Darwin config required *building* Darwin derivations; with Doom gone, a Linux runner resolves the full `--dry-run` build plan against the substituters (verified: exit 0, a 1021-line plan). It stays because `--all-systems` covers Darwin only **incidentally** — through the `perUserPackages` mirroring — so gating or renaming that mirroring would make Darwin coverage vanish silently and all green, whereas `eval-darwin` names the three configs outright.
 
 `build-home` deliberately has **no job-level `if`**. It used to, and it
 therefore reported "skipping" on every pull request — so nothing in CI built the
