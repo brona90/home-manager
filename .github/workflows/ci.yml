@@ -111,13 +111,19 @@ jobs:
       # packages.aarch64-darwin.home-888973 on x86_64-linux. So Darwin home
       # configurations now get EVAL coverage from this job.
       #
-      # eval-darwin below is therefore weaker justification than it was, and
-      # it is left in place deliberately rather than by oversight: it does a
-      # `nix build --dry-run`, which resolves a build PLAN against
-      # substituters as well as evaluating, and it does it on a real Darwin
-      # builder. If that is judged not worth a macOS runner on every PR, it is
-      # a reasonable thing to delete -- but delete it as a decision, having
-      # read this, not on the assumption that it was always redundant.
+      # eval-darwin below overlaps this job, deliberately and knowingly. That
+      # question was settled rather than left open: the macOS runner it used to
+      # require is gone (the job now runs on ubuntu-latest -- see the comment on
+      # the job for the measurements that justified the move), but the job
+      # itself was KEPT, for a reason this job cannot supply on its own.
+      #
+      # The Darwin coverage described above is INCIDENTAL. `flake check` has no
+      # idea `homeConfigurations` exists; it reaches Darwin only because
+      # `perUserPackages` happens to mirror each one into
+      # `packages.<system>.home-<username>`. Gate or rename that mirroring and
+      # Darwin coverage disappears from this job silently, with everything
+      # still green. eval-darwin names the three configs from config.nix
+      # outright, so that coverage is asserted rather than inherited.
       #
       # The retry loop that used to wrap this is gone with the same cause.
       # It existed because the IFD refetched every elisp source uncached --
@@ -131,8 +137,9 @@ jobs:
       # a package referenced nowhere in this repo, pulled in by Doom's module
       # set. This step now substitutes from the binary caches like everything
       # else and fetches nothing by hand. The retries on eval-darwin and
-      # build-home STAY: those build real closures over the network, and
-      # their flakiness was never Doom-specific.
+      # build-home STAY: both still cross the network -- build-home builds a
+      # real closure, eval-darwin resolves a build plan against the
+      # substituters -- and their flakiness was never Doom-specific.
       - name: Flake check
         run: nix flake check --all-systems
       # PR-time eval coverage for the Linux config. `nix build --dry-run`
@@ -144,20 +151,56 @@ jobs:
   # config.nix. Runs on PRs too (unlike build-home), so a PR that breaks Darwin
   # eval can no longer merge green.
   #
-  # OVERLAPPING, since `--all-systems` came back to the check job above: that
-  # job now evaluates packages.<darwin>.home-<user>, which are these same
-  # activation packages. What is left here that is not there is the `--dry-run`
-  # (a build PLAN resolved against substituters, not just an evaluation) on a
-  # real Darwin builder. Kept on that basis; see the note in the check job for
-  # why deleting it would be a defensible decision rather than a cleanup.
+  # THIS JOB NO LONGER RUNS ON macOS. That is the change, and this is why.
   #
-  # x86_64-darwin has no hosted runners, so it is evaluated on this arm64
-  # runner via Rosetta 2 (extra-platforms).
+  # It genuinely used to need a real Mac. nix-doom-emacs-unstraightened
+  # resolved every elisp source through import-from-derivation, and those
+  # intermediate derivations set `allowSubstitutes = false`, so merely
+  # EVALUATING a Darwin config required *building* Darwin derivations -- which
+  # a Linux runner cannot do ("required system not available"). That is the
+  # whole reason this job was created on macos-14 instead of being a couple of
+  # lines in the check job. Doom has since been retired: the input is gone from
+  # flake.nix's `inputs` and does not appear in flake.lock at all. No IFD, no
+  # constraint.
+  #
+  # MEASURED ON x86_64-linux BEFORE THE RUNNER WAS CHANGED, not assumed:
+  #   * `nix eval .#packages.x86_64-darwin.home-gfoster.drvPath` returns a
+  #     .drv (~13s of CPU) -- a Darwin activation package instantiates fully,
+  #     transitively, on Linux.
+  #   * `nix build --dry-run` of gfoster@aarch64-darwin exits 0 on Linux and
+  #     resolves the complete ~1000-path build plan against the substituters.
+  #     The `--dry-run` that was this job's stated reason to exist needs no Mac.
+  #   * Breaking an assertion in home/darwin.nix on purpose made
+  #     `nix flake check --all-systems` exit NONZERO on Linux, reporting
+  #     against packages.x86_64-darwin. A Darwin-only break really does fail
+  #     off-Mac; this was verified by injecting one, not by reading the docs.
+  #
+  # WHAT WENT WITH THE MAC, and why none of it was load-bearing:
+  #   * `extra-platforms = x86_64-darwin` (Rosetta 2). That setting only
+  #     affects BUILDING. This job only ever dry-runs, so Rosetta was
+  #     buying it precisely nothing.
+  #   * `stalled-download-timeout`, which was there for macOS closure copies.
+  #     A dry-run downloads no closure.
+  #   * "on a real Darwin builder". With no IFD anywhere in the flake,
+  #     evaluating for a target `system` is host-independent. And if IFD is
+  #     ever reintroduced, this job now fails LOUDLY on Linux -- which is the
+  #     signal you want. A Mac would have absorbed it in silence and let the
+  #     regression through.
+  #
+  # BEFORE YOU DELETE OR RENAME THIS JOB: `Evaluate Darwin Configurations`
+  # (the `name:` below, which is the string GitHub reports as the status
+  # context) is a REQUIRED STATUS CHECK on master, alongside `Lint` and
+  # `Flake Check`. If it stops reporting, every PR waits forever on a check
+  # that will never arrive and nothing can merge. Drop the context from branch
+  # protection FIRST, then merge the removal -- never the other way round.
   eval-darwin:
     name: Evaluate Darwin Configurations
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     needs: lint
-    timeout-minutes: 60
+    # Was 60 when this copied Darwin closures onto a macOS runner. It is now an
+    # evaluation plus a substituter query -- ~2 min on a busy local box. 30
+    # leaves headroom for a cold runner without hiding a hang for an hour.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
@@ -167,8 +210,6 @@ jobs:
             experimental-features = nix-command flakes
             accept-flake-config = true
             sandbox = false
-            extra-platforms = x86_64-darwin
-            stalled-download-timeout = 60
             connect-timeout = 30
             download-attempts = 5
       - uses: cachix/cachix-action@v17
@@ -176,10 +217,10 @@ jobs:
           name: nix-community
           extraPullNames: emacs,${{ env.CACHIX_CACHE }}
       # Retried through the composite action, which build-home shares. The
-      # original reason was the unstraightened IFD's uncached elisp fetches;
-      # that is gone with Doom, but this job still resolves a full Darwin
-      # closure over the network and a transient 408 from cache.nixos.org
-      # fails it just as dead. Kept on that basis, not by inertia.
+      # original reason was the unstraightened IFD's uncached elisp fetches,
+      # and that is gone with Doom. The retry stays anyway: `--dry-run` still
+      # resolves a build plan against cache.nixos.org, and a transient 408
+      # there fails the job over a change that touched nothing related.
       - name: Evaluate Darwin home configurations (dry-run)
         uses: ./.github/actions/nix-build-retry
         with:
@@ -216,8 +257,10 @@ jobs:
       # switches to it.
       #
       # gfoster@x86_64-darwin is absent from both lists: GitHub has no hosted
+      # gfoster@x86_64-darwin is absent from both lists: GitHub has no hosted
       # Intel macOS runners anymore. It keeps eval-only coverage via
-      # eval-darwin (Rosetta on the arm64 runner).
+      # eval-darwin, which no longer needs a Mac (nor the Rosetta
+      # `extra-platforms` it used to lean on) to evaluate it.
       #
       # A dynamic matrix, not a job `if`, because `jobs.<id>.if` cannot see
       # the matrix context and a per-entry `if` does not exist -- spinning up
