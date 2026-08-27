@@ -446,7 +446,7 @@ curl -fsSL https://raw.githubusercontent.com/.../bootstrap.sh | bash
 
 # 3. On existing machine with secrets:
 cd ~/.config/home-manager
-vim .sops.yaml  # Add new public key
+emt .sops.yaml  # Add new public key
 sops updatekeys secrets/secrets.yaml
 git add -A && git commit -m "feat(sops): add <machine> key" && git push
 
