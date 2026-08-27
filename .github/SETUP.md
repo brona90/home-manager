@@ -152,12 +152,14 @@ version skew (`statix` has no `--version` flag, so paths rather than versions).
 a set of flake targets and retries the **whole set** on failure — three attempts,
 60 s apart by default.
 
-It exists because nix-doom-emacs-unstraightened resolves elisp sources through
-import-from-derivation, and those intermediate derivations set
-`allowSubstitutes = false`. They are plain git fetches of non-GitHub hosts
-(codeberg, gitlab, savannah) that no binary cache can serve, and nix's own
-`download-attempts` covers *substituter* downloads only — not these. One
-transient 408 or 504 therefore fails an otherwise-green job.
+It was written for nix-doom-emacs-unstraightened, which resolved elisp sources
+through import-from-derivation with `allowSubstitutes = false` on the
+intermediate derivations — plain git fetches of non-GitHub hosts (codeberg,
+gitlab, savannah) that no binary cache could serve. **nix-doom is gone** (zero
+matches in `flake.lock`), and with it that specific failure mode; the retry is
+kept for the general one, because nix's own `download-attempts` covers
+*substituter* downloads only, so any transient 408 or 504 on a fetched input
+still fails an otherwise-green job.
 
 Retrying is cheap: whatever a failed attempt did fetch is already in the store,
 so a retry resumes rather than restarts. Note the `nix-args` input is

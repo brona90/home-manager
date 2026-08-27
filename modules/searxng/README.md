@@ -27,4 +27,5 @@ systemctl --user restart searxng
 curl -s 'localhost:8888/search?q=test&format=json' | jq '.results[0]'
 ```
 
-Default host port is `8888` (`my.searxng.port`). Requires the system Docker daemon.
+Default host port is `8888` (`my.searxng.port`). The module also takes
+`my.searxng.image` and `my.searxng.dockerBin`. Requires the system Docker daemon.

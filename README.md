@@ -7,7 +7,7 @@ A reproducible, cross-platform development environment using [Nix](https://nixos
 | Tool | Description |
 |------|-------------|
 | [Emacs](modules/emacs/vanilla) | Hand-built Emacs 30 config — no distribution, an explicit Nix package list, evil + an `SPC` leader, org/org-gcal, Claude Code integration, LilyPond. Reached as `em` / `emt`. Replaced Doom Emacs; see [DESIGN.md](modules/emacs/vanilla/DESIGN.md) for what it does and why, and [RETIRING-DOOM.md](modules/emacs/RETIRING-DOOM.md) for the leftovers a human has to clear. |
-| [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 38 keybinds, 25 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~2,100 LOC). |
+| [tmux + tmux-helper](modules/tmux-helper) | Helper-driven tmux config: 50 keybinds, 25 themes (`prefix T` to cycle), fzf popup pickers (`prefix s/w/./P`), SSH-aware status bar, smart-status indicators (git branch / nix-shell / active-LLM), copy-mode `o` opens selection in emacsclient. Replaces the 94 KB gpakosz config with a few hundred lines of native tmux + a one-shot Go binary (~2,100 LOC). |
 | [Oh My Zsh](https://ohmyz.sh/) | Zsh framework with plugins: `git`, `z`, `zsh-fast-syntax-highlighting`, `zsh-history-substring-search` |
 | [Starship](https://starship.rs/) | Fast, customizable shell prompt |
 | [mise](https://mise.jdx.dev/) | Polyglot runtime manager. Used **per-project only** via `direnv use_mise` -- the global zsh integration is intentionally off (5+ s/prompt cost on WSL). Globally needed runtimes live in nixpkgs (`home.packages`). |
@@ -82,10 +82,12 @@ This repo is designed to be easily forked:
 | Command | Description |
 |---------|-------------|
 | `hms`   | Home Manager switch (rebuild config) |
+| `hmn`   | `home-manager news` for the same flake — the release notes for what changed under you |
 | `nrs`   | NixOS rebuild switch (WSL host only — defined in `home/hosts/wsl.nix`) |
 | `em`    | Emacs client (GUI frame, TTY when there is no display). Starts the daemon if it is not answering. |
 | `emt`   | Same, always a terminal frame |
-| `emacs-doctor` | Inspect/reset/monitor the Emacs daemon + WSL health (`status`, `reset`, `gui-probe`, `watch`) — Linux only |
+| `emacs-doctor` | Inspect/reset/monitor the Emacs daemon + WSL health (`status`, `reset`/`fix`, `gui-probe`, `watch`, `version`) — Linux only |
+| `terminal` | Run the dev Docker image (`modules/docker-terminal.nix`). Aliases: `term-clean` = plain `terminal`, an ephemeral container; `term-persist` = `--persistent`; `term-here` = `--workspace .`, mounting the cwd |
 | `dev-disk` | Show disk usage for Nix, Docker, mise, etc. |
 | `dev-clean` | Interactive cleanup of all dev tools |
 
@@ -161,7 +163,14 @@ This repo is designed to be easily forked:
 ```
 .
 ├── flake.nix              # Main entry point, defines inputs and outputs
+├── flake.lock             # Pinned inputs (bumped weekly by update-flake.yml)
 ├── config.nix             # User & repo configuration (edit this!)
+├── config.local.nix.example  # Template for gitignored local git identity/overrides
+├── bootstrap.sh           # Fresh-machine installer (Nix check, sops setup, first switch)
+├── CLAUDE.md              # Repo-scope instructions for Claude Code
+├── .mcp.json              # Project-scope MCP server registrations
+├── .envrc                 # `use flake` — see "Dev shell and git hooks"
+├── .sops.yaml             # age public keys (safe to commit)
 ├── home/                  # Home Manager profiles
 │   ├── common.nix         # Shared across all systems
 │   ├── linux.nix          # Linux-specific (platform-generic)
@@ -170,37 +179,61 @@ This repo is designed to be easily forked:
 │       ├── wsl.nix        # gfoster's WSL box: build farm, GPG bridge, /mnt/c aliases
 │       ├── personal-mac.nix  # Personal MacBooks: Homebrew lists
 │       └── corp-mac.nix   # Corporate Mac: Homebrew lists + Zscaler bypass
-├── hosts/                 # NixOS configurations
+├── hosts/                 # NixOS configurations (unrelated to home/hosts/)
 │   ├── common/            # Shared NixOS settings
 │   └── wsl/               # WSL-specific config
 ├── modules/               # Reusable Home Manager modules
-│   ├── zsh.nix            # Shell config with oh-my-zsh
+│   ├── zsh.nix            # Shell config with oh-my-zsh, starship, mise, direnv
 │   ├── git.nix            # Git + GPG signing
 │   ├── gpg.nix            # GPG agent + YubiKey bridge (forwardToWindows)
 │   ├── btop.nix           # System monitor
-│   ├── sops.nix           # Secrets management
-│   ├── claude-code.nix    # Claude Code CLI settings, hooks, MCP servers
-│   ├── emacs-mcp.nix      # Emacs MCP server module
-│   ├── emacs-mcp-server.py  # MCP stdio server bridging Claude Code → emacsclient
+│   ├── dev-tools.nix      # Compilers, formatters, linters, debuggers, CLI utilities
+│   ├── sops.nix           # Secrets management (sops-nix + age)
 │   ├── docker-terminal.nix  # `terminal` wrapper for the Docker dev image
-│   ├── displayplacer.nix  # macOS display layout (displayplacer)
-│   ├── zscaler-bypass.nix # Route-only Zscaler bypass (allowlisted CIDRs)
-│   ├── scripts/
-│   │   └── gpg-win-bridge.py  # WSL→Gpg4win Assuan proxy
+│   ├── displayplacer.nix  # macOS display layout (darwin only)
+│   ├── zscaler-bypass.nix # Route-only Zscaler bypass (darwin only)
+│   ├── claude-code.nix    # Claude Code CLI settings, hooks, MCP server merging
+│   ├── claude-skills.nix  # User-scope skills + subagents ->
+│   │   └── claude-skills/ #   skills/{nix-home-manager,org-elisp,wsl-interop},
+│   │                      #   agents/{consumer-sweeper,elisp-batch-engineer,nix-module-author}
+│   ├── claude-specflow.nix  # /specflow scaffolder ->
+│   │   └── claude-specflow/ #   commands/, templates/specflow/{agents,commands,hooks,rules},
+│   │                        #   tests/branch-policy-matrix.sh (guarded by branch-policy-hook)
+│   ├── claude-kg/         # Local knowledge-graph MCP server + Qdrant (my.claudeKg)
+│   │                      #   default.nix, package.nix, src/, README.md
+│   ├── searxng/           # Local SearXNG metasearch + web_search MCP (my.searxng)
+│   │                      #   default.nix, package.nix, settings.yml, src/, README.md
+│   ├── orrery-mcp.nix     # MCP server for the Orrery dashboard (source NOT vendored here)
+│   ├── emacs-mcp.nix      # Emacs MCP server module
+│   ├── emacs-mcp-server.py  # MCP stdio server bridging Claude Code -> emacsclient
 │   ├── emacs/             # Emacs
-│   │   ├── default.nix    # the package, the daemon unit, em/emt
+│   │   ├── default.nix    # the package, the daemon unit, language servers, em/emt
 │   │   ├── RETIRING-DOOM.md  # leftovers a human must clear after the switch
 │   │   └── vanilla/       # Hand-built Emacs 30: package.nix (explicit package
 │   │                      #   list) + config/{early-init,init}.el, config/lisp/*.el
 │   │                      #   + DESIGN.md, verify.sh/verify.el (the gate)
-│   ├── dev-tools.nix      # compilers, formatters, linters, CLI utilities
+│   ├── emacs-doctor/      # Go CLI: daemon health, reset, gui-probe, watch (Linux only)
 │   ├── tmux/              # helper-driven tmux conf + 25 theme palettes (themes.nix)
-│   └── tmux-helper/       # Go helper binary (status, clipboard, theme, navigate, ...)
+│   │                      #   + GRADUATION.md (the parallel-socket trial pattern)
+│   ├── tmux-helper/       # Go helper binary (status, clipboard, theme, navigate, ...)
+│   └── scripts/
+│       └── gpg-win-bridge.py  # WSL->Gpg4win Assuan proxy
+├── checks/                # The `nix flake check` guard set — one file per concern
+│   ├── default.nix        # Merges them; documents the interface a guard file is handed
+│   ├── branch-policy.nix  # branch-policy-hook
+│   ├── claude-settings.nix  # claude-settings-guards
+│   ├── dev-shell.nix      # devshell-stays-light, install-hooks-installs-hooks
+│   ├── docker-terminal.nix  # docker-terminal-no-ssh-mount
+│   ├── emacs-gate.nix     # ci-emacs-gate
+│   ├── lint-tools.nix     # lint-tools-pinned
+│   ├── shell-scripts.nix  # background-jobs-close-fds, devshell-hook-lint
+│   └── tmux-helper.nix    # tmux-helper-build, tmux-helper-vet (builds, not guards)
 ├── secrets/               # Encrypted secrets (safe to commit)
-│   └── secrets.yaml
+│   ├── secrets.yaml
+│   └── README.md          # The key structure, as a commented example
 ├── lib/                   # Helper functions
 │   ├── lint-tools.nix     # the pinned linter set (.#lint-tools) every gate uses
-│   ├── docker-image.nix   # Docker image builder
+│   ├── docker-image.nix   # Docker image builder (full + slim profiles)
 │   ├── docker-test-app.nix
 │   ├── dev-shell.nix      # devShell + hook bootstrap (see "Dev shell and git hooks")
 │   ├── dev-shell-hook.sh  # the shellHook — runs on every `cd`, must stay cheap
@@ -209,6 +242,8 @@ This repo is designed to be easily forked:
 │   ├── link-pc-config.sh  # gives a new worktree its .pre-commit-config.yaml
 │   └── pre-commit-hooks.nix  # the hook set handed to git-hooks.nix
 └── .github/
+    ├── SETUP.md           # CI setup: required secrets, status checks
+    ├── dependabot.yml     # Action version bumps
     ├── workflows/         # CI/CD
     │   ├── ci.yml             # Main pipeline
     │   ├── update-flake.yml   # Weekly flake.lock update PRs
@@ -412,7 +447,11 @@ the background job's output is in `.git/hooks/.hm-install-hooks.log`. Four
 
 - `x86_64-linux` (Debian, Ubuntu, NixOS, WSL)
 - `aarch64-linux` (Raspberry Pi, ARM servers)
-- `x86_64-darwin` (Intel Mac)
+- `x86_64-darwin` (Intel Mac) — **pinned, and expiring 2026-12-31.** nixpkgs
+  drops this platform then, so `flake.nix` holds it on a separate
+  `nixpkgs-26.05-darwin` input with its own home-manager. It gets a bare
+  devShell: no git hooks, and no `install-hooks` app. Treat it as a machine
+  being kept alive, not a supported target.
 - `aarch64-darwin` (Apple Silicon Mac)
 
 ## New Machine Setup
@@ -527,7 +566,7 @@ is a decision rather than a gap.
 
 | | |
 |---|---|
-| **Editing** | evil-mode, an `SPC` leader with 14 named prefixes and ~150 named keys, which-key (built into Emacs 30), vertico/consult/marginalia/orderless/embark completion, magit + forge + diff-hl, vundo, avy, envrc, ws-butler |
+| **Editing** | evil-mode, an `SPC` leader with 23 named prefixes and ~235 named keys, which-key (built into Emacs 30), vertico/consult/marginalia/orderless/embark completion, magit + forge + diff-hl, vundo, avy, envrc, ws-butler |
 | **Languages** (`my-lang.el`) | 21 file types. Every one that has a tree-sitter mode in Emacs 30.2 gets a live parser; 17 grammars come from Nix as an explicit list, and five are deliberately absent because no `-ts-mode` exists for them (markdown, LaTeX, Common Lisp, elisp, Fortran are font-lock modes and a grammar would only grow the closure) |
 | **LSP** (`my-lang.el`) | eglot, hooked into **17** modes — exactly the ones whose server is actually installed. C, C++, CMake, Fortran and LaTeX get a working major mode and no eglot hook, because a hook with no server behind it logs a failed connection on every `find-file` and teaches you to ignore eglot errors. Three explicit contacts: `taplo` for TOML, a pin to `pyright-langserver` for Python (pyright *and* ruff are installed, so eglot otherwise picks one silently), and `nil` for `nix-ts-mode` |
 | **Claude Code** (`my-claude.el`, `claude-diff.el`) | the `claude-code` package on `SPC l` — four session keys and seven diff-review keys. `claude-diff.el` is the two-way review integration: a `modules/claude-code.nix` PermissionRequest hook `emacsclient --eval`s into the daemon and Emacs shows the proposed edit as a real diff you accept or reject. It is required **eagerly**, because `--eval` cannot autoload a function that has no stub |
@@ -622,7 +661,7 @@ together.
 ### Keybindings — the `SPC` leader
 
 evil-mode with an `SPC` leader and a discoverable menu
-(`config/lisp/my-bindings.el`): 14 named prefixes and roughly 150 named leader
+(`config/lisp/my-bindings.el`): 23 named prefixes and roughly 235 named leader
 keys, each showing a human-readable name in the which-key popup — which-key is
 built into Emacs 30, so no package is involved.
 
@@ -822,6 +861,8 @@ Uses [sops-nix](https://github.com/Mic92/sops-nix) with age encryption.
 - `gpg/public_key` - GPG public key
 - `org_gcal/client_id` - Google OAuth client id for org-gcal calendar sync
 - `org_gcal/client_secret` - Google OAuth client secret for org-gcal
+- `cloudflare/orrery_token` - Pages + DNS + Access on the fosterthecode.com zone (CI uses it)
+- `cloudflare/tunnel_token` - Cloudflare Tunnel:Edit only — provisions the warealien tunnel
 - `org_gcal/gpg_private_key` - **retired, and nothing reads it.** It was a passphrase-less GPG key encrypting Doom's org-gcal OAuth token store for a prompt-free decrypt. Activation no longer decrypts or imports it; the token store is a plain `0600` file (see [Emacs](#emacs)). Removing it from this file needs `sops unset` and deleting it from each keyring is manual — see [`modules/emacs/RETIRING-DOOM.md`](modules/emacs/RETIRING-DOOM.md).
 
 ### Edit secrets
@@ -972,8 +1013,9 @@ The CI is fork-friendly - lint and check always run, push operations only run if
 
 `nix flake check` builds these. Each one encodes a bug that already happened, so
 none of them is a style preference — if one fails, read what it caught rather
-than relaxing it. They are defined on `x86_64-linux` only, because the content
-they guard is identical across systems.
+than relaxing it. The nine guards below are defined on `x86_64-linux` only,
+because the content they guard is identical across systems; the two
+tmux-helper builds run on every system.
 
 They live in `checks/`, one file per concern, so that two branches touching two
 different guards do not conflict by construction — which is what a single
@@ -990,11 +1032,43 @@ documents the whole interface a guard file is handed.
 | `install-hooks-installs-hooks` | The counterweight to the above: `nix run .#install-hooks` must really run the upstream installer and must not stamp success it did not achieve |
 | `background-jobs-close-fds` | A background job in the dev-shell hooks that does not close inherited descriptors. direnv hands `.envrc` a pipe on FD 3 and reads it to EOF, so a child holding FD 3 blocks the caller — measured at 9364ms versus 713ms. `nohup`, `setsid` and double-forking all made no difference |
 | `devshell-hook-lint` | A shell syntax error in `lib/dev-shell-hook.sh`, `lib/install-hooks.sh` or `lib/warm-direnv.sh`. `mkShell` never lints the `shellHook`, and it runs at an interactive prompt where a syntax error looks like a broken terminal |
+| `branch-policy-hook` | The specflow branch-policy hook losing worktree-awareness, or ceasing to fail closed. It shipped blocking every worktree commit as if it were on master; the first fix then turned every parse miss into a silent ALLOW. Runs the shipped hook against a 43-case matrix, in both directions |
 
 Plus `tmux-helper-build` and `tmux-helper-vet`, which are ordinary builds rather
 than guards.
 
 See [.github/SETUP.md](.github/SETUP.md) for detailed CI setup instructions.
+
+## Module options
+
+Every module gates on one `my.<name>.enable`. Three places switch them on, and
+which one matters: `home/common.nix` (shared, overridable per host), a
+`home/hosts/*.nix` layer (machine-specific), or the inline module in
+`flake.nix` (every config, not host-overridable). This is the whole set — if a
+module is not listed here, it does not exist:
+
+| Option | Module | Where it is enabled |
+|---|---|---|
+| `my.zsh.enable` | `zsh.nix` | common |
+| `my.git.enable`, `my.git.signing.enable` | `git.nix` | common |
+| `my.gpg.enable` | `gpg.nix` | common (+ darwin overrides) |
+| `my.btop.enable` | `btop.nix` | common |
+| `my.devTools.enable` | `dev-tools.nix` | common — **not a safe thing to turn off**, see the table at the top |
+| `my.sops.enable` | `sops.nix` | common |
+| `my.dockerTerminal.enable` | `docker-terminal.nix` | common |
+| `my.emacs.enable` | `emacs/default.nix` | `flake.nix` — every config, with `package` set to the vanilla build |
+| `my.emacsDoctor.enable` | `emacs-doctor/default.nix` | `flake.nix` — every config (module itself is Linux-gated) |
+| `my.emacsMcp.enable` | `emacs-mcp.nix` | common |
+| `my.claudeCode.enable` | `claude-code.nix` | common |
+| `my.claudeSkills.enable` | `claude-skills.nix` | common |
+| `my.claudeSpecflow.enable` | `claude-specflow.nix` | common |
+| `my.claudeKg.enable` | `claude-kg/default.nix` | WSL host |
+| `my.searxng.enable` | `searxng/default.nix` | WSL host |
+| `my.orreryMcp.enable` | `orrery-mcp.nix` | WSL host |
+| `my.tmux.enable` | `tmux/default.nix` | `flake.nix` — every config (also sets `theme.preset = "nord"`) |
+| `my.tmuxHelper.enable` | `tmux-helper/default.nix` | `flake.nix` — every config |
+| `my.displayplacer.enable` | `displayplacer.nix` | darwin |
+| `my.zscalerBypass.enable` | `zscaler-bypass.nix` | corporate Mac |
 
 ## Flake apps
 
@@ -1002,10 +1076,11 @@ Things you can `nix run` from this flake without switching your profile:
 
 | App | What it does |
 |---|---|
+| `nix run '.'` | The default app: `emacs-vanilla` (below) |
 | `nix run '.#docker-test'` | Build the terminal Docker image and test it locally (Linux only) |
 | `nix run '.#install-hooks'` | Install the git pre-commit hooks, and materialise the pinned linters at `.direnv/lint-tools` (GC-rooted) so the dev-shell can put them on `PATH` without evaluating them on every `cd`. `--uninstall` removes them |
 | `nix run '.#emacs-vanilla'` | Throwaway **foreground** Emacs — no daemon, no socket, no `hms`, so it cannot collide with the running daemon. Its `--init-directory` is a read-only store path on purpose: that run *is* the test that `early-init.el` redirects every writable path out of `user-emacs-directory`. |
-| `nix run '.#tmux-experimental'` | tmux on the parallel `experimental` socket (`tmux -L experimental`) — the parallel-instance pattern this repo uses to trial a config before it takes the default slot |
+| `nix run '.#tmux-experimental'` | tmux on the parallel `experimental` socket (`tmux -L experimental`) — the parallel-instance pattern this repo used to trial the config before it took the default slot. It has since graduated: `conf-experimental.nix` *is* the daily driver now, so this app is the same config on a second socket |
 | `nix run '.#tmux-helper-install'` | Install `/usr/local/bin/tmux-helper` (macOS/BeyondTrust stable path) |
 
 Buildable packages, not apps: `.#lint-tools` is the symlinkJoin of every
@@ -1013,7 +1088,11 @@ linter this repo gates on — `alejandra`, `statix`, `deadnix`, `shellcheck`,
 `actionlint` — out of *this* flake's nixpkgs. `verify.sh` and the CI lint job
 both resolve that derivation rather than `nix run nixpkgs#<tool>`, so local and
 CI agree by construction instead of by coincidence; `lint-tools-pinned` guards
-it. `.#home-<username>` is any declared user's activation package.
+it. `.#home-<username>` is any declared user's activation package. Also
+buildable: `.#tmux-helper` (the Go binary), `.#dockerImage` /
+`.#dockerImageStream` / `.#dockerImageSlim` (the terminal images — the stream
+variants pipe into `docker load` without materialising a tarball), and
+`.#default`, which is the activation package for this host.
 
 `packages.emacs-vanilla` and `packages.emacs-doctor` are exposed on Linux only,
 so `nix flake check` does not try to build them on darwin.

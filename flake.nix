@@ -553,7 +553,7 @@
             conf = pkgs.writeText "tmux-experimental.conf" confText;
           in {
             type = "app";
-            meta.description = "Experimental tmux server using tmux-helper (parallel to gpakosz daily driver)";
+            meta.description = "tmux-helper config on the parallel `experimental` socket (same config as the default one)";
             program = "${pkgs.writeShellApplication {
               name = "tmux-experimental";
               runtimeInputs = [pkgs.tmux];
