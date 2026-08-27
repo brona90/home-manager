@@ -137,7 +137,8 @@ trap cleanup EXIT
 #
 # PATH is deliberately NOT consulted, not even as a preference: a PATH
 # preference IS the skew, and a fallback that can win is not a pin. There is
-# a flake check guarding the regression -- `lint-tools-pinned` in flake.nix.
+# a flake check guarding the regression -- `lint-tools-pinned`, in
+# checks/lint-tools.nix.
 LINT_TOOLS=""
 
 # Resolve a linter from the pinned set, and from nothing else. A linter that

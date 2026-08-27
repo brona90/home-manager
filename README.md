@@ -975,6 +975,11 @@ none of them is a style preference — if one fails, read what it caught rather
 than relaxing it. They are defined on `x86_64-linux` only, because the content
 they guard is identical across systems.
 
+They live in `checks/`, one file per concern, so that two branches touching two
+different guards do not conflict by construction — which is what a single
+attrset in `flake.nix` guaranteed. `checks/default.nix` merges them and
+documents the whole interface a guard file is handed.
+
 | Check | What it refuses to let back in |
 |---|---|
 | `claude-settings-guards` | Claude Code attributing itself in commits/PRs (`attribution` must be `{commit: "", pr: ""}`), and `mcp__emacs__emacs_eval` being auto-allowed — arbitrary elisp is arbitrary shell |

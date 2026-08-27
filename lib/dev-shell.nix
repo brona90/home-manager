@@ -54,7 +54,7 @@
 #     warm, both: 0.5-0.8s
 #
 # The trade is checked, not trusted: see `checks.devshell-stays-light` and
-# `checks.install-hooks-installs-hooks` in flake.nix.
+# `checks.install-hooks-installs-hooks`, both in checks/dev-shell.nix.
 {
   pkgs,
   # git-hooks.lib.<system>.run { ... }. Referenced ONLY from installHooks --

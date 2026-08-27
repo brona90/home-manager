@@ -105,7 +105,8 @@ catches the trap that a new `lisp/*.el` which has not been `git add`ed is simply
 absent from the store, and fails as "Cannot open load file".
 
 `nix flake check` also runs **guards**: regression tests that assert invariants
-which were once broken for real. A guard failing means you reintroduced a known
+which were once broken for real. They live in `checks/`, one file per concern,
+merged by `checks/default.nix`. A guard failing means you reintroduced a known
 bug — work out what it was protecting before you touch the guard itself.
 
 | Guard | Asserts |
