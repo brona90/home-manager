@@ -192,16 +192,33 @@
 ;; own (require 'org), so ordering was never actually at risk.
 (use-package org-gcal
   :commands (org-gcal-sync org-gcal-fetch org-gcal-post-at-point)
-  :config
+  :init
   ;; Credentials come from sops-nix, never from this file.
+  ;;
+  ;; `:init', NOT `:config', and that is load-bearing rather than stylistic.
+  ;; org-gcal.el ends with a top-level form that either registers its
+  ;; oauth2-auto provider or, if these two are still nil, calls `warn':
+  ;;
+  ;;   (if (and org-gcal-client-id org-gcal-client-secret)
+  ;;       (org-gcal-reload-client-id-secret)
+  ;;     (unless noninteractive (warn "org-gcal: must set ...")))
+  ;;
+  ;; Setting them from `:config' runs AFTER that form, so the end state was
+  ;; correct -- creds set, provider registered by the `:config' reload below
+  ;; -- but every daemon start still surfaced that warning.  The two
+  ;; defcustoms carry no `:set' and no `:initialize', so they have plain
+  ;; `defvar' semantics: the load does not clobber a value set here first.
   (when-let ((id (my/sops-secret "org_gcal_client_id")))
     (setq org-gcal-client-id id))
   (when-let ((secret (my/sops-secret "org_gcal_client_secret")))
     (setq org-gcal-client-secret secret))
 
-  ;; org-gcal registers its oauth2-auto provider at LOAD time, but the creds
-  ;; above are set after load -- so re-register now or the first sync fails
-  ;; with "oauth2-auto: Unknown provider: org-gcal".
+  :config
+  ;; Kept for the case `:init' cannot cover: the sops secrets were not
+  ;; readable at startup (fresh machine, activation not yet run) but are by
+  ;; the time a sync is invoked.  `org-gcal-reload-client-id-secret' is
+  ;; `add-to-list' underneath, so calling it when org-gcal already registered
+  ;; the identical entry at load time is a no-op, not a duplicate.
   (when (and org-gcal-client-id org-gcal-client-secret)
     (org-gcal-reload-client-id-secret))
 
