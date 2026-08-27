@@ -193,7 +193,7 @@ jobs:
     name: Build Home Configurations
     runs-on: ${{ matrix.runner }}
     needs: [check, eval-darwin]
-    # Cap at 60 min so a stuck build (e.g. shellcheck on lvim wrapper on macOS-14)
+    # Cap at 60 min so a stuck build (e.g. a byte-trickle closure copy on macOS-14)
     # surfaces fast instead of bleeding the GitHub Actions 6h job timeout.
     timeout-minutes: 60
     # There is deliberately NO job-level `if` here. It used to read
@@ -369,7 +369,6 @@ jobs:
             check emacs --version
             check starship --version
             check mise --version
-            check lvim --version
             check fzf --version
             check rg --version
             check fd --version

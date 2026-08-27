@@ -33,6 +33,19 @@
 > addressed as described. Findings below are left exactly as written; this note
 > exists so nobody reads the header as "all clear" and stops checking.
 
+> **Addendum, 2026-08-26 — the Neovim findings are moot: LazyVim is gone.**
+> `modules/vim/` was deleted outright ("chore: remove LazyVim, rehome the
+> toolchain it was carrying"). **H6** in full, the LazyVim bullet under ⚪ Low,
+> the `vim = "lvim"` half of the `modules/zsh.nix` alias bullet, and the
+> "Neovim declarative story has drifted" clause in the overall assessment all
+> describe a module that no longer exists. Both H6 fixes had in fact shipped
+> before the removal; they are gone with the rest of it.
+>
+> The language servers, formatters and linters that module installed did NOT
+> go away — they were never neovim's. They live in `modules/emacs/default.nix`
+> (the ones `eglot-ensure` needs) and `modules/dev-tools.nix` (everything
+> else). Findings below are again left exactly as written.
+
 Five parallel review passes: Nix core, security, Go tmux-helper, CI/docs, editor+Docker.
 All findings verified against the actual code (go vet clean, all Go tests pass; Neovim
 findings verified empirically with `lvim --headless`).

@@ -102,12 +102,41 @@ in {
         # package that wraps its own.
         cfg.package
         pkgs.ispell
-        pkgs.typescript-language-server
-        pkgs.pyright
+
+        # Language servers backing the `eglot-ensure' hook list in
+        # vanilla/config/lisp/my-lang.el. That file is the source of truth for
+        # WHICH modes get hooked, and its comment enumerates both what is
+        # installed and what is deliberately absent (clangd,
+        # cmake-language-server, fortls, texlab, nixd). The two lists move
+        # together: a mode is hooked only where a server is on PATH, so
+        # dropping a server here turns every find-file in that mode into an
+        # eglot connection failure, which is exactly the "config that cries
+        # wolf" the hook list was written to avoid.
+        #
+        # Nine of the entries below moved here from modules/vim/default.nix when
+        # LazyVim was removed -- marksman, further down under its Darwin gate,
+        # is the tenth. They were never neovim's; eglot is the only consumer
+        # left. The four that were already here: gopls, jdt-language-server,
+        # pyright, typescript-language-server.
+        pkgs.bash-language-server
+        pkgs.dockerfile-language-server
         pkgs.gopls
         pkgs.jdt-language-server
+        pkgs.lua-language-server
+        pkgs.nil # nix -- named directly by my-lang.el; the binary really is `nil'
+        pkgs.pyright
+        pkgs.ruff
+        pkgs.rust-analyzer
+        pkgs.taplo
+        pkgs.typescript-language-server
+        pkgs.vscode-langservers-extracted # json/html/css/eslint
+        pkgs.yaml-language-server
       ]
       ++ clients
+      # marksman (markdown) is gated off Darwin because it is a Swift build
+      # that does not go through on macOS in this nixpkgs. Inherited verbatim
+      # from modules/vim/default.nix, where the gate was first needed.
+      ++ lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.marksman
       # sbcl is gated to Linux: the ECL bootstrap segfaults on macOS
       # (upstream nixpkgs issue with SBCL 2.6.3). Installed via Homebrew
       # on Darwin instead (see home/darwin.nix).

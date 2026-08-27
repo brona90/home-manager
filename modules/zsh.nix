@@ -93,19 +93,11 @@ in {
             mcc = "mise cache clear"; # clear download cache
             mca = "mise prune -y && mise cache clear"; # clean all mise
 
-            # Neovim/LazyVim (v = vim)
-            vcc = "rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim"; # vim cache clean
-
             # General cache
             ccc = "rm -rf ~/.cache/*"; # cache clean (careful!)
 
             # WSL interop aliases (clip, explorer, cmd, powershell, notepad,
             # nrs) live in home/linux.nix, gated to the WSL machine.
-          }
-          # Editors -- only when the Nix-managed LazyVim wrapper exists
-          // lib.optionalAttrs config.my.vim.enable {
-            vim = "lvim";
-            vi = "lvim";
           }
           // cfg.extraAliases;
 
@@ -246,7 +238,6 @@ in {
             local nix_size nix_paths hm_gens
             local mise_install_size mise_cache_size mise_runtimes
             local rt rt_name rt_vers rt_size
-            local nvim_data nvim_state nvim_cache
             local vemacs_config vemacs_cache vemacs_state
             local cache_info cache_size human_size general_cache_size
 
@@ -332,19 +323,6 @@ in {
               echo ""
             fi
 
-            # Neovim/LazyVim
-            if [ -d ~/.local/share/nvim ] || [ -d ~/.local/state/nvim ] || [ -d ~/.cache/nvim ]; then
-              nvim_data=$(_dd_size ~/.local/share/nvim)
-              nvim_state=$(_dd_size ~/.local/state/nvim)
-              nvim_cache=$(_dd_size ~/.cache/nvim)
-              echo "''${green}📝 Neovim/LazyVim''${nc}"
-              echo "   Data:  $nvim_data"
-              echo "   State: $nvim_state"
-              echo "   Cache: $nvim_cache"
-              echo "   Clean: ''${cyan}vcc''${nc}"
-              echo ""
-            fi
-
             # Cachix
             if command -v cachix &>/dev/null; then
               echo "''${cyan}☁️  Cachix Cache''${nc}"
@@ -399,7 +377,6 @@ in {
             echo "  nsc  - Nix store clean (gc + optimise)"
             echo "  dca  - Docker clean all"
             echo "  mca  - Mise clean all (prune + cache)"
-            echo "  vcc  - Neovim cache clean"
             echo "  ccc  - Clear ~/.cache (careful!)"
             echo ""
             echo "''${bold}Full cleanup:''${nc}"
@@ -453,17 +430,6 @@ in {
                 mise prune -y
                 mise cache clear
                 echo "   ''${green}✓ Done''${nc}"
-              fi
-              echo ""
-            fi
-
-            # Neovim
-            if [ -d ~/.local/share/nvim ] || [ -d ~/.cache/nvim ]; then
-              echo -n "''${green}📝 Clean Neovim/LazyVim cache?''${nc} [y/N] "
-              read -r yn
-              if [[ "$yn" =~ ^[Yy]$ ]]; then
-                rm -rf ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim
-                echo "   ''${green}✓ Done''${nc} (plugins will reinstall on next launch)"
               fi
               echo ""
             fi
