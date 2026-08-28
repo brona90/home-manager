@@ -131,8 +131,63 @@ in {
           export GPG_TTY
         fi
 
+        # gpg-scd-shared: make scdaemon coexist with Windows' card holder.
+        #
+        # THIS IS WHAT MAKES gpg-restart ABLE TO RECOVER. scdaemon asks PC/SC
+        # for EXCLUSIVE access to the card. Windows' Certificate Propagation
+        # service (CertPropSvc) connects to every inserted smart card and holds
+        # it SHARED, permanently. Exclusive-against-shared returns
+        # SCARD_E_SHARING_VIOLATION (0x8010000b), and gpg reports that as
+        # `selecting card failed: No such device' -- which reads like an unplugged
+        # key and is nothing of the sort.
+        #
+        # It stays invisible for weeks because scdaemon usually wins the race at
+        # boot and then never lets go. It only bites once something makes it
+        # RELEASE the card -- `SCD KILLSCD', `gpgconf --kill scdaemon', killing
+        # gpg-agent, or gpg-restart itself. After that it can never reacquire,
+        # and unplugging the key does NOT help: CertPropSvc re-grabs on every
+        # insert. Diagnosed 2026-08-28 after gpg-restart left signing dead;
+        # `disable-ccid' is a red herring, the reader was always detected.
+        #
+        # To see it rather than guess: put `log-file <path>' and
+        # `debug-level guru' in scdaemon.conf, restart scdaemon, then run
+        # `gpg-connect-agent "SCD SERIALNO" /bye'. The log says
+        # `detected reader ...' and `pcsc_connect failed: sharing violation'
+        # on adjacent lines. Nothing else tells absent from held.
+        #
+        # Idempotent, same shape as gpg-win-setup: every other line is preserved.
+        gpg-scd-shared() {
+          local winuser gnupg_dir conf tmp
+          winuser=$(/mnt/c/Windows/System32/cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n')
+          [[ -n "$winuser" ]] || { echo "gpg-scd-shared: no Windows username" >&2; return 1; }
+
+          gnupg_dir="/mnt/c/Users/$winuser/AppData/Roaming/gnupg"
+          conf="$gnupg_dir/scdaemon.conf"
+          mkdir -p "$gnupg_dir" || return 1
+          [[ -f "$conf" ]] || touch "$conf"
+
+          if awk '{sub(/\r$/, "")} $1 == "pcsc-shared" {found = 1} END {exit !found}' "$conf"; then
+            return 0
+          fi
+
+          tmp=$(mktemp "$gnupg_dir/.scdaemon.conf.XXXXXX") || return 1
+          { awk '{sub(/\r$/, ""); print}' "$conf"; echo "pcsc-shared"; } >"$tmp" || {
+            rm -f "$tmp"; echo "gpg-scd-shared: failed to rewrite $conf" >&2; return 1
+          }
+          if ! mv -f "$tmp" "$conf" 2>/dev/null; then
+            cp "$tmp" "$conf" || { rm -f "$tmp"; return 1; }
+            rm -f "$tmp"
+          fi
+          echo "Added pcsc-shared to $conf (scdaemon may now share the card)"
+        }
+
         gpg-restart() {
           local gpg4win="/mnt/c/Program Files/GnuPG/bin"
+
+          # Before tearing anything down: guarantee scdaemon can get the card
+          # back afterwards. Without this, gpg-restart reliably makes signing
+          # worse -- it releases a handle it cannot reacquire.
+          gpg-scd-shared || echo "gpg-restart: could not verify pcsc-shared; signing may not recover" >&2
 
           echo "Resetting Windows Gpg4win..."
           "$gpg4win/gpg-connect-agent.exe" "SCD KILLSCD" /bye 2>/dev/null || true
