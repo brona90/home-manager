@@ -216,12 +216,15 @@ This repo is designed to be easily forked:
 │   ├── tmux/              # helper-driven tmux conf + 25 theme palettes (themes.nix)
 │   │                      #   + GRADUATION.md (the parallel-socket trial pattern)
 │   ├── tmux-helper/       # Go helper binary (status, clipboard, theme, navigate, ...)
+│   ├── windows-bridge.nix # Renders Windows-side config (Gpg4win, Claude Code) into
+│   │                      #   C:\Users\<winuser> from WSL and reports drift (my.windowsBridge)
 │   └── scripts/
 │       └── gpg-win-bridge.py  # WSL->Gpg4win Assuan proxy
 ├── checks/                # The `nix flake check` guard set — one file per concern
 │   ├── default.nix        # Merges them; documents the interface a guard file is handed
 │   ├── branch-policy.nix  # branch-policy-hook
 │   ├── claude-settings.nix  # claude-settings-guards
+│   ├── windows-bridge.nix   # windows-bridge-attribution
 │   ├── dev-shell.nix      # devshell-stays-light, install-hooks-installs-hooks
 │   ├── docker-terminal.nix  # docker-terminal-no-ssh-mount
 │   ├── emacs-gate.nix     # ci-emacs-gate
@@ -1065,6 +1068,7 @@ module is not listed here, it does not exist:
 | `my.claudeKg.enable` | `claude-kg/default.nix` | WSL host |
 | `my.searxng.enable` | `searxng/default.nix` | WSL host |
 | `my.orreryMcp.enable` | `orrery-mcp.nix` | WSL host |
+| `my.windowsBridge.enable` | `windows-bridge.nix` | WSL host — files are contributed by `gpg.nix` and `claude-code.nix` |
 | `my.tmux.enable` | `tmux/default.nix` | `flake.nix` — every config (also sets `theme.preset = "nord"`) |
 | `my.tmuxHelper.enable` | `tmux-helper/default.nix` | `flake.nix` — every config |
 | `my.displayplacer.enable` | `displayplacer.nix` | darwin |
