@@ -296,6 +296,32 @@ in {
       command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
     };
 
+    # The OTHER settings.json: the one Claude Code reads when it runs natively on
+    # Windows against work that lives in WSL. Installed by
+    # modules/windows-bridge.nix (a no-op anywhere there is no /mnt/c), declared
+    # here because this module owns what Claude Code is configured to do.
+    #
+    # MERGED, not owned, and claiming exactly one key. Claude Code writes that
+    # file itself, and the live copy proves it: an `autoMode.environment' block
+    # it generated, an `enabledPlugins' entry that appeared by installing a
+    # plugin, a statusLine pointing at a hand-maintained statusline-command.sh,
+    # and PowerShell() permission rules that mean nothing on the WSL side.
+    # Rendering the whole file from here would delete all of that on the next
+    # `hms' -- and would make the plugin-installed-on-Windows-only problem worse
+    # rather than better, by silently reverting every future plugin install. So
+    # the flake claims the one key that is genuinely the same decision on both
+    # sides and leaves the application everything else.
+    #
+    # `attribution' comes from the settings above BY REFERENCE, not by copy:
+    # one definition in this repo, read by both files and by both guards. It
+    # lives here rather than in windows-bridge.nix because empty attribution is
+    # a Claude Code policy, not a Windows one.
+    my.windowsBridge.files.claude-settings = {
+      target = ".claude/settings.json";
+      mode = "merge-json";
+      text = builtins.toJSON {inherit (settings) attribution;};
+    };
+
     home = {
       # The module that enables Claude Code also owns the CLI package
       # (previously duplicated in home/linux.nix and home/darwin.nix).

@@ -24,8 +24,9 @@
 #                    x86_64-linux gate below.
 #   homeConfigs   -- the whole homeConfigurations attrset, keyed
 #                    "<username>@<system>". Read for the rendered
-#                    .claude/settings.json, so the guard sees what activation
-#                    would write rather than what a module source says.
+#                    .claude/settings.json (both the WSL file and the managed
+#                    fragment for the Windows one), so the guards see what
+#                    activation would write rather than what a module source says.
 #   userForSystem -- system -> the config.nix user head-picked for that system
 #                    (or null); paired with homeConfigs to build the key above.
 #   devShellFor   -- system -> lib/dev-shell.nix's output set.
@@ -55,9 +56,17 @@ import ./tmux-helper.nix {inherit pkgs;}
     user = userForSystem system;
     settingsText =
       homeConfigs."${user.username}@${system}".config.home.file.".claude/settings.json".text;
+    # The Windows-side counterpart: the managed fragment
+    # modules/windows-bridge.nix merges into C:\Users\<winuser>\.claude\settings.json.
+    # Contributed unconditionally by modules/claude-code.nix, so it is present on
+    # every configuration and readable here whether or not the bridge is enabled
+    # for this host.
+    winSettingsText =
+      homeConfigs."${user.username}@${system}".config.my.windowsBridge.files.claude-settings.text;
     dev = devShellFor system;
   in
     import ./claude-settings.nix {inherit pkgs settingsText;}
+    // import ./windows-bridge.nix {inherit pkgs winSettingsText;}
     // import ./docker-terminal.nix {inherit pkgs;}
     // import ./emacs-gate.nix {inherit pkgs;}
     // import ./lint-tools.nix {inherit pkgs;}

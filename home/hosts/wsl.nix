@@ -27,6 +27,14 @@ in {
   my = {
     gpg.forwardToWindows = true;
 
+    # Push the flake-rendered Windows-side configuration into C:\Users\<winuser>:
+    # the Gpg4win scdaemon/gpg-agent files the YubiKey depends on, and the
+    # attribution block for the Claude Code that runs natively on Windows.
+    # Here rather than in home/common.nix because this is the only machine with
+    # a Windows half. The module already no-ops without /mnt/c, but the Macs
+    # should not be rendering an activation script that mentions it at all.
+    windowsBridge.enable = true;
+
     # Local AI infra lives on this box (Docker + Ollama): the claude-kg knowledge
     # graph and the SearXNG private-search MCP server, both managed declaratively.
     claudeKg.enable = true;

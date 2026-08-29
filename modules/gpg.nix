@@ -9,6 +9,72 @@
   inherit (pkgs.stdenv) isLinux;
 
   bridgeScript = builtins.readFile ./scripts/gpg-win-bridge.py;
+
+  # ONE definition of the PIN cache TTLs on Linux/WSL: 8h idle, 24h absolute.
+  # Read by the local gpg-agent below, by the gpg-agent.conf this module renders
+  # for Windows Gpg4win through my.windowsBridge.files, and by the gpg-win-setup
+  # shell function that patches that same Windows file imperatively. Those three
+  # carried the numbers separately and had already fallen out of step: the live
+  # Windows file said 7200, gpg-win-setup's awk wrote 28800, and gpg-win-setup's
+  # own summary line still announced "-> 7200". macOS is deliberately NOT part of
+  # this -- it runs 60/300 so that signing re-prompts, which is a different
+  # decision rather than a stale copy of this one.
+  cacheTtl = {
+    default = 28800;
+    max = 86400;
+  };
+
+  # Windows Gpg4win reads %APPDATA%\gnupg\scdaemon.conf. The imperative
+  # gpg-scd-shared() below still appends this line on a machine that has not run
+  # `hms' yet (gpg-restart calls it, and it has to keep working standalone), but
+  # THIS is now where the setting comes from.
+  winScdaemonConf = ''
+    # Managed by home-manager: modules/gpg.nix, installed by
+    # modules/windows-bridge.nix. Edit the flake, not this file -- `hms' reports
+    # and backs up local edits, then replaces them.
+    #
+    # pcsc-shared is not a tuning knob, it is what makes the YubiKey work at all
+    # here. scdaemon otherwise asks PC/SC for EXCLUSIVE access to the card, and
+    # Windows' Certificate Propagation service (CertPropSvc) already holds every
+    # inserted card SHARED and never lets go. The collision returns
+    # SCARD_E_SHARING_VIOLATION and gpg misreports it as
+    # `selecting card failed: No such device', which reads like an unplugged key
+    # and is nothing of the sort. Full diagnosis: the comment above
+    # gpg-scd-shared() in modules/gpg.nix.
+    pcsc-shared
+  '';
+
+  # Windows Gpg4win reads %APPDATA%\gnupg\gpg-agent.conf. Every line below was
+  # already in the live file and is kept for the reason noted; only the TTLs
+  # move, and they move to the single definition above.
+  winGpgAgentConf = ''
+    # Managed by home-manager: modules/gpg.nix, installed by
+    # modules/windows-bridge.nix. Edit the flake, not this file -- `hms' reports
+    # and backs up local edits, then replaces them.
+
+    # Serve the Windows-native SSH agent protocols. Windows OpenSSH and PuTTY
+    # both reach this agent for the YubiKey's authentication subkey.
+    enable-win32-openssh-support
+    enable-putty-support
+
+    # PIN cache, same numbers as the Linux gpg-agent in this module (`cacheTtl',
+    # one definition). Gpg4win's own default is ~10 minutes, which made batch
+    # signing -- rebases, multi-commit sessions -- re-prompt constantly.
+    default-cache-ttl ${toString cacheTtl.default}
+    max-cache-ttl ${toString cacheTtl.max}
+
+    # The WSL bridge (~/.local/bin/gpg-win-bridge) passes PINs through to this
+    # agent, which requires loopback pinentry to be permitted. The timeout is
+    # how long the prompt waits for a physical touch before giving up.
+    pinentry-timeout 300
+    allow-loopback-pinentry
+
+    # Gpg4win splits its install: the GnuPG core lands in C:\Program Files\GnuPG\bin
+    # (gpg.exe, scdaemon.exe, gpg-connect-agent.exe -- the path gpg-restart uses)
+    # but the pinentry lands in C:\Program Files\Gpg4win\bin. The two are not
+    # interchangeable and there is no pinentry-w32.exe under GnuPG\bin.
+    pinentry-program "C:\Program Files\Gpg4win\bin\pinentry-w32.exe"
+  '';
 in {
   options.my.gpg = {
     enable = lib.mkEnableOption "GPG configuration with signing support";
@@ -86,10 +152,10 @@ in {
         enable = true;
         inherit (cfg) enableSshSupport;
         pinentry.package = pkgs.pinentry-qt;
-        defaultCacheTtl = 28800;
-        defaultCacheTtlSsh = 28800;
-        maxCacheTtl = 86400;
-        maxCacheTtlSsh = 86400;
+        defaultCacheTtl = cacheTtl.default;
+        defaultCacheTtlSsh = cacheTtl.default;
+        maxCacheTtl = cacheTtl.max;
+        maxCacheTtlSsh = cacheTtl.max;
         extraConfig = "allow-loopback-pinentry";
       };
     })
@@ -125,6 +191,28 @@ in {
         pinentry-mode = "loopback";
       };
 
+      # The two Windows-side gnupg configs. Declared here because this module
+      # owns what goes in them; modules/windows-bridge.nix is only the transport
+      # and the drift alarm.
+      #
+      # Mode "own" rather than "merge": Gpg4win never rewrites either file. The
+      # only writers are a human with an editor and the two shell functions
+      # above, so whole-file ownership loses nothing and makes the flake
+      # unambiguously the source of truth -- which is the whole point, given that
+      # `pcsc-shared' spent months existing only as an undocumented hand edit.
+      my.windowsBridge.files = {
+        gnupg-scdaemon = {
+          target = "AppData/Roaming/gnupg/scdaemon.conf";
+          mode = "own";
+          text = winScdaemonConf;
+        };
+        gnupg-agent = {
+          target = "AppData/Roaming/gnupg/gpg-agent.conf";
+          mode = "own";
+          text = winGpgAgentConf;
+        };
+      };
+
       programs.zsh.initContent = lib.mkAfter ''
         if [[ -t 1 ]]; then
           GPG_TTY=$(tty)
@@ -154,6 +242,13 @@ in {
         # `gpg-connect-agent "SCD SERIALNO" /bye'. The log says
         # `detected reader ...' and `pcsc_connect failed: sharing violation'
         # on adjacent lines. Nothing else tells absent from held.
+        #
+        # The DECLARATIVE source for this file is now winScdaemonConf in
+        # modules/gpg.nix, installed by modules/windows-bridge.nix on every
+        # switch. This function stays because gpg-restart calls it and because a
+        # machine that has not run `hms' yet still needs a way out; it must keep
+        # working standalone. Where they disagree, `hms' wins on the next switch
+        # -- and says so, rather than quietly reverting the edit.
         #
         # Idempotent, same shape as gpg-win-setup: every other line is preserved.
         gpg-scd-shared() {
@@ -207,7 +302,14 @@ in {
 
         # gpg-win-setup: tune the Windows Gpg4win agent's PIN cache.
         #
-        # Ensures default-cache-ttl 28800 (8h idle, matching the WSL agent above) and max-cache-ttl 86400
+        # The DECLARATIVE source for this file is now winGpgAgentConf in
+        # modules/gpg.nix, installed by modules/windows-bridge.nix on every
+        # switch; this function is the imperative fallback for a machine that
+        # has not run `hms' yet, and the TTLs below come from the same `cacheTtl'
+        # binding so the two cannot disagree.
+        #
+        # Ensures default-cache-ttl ${toString cacheTtl.default} (8h idle, matching the WSL agent above)
+        # and max-cache-ttl ${toString cacheTtl.max}
         # (24h absolute) in %APPDATA%\gnupg\gpg-agent.conf. Gpg4win's default
         # PIN cache is only ~10 minutes (default-cache-ttl 600), which made
         # batch signing (rebases, multi-commit sessions) re-prompt for the
@@ -247,12 +349,12 @@ in {
           tmp=$(mktemp "$gnupg_dir/.gpg-agent.conf.XXXXXX") || return 1
           awk '
             {sub(/\r$/, "")}
-            $1 == "default-cache-ttl" {print "default-cache-ttl 28800"; d = 1; next}
-            $1 == "max-cache-ttl" {print "max-cache-ttl 86400"; m = 1; next}
+            $1 == "default-cache-ttl" {print "default-cache-ttl ${toString cacheTtl.default}"; d = 1; next}
+            $1 == "max-cache-ttl" {print "max-cache-ttl ${toString cacheTtl.max}"; m = 1; next}
             {print}
             END {
-              if (!d) print "default-cache-ttl 28800"
-              if (!m) print "max-cache-ttl 86400"
+              if (!d) print "default-cache-ttl ${toString cacheTtl.default}"
+              if (!m) print "max-cache-ttl ${toString cacheTtl.max}"
             }
           ' "$conf" >"$tmp" || {
             rm -f "$tmp"
@@ -276,8 +378,8 @@ in {
           fi
 
           echo "Updated $conf:"
-          echo "  default-cache-ttl: ''${old_default:-unset (gpg4win default 600)} -> 7200"
-          echo "  max-cache-ttl:     ''${old_max:-unset} -> 86400"
+          echo "  default-cache-ttl: ''${old_default:-unset (gpg4win default 600)} -> ${toString cacheTtl.default}"
+          echo "  max-cache-ttl:     ''${old_max:-unset} -> ${toString cacheTtl.max}"
 
           # gpg-agent only reads its conf at startup, so restart it to apply.
           # This is the same kill sequence gpg-restart uses; it drops the PIN
