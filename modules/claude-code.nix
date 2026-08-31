@@ -14,6 +14,106 @@
   # Claude Code reads while avoiding the raw-text mention match in this file.
   marketplace = "claude-plugins-official";
 
+  # WHY THIS GUARD EXISTS. A survey of this machine on 2026-08-29 found 371 loose
+  # scripts sitting directly in /home/gfoster -- aud1.sh through aud15.sh,
+  # brief-diag.sh, basecheck.sh -- and 303 of the 313 shell scripts among them
+  # carried no exec bit, i.e. each was written to be run once as `bash foo.sh'
+  # and never again. Several cd into worktrees that have since been removed, so
+  # they cannot even be re-run. Every one is an agent answering a question where
+  # it stood instead of in a scratchpad, and the instruction not to do that has
+  # been in CLAUDE.md the whole time: an instruction is advice the model may not
+  # be holding at the moment it reaches for Write, and a hook is not.
+  #
+  # THE RULE, and why it can afford to be this blunt: a NON-HIDDEN FILE written
+  # directly into the home root is debris. Dotfiles are configuration and are
+  # never touched. Anything one directory down is a project and is never
+  # touched. A directory is not a file. What is left is exactly the shape those
+  # 371 share and almost nothing legitimate, which is what makes a hard refusal
+  # cheap here rather than merely irritating -- the escape hatch below exists
+  # for the remainder and has to be set deliberately, per call.
+  #
+  # WHAT IT CANNOT SEE, and why it does not pretend to. Write/Edit/NotebookEdit
+  # declare a path, so checking one is exact and a refusal is never wrong. A
+  # `cat > ~/x.sh' inside a Bash call declares nothing, and matching a regex
+  # against arbitrary shell to find it is a false-positive machine that would
+  # get itself disabled within a week. So the Bash half is a PostToolUse
+  # DETECTOR that reports and does not refuse: block what can be proved, report
+  # what can only be noticed, and never guess in the blocking direction.
+  homeWriteGuard = pkgs.writeShellApplication {
+    name = "claude-home-guard";
+    # `Nix PATH is login-shell only' applies with full force here: a hook is
+    # started by Claude Code with /usr/bin, not with this user's profile, so
+    # every binary this script names has to be listed. runtimeInputs prefixes
+    # rather than replaces PATH, so an invocation from inside a login shell
+    # still behaves identically.
+    runtimeInputs = [pkgs.jq pkgs.coreutils pkgs.findutils];
+    text = ''
+      set -u
+
+      root=${lib.escapeShellArg config.home.homeDirectory}
+
+      # Deliberate, per-call, and named in the refusal text so the way out is
+      # discoverable from the error rather than from this file.
+      if [ "''${CLAUDE_ALLOW_HOME_WRITE:-}" = "1" ]; then
+        exit 0
+      fi
+
+      mode="guard"
+      if [ "$#" -gt 0 ]; then
+        mode="$1"
+      fi
+
+      if [ "$mode" = "detect" ]; then
+        # No stamp file and no session state: "changed in the last minute" is a
+        # good enough proxy for "this Bash call did it", and being occasionally
+        # late is harmless for something that only ever prints.
+        hits=$(find "$root" -maxdepth 1 -type f ! -name '.*' -mmin -1 -printf '%f\n' 2>/dev/null || true)
+        if [ -n "$hits" ]; then
+          printf 'claude-home-guard: these non-hidden files just appeared directly in %s:\n\n%s\n\nThat is where the 371 came from. Move them into the session scratchpad, or into the repo they serve with a name that says what they are, and remove them from the home root before finishing.\n' "$root" "$hits" >&2
+          exit 2
+        fi
+        exit 0
+      fi
+
+      payload=$(cat)
+
+      tool=$(printf '%s' "$payload" | jq -r '.tool_name // empty')
+      case "$tool" in
+        Write | Edit | NotebookEdit) : ;;
+        *) exit 0 ;;
+      esac
+
+      path=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
+      if [ -z "$path" ]; then
+        exit 0
+      fi
+
+      # WSL paths only, deliberately. The Windows half of this machine reaches
+      # Claude Code natively and would hand this rule backslashes, but it cannot
+      # reach this hook at all yet: my.windowsBridge.files.claude-settings
+      # claims exactly one key (`attribution'), so nothing here crosses to
+      # C:\Users. Normalising for a caller that does not exist bought one
+      # escaping bug per attempt -- a literal backslash has to survive Nix
+      # indented-string escaping and the shell linter at once -- for a case no
+      # test could exercise. When the bridge learns to carry hooks, the
+      # separator conversion belongs here and gets a test with it.
+      dir=$(dirname "$path")
+      base=$(basename "$path")
+
+      # Configuration, not debris. Never blocked.
+      case "$base" in
+        .*) exit 0 ;;
+      esac
+
+      if [ "$dir" = "$root" ]; then
+        printf 'claude-home-guard: refusing to write %s\n\n%s is the home root, and a non-hidden file directly in it is scratch. Scratch belongs in the session scratchpad, or in the repo it serves under a name that says what it is. 371 files arrived this way before this hook existed; several of them cd into worktrees that no longer exist.\n\nIf this file genuinely belongs in the home root, re-run the call with CLAUDE_ALLOW_HOME_WRITE=1.\n' "$path" "$root" >&2
+        exit 2
+      fi
+
+      exit 0
+    '';
+  };
+
   porkbunMcpWrapper = pkgs.writeShellApplication {
     name = "porkbun-mcp";
     runtimeInputs = [pkgs.nodejs pkgs.coreutils];
@@ -196,7 +296,32 @@
             ];
           }
         ];
+        # Exact, blocking, and only where the path is declared. See the
+        # homeWriteGuard comment above for why the Bash case is a detector
+        # instead and why the rule is allowed to be a flat refusal.
+        PreToolUse = [
+          {
+            matcher = "Write|Edit|NotebookEdit";
+            hooks = [
+              {
+                type = "command";
+                command = "${homeWriteGuard}/bin/claude-home-guard";
+                timeout = 5;
+              }
+            ];
+          }
+        ];
         PostToolUse = [
+          {
+            matcher = "Bash";
+            hooks = [
+              {
+                type = "command";
+                command = "${homeWriteGuard}/bin/claude-home-guard detect";
+                timeout = 5;
+              }
+            ];
+          }
           {
             matcher = "Edit|Write";
             hooks = [
@@ -230,6 +355,18 @@
 in {
   options.my.claudeCode = {
     enable = lib.mkEnableOption "Claude Code settings and hooks";
+
+    # Read by checks/claude-home-guard.nix so the guard's behavioural test
+    # exercises the package activation installs rather than a rebuild of the
+    # same source. Internal and read-only: this is an output of the module, not
+    # a knob -- nothing outside the check set has any business setting it.
+    homeWriteGuardPackage = lib.mkOption {
+      type = lib.types.package;
+      internal = true;
+      readOnly = true;
+      default = homeWriteGuard;
+      description = "The built claude-home-guard hook, exposed for the flake checks.";
+    };
 
     mcpServers = lib.mkOption {
       type = lib.types.attrsOf lib.types.anything;
