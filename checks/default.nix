@@ -66,6 +66,11 @@ import ./tmux-helper.nix {inherit pkgs;}
     dev = devShellFor system;
   in
     import ./claude-settings.nix {inherit pkgs settingsText;}
+    // import ./claude-home-guard.nix {
+      inherit pkgs settingsText;
+      homeWriteGuard = homeConfigs."${user.username}@${system}".config.my.claudeCode.homeWriteGuardPackage;
+      homeDirectory = homeConfigs."${user.username}@${system}".config.home.homeDirectory;
+    }
     // import ./windows-bridge.nix {inherit pkgs winSettingsText;}
     // import ./docker-terminal.nix {inherit pkgs;}
     // import ./emacs-gate.nix {inherit pkgs;}
