@@ -138,8 +138,10 @@ in {
     # The three hook wrappers are installed into the profile as well, so they have
     # stable ~/.nix-profile/bin/ names: settings.json on this host is regenerated
     # on every switch and can safely reference /nix/store paths, but the Windows
-    # host's hand-written settings.json cannot — a bare store path there would
-    # dangle at the next rebuild.
+    # one is merged rather than rewritten — a bare store path there would dangle
+    # at the next rebuild. That is what the windowsProfileBin field on each
+    # contributed hook below takes, and checks/windows-bridge.nix fails the build
+    # if a store path reaches the Windows fragment anyway.
     home.packages = [pkg kgSessionStartHook kgPromptRecallHook kgCaptureHookWin];
 
     # Register the MCP server, the SessionEnd capture hook, the read-side recall hooks,
@@ -156,6 +158,13 @@ in {
       sessionEndCommands = [
         {
           command = "${pkg}/bin/kg-capture-hook";
+          # The Windows caller gets the shim, not the hook itself: see
+          # kgCaptureHookWin above for what it rewrites and why. This line is
+          # also what finally gives that wrapper a consumer inside the flake --
+          # until now it was built here and referenced only from a hand-written
+          # line in the Windows settings.json, so nothing in this repository
+          # recorded that it was needed.
+          windowsProfileBin = "kg-capture-hook-win";
           timeout = 30;
         }
       ];
@@ -174,6 +183,9 @@ in {
       sessionStartCommands = [
         {
           command = "${kgSessionStartHook}/bin/kg-session-start-hook";
+          # No shim needed: the read-side hooks touch no caller-supplied path,
+          # so the Windows caller runs the same program under the same name.
+          windowsProfileBin = "kg-session-start-hook";
           timeout = 45;
         }
       ];
@@ -182,6 +194,7 @@ in {
       userPromptSubmitCommands = [
         {
           command = "${kgPromptRecallHook}/bin/kg-prompt-recall-hook";
+          windowsProfileBin = "kg-prompt-recall-hook";
           timeout = 60;
         }
       ];

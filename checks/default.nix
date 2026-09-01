@@ -63,6 +63,12 @@ import ./tmux-helper.nix {inherit pkgs;}
     # for this host.
     winSettingsText =
       homeConfigs."${user.username}@${system}".config.my.windowsBridge.files.claude-settings.text;
+    # Every Windows-side path the flake claims. A list of targets rather than the
+    # files attrset: the surface guard asks "is this still crossing at all",
+    # which is a question about the target set and nothing else.
+    winTargets =
+      lib.mapAttrsToList (_: f: f.target)
+      homeConfigs."${user.username}@${system}".config.my.windowsBridge.files;
     dev = devShellFor system;
   in
     import ./claude-settings.nix {inherit pkgs settingsText;}
@@ -71,7 +77,7 @@ import ./tmux-helper.nix {inherit pkgs;}
       homeWriteGuard = homeConfigs."${user.username}@${system}".config.my.claudeCode.homeWriteGuardPackage;
       homeDirectory = homeConfigs."${user.username}@${system}".config.home.homeDirectory;
     }
-    // import ./windows-bridge.nix {inherit pkgs winSettingsText;}
+    // import ./windows-bridge.nix {inherit lib pkgs winSettingsText winTargets;}
     // import ./docker-terminal.nix {inherit pkgs;}
     // import ./emacs-gate.nix {inherit pkgs;}
     // import ./lint-tools.nix {inherit pkgs;}

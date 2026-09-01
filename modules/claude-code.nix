@@ -6,6 +6,10 @@
 }: let
   cfg = config.my.claudeCode;
 
+  # Named by every Windows-side command that calls back into WSL. See the
+  # option in modules/windows-bridge.nix for why it is not left implicit.
+  inherit (config.my.windowsBridge) wslDistro;
+
   # Hoisted out of the enabledPlugins keys to keep an at-sign-prefixed plugin
   # marketplace string out of the raw file text. GitHub's mention parser
   # greedy-matches the substring at-cl* (the plugins-official user 404s, so it
@@ -89,14 +93,20 @@
       fi
 
       # WSL paths only, deliberately. The Windows half of this machine reaches
-      # Claude Code natively and would hand this rule backslashes, but it cannot
-      # reach this hook at all yet: my.windowsBridge.files.claude-settings
-      # claims exactly one key (`attribution'), so nothing here crosses to
-      # C:\Users. Normalising for a caller that does not exist bought one
-      # escaping bug per attempt -- a literal backslash has to survive Nix
-      # indented-string escaping and the shell linter at once -- for a case no
-      # test could exercise. When the bridge learns to carry hooks, the
-      # separator conversion belongs here and gets a test with it.
+      # Claude Code natively and would hand this rule backslashes, but it still
+      # cannot reach this hook. The bridge has since learned to carry hooks --
+      # my.windowsBridge.files.claude-settings now claims SessionStart,
+      # UserPromptSubmit and SessionEnd -- and PreToolUse/PostToolUse are
+      # pointedly not among them, so nothing here crosses to C:\Users.
+      #
+      # The rest of the original note is unchanged and still decides it:
+      # normalising for a caller that does not exist bought one escaping bug per
+      # attempt -- a literal backslash has to survive Nix indented-string
+      # escaping and the shell linter at once -- for a case no test could
+      # exercise. Sending this hook across is its own change; it needs the
+      # separator conversion here AND a test that feeds it a backslash path, and
+      # it has no business riding along with a change that only moves hooks
+      # which were already crossing by hand.
       dir=$(dirname "$path")
       base=$(basename "$path")
 
@@ -213,6 +223,28 @@
             runs on Windows and invokes it through wsl.exe.
           '';
         };
+        windowsProfileBin = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = ''
+            Name of the wrapper under ~/.nix-profile/bin that the Windows-side
+            Claude Code runs for this hook, or null for "this hook means nothing
+            on Windows" -- which is the default, because most of them do not.
+
+            A bare NAME rather than a command, and that restriction is the point.
+            This host's settings.json is regenerated on every switch, so it can
+            name /nix/store paths safely. The Windows one is MERGED into a file
+            Claude Code also writes, and nothing revisits it between switches, so
+            a store path recorded there goes on naming a generation that garbage
+            collection can remove. The profile symlink is the only handle that
+            survives a rebuild; taking a name means a caller cannot pass anything
+            that would not. checks/windows-bridge.nix enforces it.
+
+            May legitimately differ from `command': kg-capture-hook-win exists
+            only because the Windows caller sends Windows paths that the WSL hook
+            cannot stat.
+          '';
+        };
       };
     });
 
@@ -224,6 +256,27 @@
       inherit (c) command timeout;
     })
     commands;
+
+  # The same contributed lists, rendered for the OTHER Claude Code: the one
+  # running natively on Windows against work that lives in WSL. It reaches these
+  # scripts through wsl.exe, so the command is a crossing rather than a path and
+  # the binary is named through the profile, for the reason on windowsProfileBin.
+  #
+  # Derived from the SAME list hookEntries reads, not from a second list beside
+  # it, and that is the whole fix. These three hooks previously existed as
+  # hand-written lines in C:\Users\<winuser>\.claude\settings.json: unreachable
+  # by `hms', invisible to `nix flake check', and absent from a rebuilt machine,
+  # so the WSL half of this box ran the knowledge graph and the Windows half only
+  # did while that file survived. A hook that should not cross opts out by
+  # leaving windowsProfileBin null, which records the decision next to the hook
+  # instead of as an absence somewhere else.
+  windowsHookEntries = commands:
+    map (c: {
+      type = "command";
+      command = "MSYS_NO_PATHCONV=1 wsl.exe -d ${wslDistro} -- ${config.home.homeDirectory}/.nix-profile/bin/${c.windowsProfileBin}";
+      inherit (c) timeout;
+    })
+    (lib.filter (c: c.windowsProfileBin != null) commands);
 
   settings = {
     # No agent attribution in commit messages or PR bodies (no
@@ -352,6 +405,80 @@
         UserPromptSubmit = [{hooks = hookEntries cfg.userPromptSubmitCommands;}];
       };
   };
+
+  # Only the events with something to send. An event that renders to no entries
+  # is left out of the fragment entirely rather than emitted as an empty list:
+  # the merge would otherwise write `[]' over whatever that event holds on the
+  # Windows side, which is the one way a merged fragment can destroy data.
+  windowsHooks =
+    lib.optionalAttrs (windowsHookEntries cfg.sessionEndCommands != []) {
+      SessionEnd = [{hooks = windowsHookEntries cfg.sessionEndCommands;}];
+    }
+    // lib.optionalAttrs (windowsHookEntries cfg.sessionStartCommands != []) {
+      SessionStart = [{hooks = windowsHookEntries cfg.sessionStartCommands;}];
+    }
+    // lib.optionalAttrs (windowsHookEntries cfg.userPromptSubmitCommands != []) {
+      UserPromptSubmit = [{hooks = windowsHookEntries cfg.userPromptSubmitCommands;}];
+    };
+
+  # WHAT THE FLAKE CLAIMS IN THE WINDOWS settings.json -- and what it refuses to.
+  #
+  # This is a merged fragment, so naming a key here makes the flake authoritative
+  # for it: activation overwrites it and reports any difference as drift. A key
+  # left out is left entirely to Claude Code. The split is by WHO WRITES THE KEY,
+  # not by what it means, because that is the only criterion under which claiming
+  # a key cannot destroy someone else's writes.
+  #
+  # CLAIMED.
+  #   attribution -- policy, the same decision on both sides, and the reason this
+  #     fragment exists at all. See checks/windows-bridge.nix.
+  #   hooks.SessionStart / UserPromptSubmit / SessionEnd -- flake-built programs
+  #     whose only writer is this repository. Claiming them is the point of the
+  #     exercise; see windowsHookEntries above.
+  #   statusLine -- names statusline-command.sh, which this module now installs
+  #     as an owned bridge file. The key and the script have to arrive together:
+  #     shipping the script while leaving the key unclaimed would install a
+  #     statusline nothing invokes, and claiming the key without the script would
+  #     name one that is not there.
+  #
+  # NOT CLAIMED, each for a named writer rather than out of general caution.
+  #   permissions -- Claude Code appends to permissions.allow every time a rule
+  #     is approved with "always allow", and jq's `*' REPLACES arrays instead of
+  #     merging them, so claiming this would delete every rule approved since the
+  #     last switch, on every switch. The two lists also differ legitimately: the
+  #     Windows one carries PowerShell() rules that are meaningless in WSL and
+  #     omits mcp__emacs__emacs_show_diff, there being no emacs MCP server
+  #     registered on that side.
+  #   enabledPlugins / extraKnownMarketplaces -- written by installing a plugin.
+  #     Claiming them would silently revert every future install, which is a
+  #     worse bug than the drift it would close.
+  #   autoMode.environment -- Claude Code generates it from the machine it is on,
+  #     and it is correctly different there.
+  #   env, model, tui, autoUpdatesChannel, autoCompactWindow and the remaining
+  #     preference keys -- written by the settings UI on that machine.
+  #
+  # hooks.PreToolUse / PostToolUse are absent for a third reason again: not
+  # app-written, not policy, they simply do not work over there yet. See the note
+  # inside homeWriteGuard.
+  windowsSettings =
+    {
+      inherit (settings) attribution;
+
+      # Deliberately NOT the claude-powerline statusline rendered for the WSL
+      # side. Its `block' and `weekly' segments read the usage ledger under
+      # ~/.claude/projects, and a Windows session's ledger is the one under
+      # C:\Users, so pointing Windows at the WSL binary would confidently report
+      # the wrong machine's rate limits. Two programs for two data sources:
+      # one-sided by design, but flake-owned rather than hand-maintained.
+      #
+      # `bash <file>' rather than executing it directly -- the bridge installs
+      # its files mode 644, and a DrvFs exec bit is not a thing to depend on.
+      statusLine = {
+        type = "command";
+        command = "bash ~/.claude/statusline-command.sh";
+      };
+    }
+    // lib.optionalAttrs (windowsHooks != {}) {hooks = windowsHooks;};
 in {
   options.my.claudeCode = {
     enable = lib.mkEnableOption "Claude Code settings and hooks";
@@ -427,36 +554,75 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
-    # This module owns the porkbun DNS MCP server (its wrapper is defined above).
-    my.claudeCode.mcpServers.porkbun = {
-      type = "stdio";
-      command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
-    };
+    # One `my' block rather than four assignments to it: statix W20 refuses the
+    # repeated key, and the pre-commit hook refuses the commit. Worth stating
+    # because the three Windows entries below were added together and the lint
+    # only fires once there is more than one -- the single porkbun assignment
+    # that stood here before was silent.
+    my = {
+      # This module owns the porkbun DNS MCP server (its wrapper is defined above).
+      claudeCode.mcpServers.porkbun = {
+        type = "stdio";
+        command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
+      };
 
-    # The OTHER settings.json: the one Claude Code reads when it runs natively on
-    # Windows against work that lives in WSL. Installed by
-    # modules/windows-bridge.nix (a no-op anywhere there is no /mnt/c), declared
-    # here because this module owns what Claude Code is configured to do.
-    #
-    # MERGED, not owned, and claiming exactly one key. Claude Code writes that
-    # file itself, and the live copy proves it: an `autoMode.environment' block
-    # it generated, an `enabledPlugins' entry that appeared by installing a
-    # plugin, a statusLine pointing at a hand-maintained statusline-command.sh,
-    # and PowerShell() permission rules that mean nothing on the WSL side.
-    # Rendering the whole file from here would delete all of that on the next
-    # `hms' -- and would make the plugin-installed-on-Windows-only problem worse
-    # rather than better, by silently reverting every future plugin install. So
-    # the flake claims the one key that is genuinely the same decision on both
-    # sides and leaves the application everything else.
-    #
-    # `attribution' comes from the settings above BY REFERENCE, not by copy:
-    # one definition in this repo, read by both files and by both guards. It
-    # lives here rather than in windows-bridge.nix because empty attribution is
-    # a Claude Code policy, not a Windows one.
-    my.windowsBridge.files.claude-settings = {
-      target = ".claude/settings.json";
-      mode = "merge-json";
-      text = builtins.toJSON {inherit (settings) attribution;};
+      windowsBridge.files = {
+        # The OTHER settings.json: the one Claude Code reads when it runs natively on
+        # Windows against work that lives in WSL. Installed by
+        # modules/windows-bridge.nix (a no-op anywhere there is no /mnt/c), declared
+        # here because this module owns what Claude Code is configured to do.
+        #
+        # MERGED, not owned: Claude Code writes that file itself, so the fragment
+        # claims named keys and leaves the rest alone. windowsSettings above is the
+        # list of what is claimed, with the writer-by-writer reason for everything
+        # that is not.
+        #
+        # Every value comes from the definitions above BY REFERENCE, not by copy:
+        # one definition in this repo, read by both files and by both guards. They
+        # live here rather than in windows-bridge.nix because what Claude Code is
+        # configured to do is a Claude Code decision, not a Windows one.
+        claude-settings = {
+          target = ".claude/settings.json";
+          mode = "merge-json";
+          text = builtins.toJSON windowsSettings;
+        };
+
+        # The statusline the fragment above names. OWNED rather than merged: a whole
+        # file with a single writer -- a human, once; Claude Code has never written
+        # it -- which is exactly the criterion modules/windows-bridge.nix sets out
+        # for `own'. It existed only on the Windows disk until now, so a rebuilt
+        # machine got a settings.json naming a script that was not there, and a
+        # statusline that silently rendered nothing.
+        #
+        # Kept byte-for-byte as found. Its job in this change is to become
+        # reproducible, not to become better: rewriting a working statusline in the
+        # same commit that first brings it under management would make any resulting
+        # breakage impossible to attribute.
+        claude-statusline = {
+          target = ".claude/statusline-command.sh";
+          mode = "own";
+          text = builtins.readFile ./claude-statusline-windows.sh;
+        };
+
+        # The same sections, joined the same way, for the same reason -- and the
+        # sharpest asymmetry of the lot, because C:\Users\<winuser>\.claude\CLAUDE.md
+        # did not exist at all. The knowledge-graph hooks have been firing on the
+        # Windows side and injecting recall into every session there, while the
+        # standing directive that tells the model to CONTRIBUTE back -- call
+        # kg_recall before non-trivial work, persist durable facts with kg_upsert_entity
+        # -- lives in claude-kg's CLAUDE.md section and was reaching only WSL. Windows
+        # sessions have been spending the graph without ever adding to it.
+        #
+        # `own' matches the WSL side, which renders this file from `text' and so
+        # already treats it as flake-owned; the `#' memory shortcut cannot append to
+        # a read-only store symlink there either. Guarded by the same condition as
+        # the WSL file, so a host contributing no sections gets neither.
+        claude-md = lib.mkIf (cfg.claudeMdSections != []) {
+          target = ".claude/CLAUDE.md";
+          mode = "own";
+          text = lib.concatStringsSep "\n\n" cfg.claudeMdSections;
+        };
+      };
     };
 
     home = {
