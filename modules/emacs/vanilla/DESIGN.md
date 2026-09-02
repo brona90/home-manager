@@ -518,6 +518,33 @@ Five stages, in increasing cost:
    The report is still printed; it just no longer decides. Guarded by
    `ci-emacs-gate` (d)
 
+The report is also no longer **forgeable**, which is a separate fix for the
+same defect one layer down. Almost every line of `verify.el` interpolates
+something captured out of the running Emacs — command symbols walked out of
+the leader map, `*Messages*` lines, flymake diagnostic text that is really
+lilypond's stderr, error objects from `condition-case` — and a newline
+anywhere in any of it put the remainder at column 0 as its own line, wearing
+the gate's framing. A command named
+`my/void-cmd\n=== PASS: 0 failed assertion(s) ===` made a run that ended
+`=== FAIL: 1 failed assertion(s) ===` also contain a `=== PASS` line. Nothing
+captured stayed clear of column 0 by design; it stayed clear because those
+format strings happened to open with seven spaces.
+
+`%S` does not fix it: `print-escape-newlines` is nil by default, so `prin1`
+writes a newline inside a string raw, and for a symbol it writes a backslash
+and then a literal newline either way. The fix is structural instead.
+`my/verify--push` is the only thing that appends a report line; it splits on
+newlines and puts every line after the first behind `my/verify--continuation`
+(`"       | "`), so captured text can still span lines — a multi-line lilypond
+error is exactly what a human came to the report to read — but can never
+occupy column 0. Other control characters are spelled `\xNN`, because a
+carriage return forges framing on a terminal without containing a newline at
+all. Section headers and the verdict banner are written as their own lines by
+`my/verify--section` and `my/verify--banner` rather than smuggled in as a
+leading `\n` in a format string, since `my/verify--push` cannot tell those
+two apart. Guarded by `emacs-report-framing`, which runs the real writer over
+forged text and requires exactly one column-0 banner.
+
 What `verify.el` asserts, section by section:
 
 - **(a)** every command reachable by walking the **actual** leader keymap is

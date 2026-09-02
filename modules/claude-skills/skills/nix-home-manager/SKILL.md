@@ -114,6 +114,7 @@ bug — work out what it was protecting before you touch the guard itself.
 | `claude-settings-guards` | `settings.json` keeps `attribution = {commit = ""; pr = "";}`, and `mcp__emacs__emacs_eval` is never auto-allowed (arbitrary elisp is arbitrary shell, and it would bypass every other permission gate) |
 | `docker-terminal-no-ssh-mount` | `~/.ssh` is never bind-mounted into the docker terminal |
 | `ci-emacs-gate` | `build-home` has no job-level `if` (that is what made it skip on every PR), exactly one of its steps runs `verify.sh`, and nothing in `ci.yml` runs Emacs with `--batch` |
+| `emacs-report-framing` | nothing `verify.el` captures can write the report's framing: the real writer is run over text shaped like a `=== PASS` banner and exactly one column-0 banner may come out |
 | `lint-tools-pinned` | no lint step and no line of `verify.sh` resolves a tool through `nixpkgs#`, and `verify.sh` never uses `--impure` |
 | `devshell-stays-light` | `devShells.default` re-runs neither the git-hooks installer nor the linters — both were on the `cd` path and cost ~43 s |
 | `install-hooks-installs-hooks` | the wrapped installer is really git-hooks.nix's, `install-hooks.sh` can repair a deleted `pre-commit` hook, and the warm hooks stay GC-rooted |

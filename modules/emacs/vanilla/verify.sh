@@ -346,12 +346,16 @@ say "4. in-daemon assertions"
 # has never once been shown red.
 #
 # It was forgeable, too. The report interpolates captured text -- void
-# command symbols in section (a), *Messages* lines in section (c) -- and the
-# banner was matched at column 0. Nothing captured could REACH column 0 only
-# because those `my/verify--say' format strings happen to open with seven
-# spaces. A command symbol whose name contains a newline puts the remainder
-# of itself at column 0, and a run reporting "=== FAIL: 1" then also carries
-# a line reading "=== PASS" for the grep to find. Luck, not design.
+# command symbols in section (a), *Messages* lines in section (c), lilypond's
+# own stderr in section (f) -- and the banner was matched at column 0. Nothing
+# captured could REACH column 0 only because those `my/verify--say' format
+# strings happen to open with seven spaces. A command symbol whose name
+# contains a newline puts the remainder of itself at column 0, and a run
+# reporting "=== FAIL: 1" then also carries a line reading "=== PASS" for the
+# grep to find. That was luck, not design; it is design now. Captured text
+# goes through `my/verify--push', which indents every line after the first, so
+# the report is no longer forgeable whether or not anything greps it. The
+# `emacs-report-framing' check runs the real writer over forged text.
 #
 # `my/verify-run-or-signal' SIGNALS when any assertion failed, and emacsclient
 # turns a server-side signal into exit status 1. Measured, not assumed: the
