@@ -114,8 +114,16 @@
     '';
   };
 
+  # The server itself: a pinned tarball with its node_modules fetched by Nix.
+  # See modules/porkbun-mcp/package.nix for why this is not `npx -y' and not the
+  # bare-fetchzip shape claude-powerline uses below.
+  porkbunMcpServer = pkgs.callPackage ./porkbun-mcp/package.nix {};
+
   porkbunMcpWrapper = pkgs.writeShellApplication {
     name = "porkbun-mcp";
+    # nodejs is still here even though the exec below is a wrapped bin: the
+    # bin/porkbun-mcp symlink points at dist/index.js, whose `#!/usr/bin/env
+    # node' shebang needs a node on PATH.
     runtimeInputs = [pkgs.nodejs pkgs.coreutils];
     text = ''
       api_key_file="${config.home.homeDirectory}/.config/sops-nix/secrets/porkbun_api_key"
@@ -127,7 +135,11 @@
       PORKBUN_API_KEY=$(cat "$api_key_file")
       PORKBUN_SECRET_API_KEY=$(cat "$secret_key_file")
       export PORKBUN_API_KEY PORKBUN_SECRET_API_KEY
-      exec npx -y @porkbunllc/mcp-server "$@"
+      # A store path, resolved at build time. The two secrets above are already
+      # in this process's environment when the exec happens, so what runs here
+      # must be decided by this repository and not by whoever last published to
+      # the npm registry.
+      exec ${lib.getExe porkbunMcpServer} "$@"
     '';
   };
 

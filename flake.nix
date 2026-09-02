@@ -299,7 +299,7 @@
             ./modules/claude-skills.nix
             ./modules/claude-kg/default.nix
             ./modules/searxng/default.nix
-            ./modules/orrery-mcp.nix
+            ./modules/orrery-mcp/default.nix
             # Shared, not Linux-only: modules/gpg.nix and modules/claude-code.nix
             # contribute to my.windowsBridge.files unconditionally, so the option
             # has to be DECLARED everywhere even though its config block only

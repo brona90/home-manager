@@ -436,7 +436,7 @@ a workaround with no visible cause is the kind of thing that gets reinstated.
   left as an enum with one value. `modules/emacs-mcp.nix` and
   `modules/emacs-doctor/default.nix` read `my.emacs.package` again; each
   carries a note naming itself as a site that would have to follow the primary
-  if a second Emacs ever came back, and `modules/orrery-mcp.nix` carries the
+  if a second Emacs ever came back, and `modules/orrery-mcp/default.nix` carries the
   note that it is the one that would not.
 - **`nix flake check --all-systems` is back**, in `ci.yml` and
   `update-flake.yml`. It was dropped because nix-doom-emacs-unstraightened's

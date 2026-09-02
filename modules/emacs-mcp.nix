@@ -15,7 +15,7 @@
   # two-flavour `my.emacs.flavor` enum; there is one Emacs now and `package`
   # IS the one on the default socket.  If a second Emacs is ever added back,
   # this is one of the three call sites that has to follow the primary one --
-  # the others are modules/emacs-doctor/default.nix and modules/orrery-mcp.nix
+  # the others are modules/emacs-doctor/default.nix and modules/orrery-mcp/default.nix
   # (which deliberately does not).
   emacsPackage =
     if config.my.emacs.enable
