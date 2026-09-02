@@ -63,6 +63,11 @@ import ./tmux-helper.nix {inherit pkgs;}
     # for this host.
     winSettingsText =
       homeConfigs."${user.username}@${system}".config.my.windowsBridge.files.claude-settings.text;
+    # Every MCP server activation merges into ~/.claude.json, whichever
+    # module contributed it. Read here rather than in the guard so the guard
+    # sees the merged result and not one module's source.
+    mcpServers =
+      homeConfigs."${user.username}@${system}".config.my.claudeCode.mcpServers;
     dev = devShellFor system;
   in
     import ./claude-settings.nix {inherit pkgs settingsText;}
@@ -78,4 +83,5 @@ import ./tmux-helper.nix {inherit pkgs;}
     // import ./dev-shell.nix {inherit pkgs dev;}
     // import ./shell-scripts.nix {inherit pkgs;}
     // import ./branch-policy.nix {inherit pkgs;}
+    // import ./mcp-servers.nix {inherit lib pkgs mcpServers;}
 )
