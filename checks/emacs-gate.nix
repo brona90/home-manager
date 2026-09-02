@@ -1,7 +1,9 @@
-# Guard: CI must actually start Emacs, and it must start a daemon.
+# Guard: CI must actually start Emacs, it must start a daemon, and the gate it
+# starts must be capable of reporting failure.
 #
 # Reads .github/workflows/ci.yml -- as parsed YAML through yq wherever it can,
-# so the explanatory comments in that file are excluded for free.
+# so the explanatory comments in that file are excluded for free -- and
+# modules/emacs/vanilla/verify.sh, as text, for (d).
 #
 # Inputs, passed by checks/default.nix. Nothing in this file reads flake.nix's
 # scope; if it is not in this list, it is not available here.
@@ -28,6 +30,7 @@
     pkgs.runCommand "ci-emacs-gate" {
       nativeBuildInputs = [pkgs.yq-go];
       ciWorkflow = ../.github/workflows/ci.yml;
+      verifySh = ../modules/emacs/vanilla/verify.sh;
     } ''
       # (a) build-home must not be gated off for pull requests again.
       #     Its event-dependence lives in the matrix, not in a
@@ -44,6 +47,21 @@
       #     stripped first so the explanatory ones may say the word.
       if grep -vE '^[[:space:]]*#' "$ciWorkflow" | grep -q -- '--batch'; then
         echo 'GUARD: --batch does not load init.el; the Emacs gate must start a real daemon.'
+        exit 1
+      fi
+
+      # (d) and the gate must be able to go RED. Stage 4 of verify.sh
+      #     decided the in-daemon assertions by grepping the report
+      #     those assertions write themselves -- `grep -q "^=== PASS"'
+      #     -- while emacsclient's status went to /dev/null unread.
+      #     A gate that reads its verdict out of the text under test
+      #     is the shape of the bug the whole file exists to prevent,
+      #     and this one had never once been observed failing. The
+      #     verdict is now emacsclient's exit code. Comments are
+      #     stripped first, so the paragraphs explaining all this may
+      #     quote the banner they replaced.
+      if grep -vE '^[[:space:]]*#' "$verifySh" | grep -qE 'grep.*REPORT|=== PASS'; then
+        echo 'GUARD: verify.sh decides a stage from the text of $REPORT. The in-daemon verdict is emacsclient EXIT CODE -- see my/verify-run-or-signal in verify.el.'
         exit 1
       fi
 

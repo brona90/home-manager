@@ -17,6 +17,13 @@
 ;; status, and the language table below is a table of EXPECTATIONS -- if a mode
 ;; silently changes, the gate goes red rather than printing a different answer.
 ;;
+;; "Decides the exit status" is meant literally, and only became literal once:
+;; `my/verify-run-or-signal' at the foot of this file SIGNALS when the failure
+;; count is non-zero, and verify.sh's stage 4 reads that as emacsclient's exit
+;; code.  Before that it read the report's own "=== PASS" banner back out of
+;; the file these checks write -- the one stage in the gate that grepped for
+;; good news was the stage the gate exists for.
+;;
 ;; It walks the ACTUAL leader keymap rather than a hand-written list of
 ;; commands.  That distinction is the whole point: a hand-written list is how
 ;; six void commands got shipped once already.  The keymap is the thing the
@@ -1147,6 +1154,32 @@ checks can only agree with itself.")
       (when out
         (with-temp-file out (insert report "\n")))
       report)))
+
+(defun my/verify-run-or-signal ()
+  "Run every check, then SIGNAL if any assertion failed.
+
+This is what ../verify.sh calls, and it exists so that stage 4 can
+decide on an EXIT CODE rather than on the text of the report.
+`emacsclient' is indifferent to the value a form returns -- nil, t,
+0 and \"\" all leave it exiting 0 -- and turns a server-side signal
+into exit status 1.  Signalling is therefore the only way a failed
+assertion in HERE becomes a non-zero status out THERE.
+
+Handing the count back for the shell to read would be the same
+defect in a new spelling.  The report used to be searched for a
+`=== PASS' banner, and captured text -- void command symbols in
+section (a), *Messages* lines in section (c) -- stayed clear of
+column 0 only by the accident of a format string opening with
+seven spaces.
+
+`my/verify-run' is unchanged and is still the one to call by hand:
+it REPORTS, and this one DECIDES.  Returns nil, so a passing run
+prints nil back at the shell instead of the whole report."
+  (my/verify-run)
+  (unless (zerop my/verify--failures)
+    (error "Emacs-vanilla gate: %d failed assertion(s); see the report above"
+           my/verify--failures))
+  nil)
 
 (provide 'verify)
 ;;; verify.el ends here

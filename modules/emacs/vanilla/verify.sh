@@ -337,21 +337,56 @@ pass "daemon up on socket $SOCKET"
 # ---------------------------------------------------------------------------
 say "4. in-daemon assertions"
 # ---------------------------------------------------------------------------
+# THE VERDICT IS AN EXIT CODE. THE REPORT IS FOR THE READER.
+#
+# This stage sent emacsclient to /dev/null, never assigned its status, and
+# decided by `grep -q "^=== PASS" "$REPORT"' -- on a report written by the
+# very checks under test. That is the one thing the header of this file
+# forbids, in the one stage the file exists for, and it is the stage that
+# has never once been shown red.
+#
+# It was forgeable, too. The report interpolates captured text -- void
+# command symbols in section (a), *Messages* lines in section (c) -- and the
+# banner was matched at column 0. Nothing captured could REACH column 0 only
+# because those `my/verify--say' format strings happen to open with seven
+# spaces. A command symbol whose name contains a newline puts the remainder
+# of itself at column 0, and a run reporting "=== FAIL: 1" then also carries
+# a line reading "=== PASS" for the grep to find. Luck, not design.
+#
+# `my/verify-run-or-signal' SIGNALS when any assertion failed, and emacsclient
+# turns a server-side signal into exit status 1. Measured, not assumed: the
+# VALUE a form returns never moves the status (nil, t, 0 and "" all exit 0);
+# only a signal or an unreachable socket does. So a failed assertion, a
+# verify.el that will not load, a `my/verify-run-or-signal' that has gone void
+# and a daemon that died mid-run all arrive here identically -- as non-zero.
+#
+# The report is still written and still printed in full. It is how a human
+# learns WHICH assertion failed. It simply no longer decides anything.
+EVAL_LOG="$WORK/eval.log"
+VERDICT=0
 "$EMACSCLIENT" -s "$SOCKET" \
-  --eval "(progn (load \"$SCRIPT_DIR/verify.el\" nil t) (my/verify-run) nil)" \
-  >/dev/null 2>&1
+  --eval "(progn (load \"$SCRIPT_DIR/verify.el\" nil t) (my/verify-run-or-signal))" \
+  >"$EVAL_LOG" 2>&1 || VERDICT=$?
 
-if [ ! -f "$REPORT" ]; then
-  fail "the in-daemon gate wrote no report -- it errored before finishing"
+[ -f "$REPORT" ] && cat "$REPORT"
+
+if [ "$VERDICT" -ne 0 ]; then
+  fail "in-daemon assertions -- emacsclient exited $VERDICT"
+  echo "---- emacsclient ----"
+  cat "$EVAL_LOG"
+  echo "---- daemon log ----"
+  tail -40 "$DAEMON_LOG"
+elif [ ! -f "$REPORT" ]; then
+  # Exit 0 and no report at all. `my/verify-run' writes the file whenever
+  # EMACS_VANILLA_VERIFY_OUT is set, so this is the daemon not having
+  # INHERITED that export -- the same environment slip section (i) of
+  # verify.el guards from the inside, caught here from the outside. A gate
+  # that ran and recorded nothing is not a pass.
+  fail "in-daemon assertions returned 0 but wrote no report -- the daemon did not inherit EMACS_VANILLA_VERIFY_OUT"
   echo "---- daemon log ----"
   tail -40 "$DAEMON_LOG"
 else
-  cat "$REPORT"
-  if grep -q '^=== PASS' "$REPORT"; then
-    pass "in-daemon assertions"
-  else
-    fail "in-daemon assertions"
-  fi
+  pass "in-daemon assertions (emacsclient exit 0)"
 fi
 
 # ---------------------------------------------------------------------------
