@@ -66,11 +66,18 @@
 #   nix build .#checks.x86_64-linux.<guard> --no-link; echo $?
 # Read the exit code. Do not grep the output for a success string -- that is the
 # failure mode modules/emacs/vanilla/verify.sh names in its own header.
+#   homeWriteGuard   -- the built home-root guard package, the same derivation
+#                       modules/claude-code.nix puts in home.packages, so that
+#                       "is it installed" is an identity comparison rather than
+#                       a search for a name.
+#   homePackages     -- config.home.packages, for the same comparison.
 {
   lib,
   pkgs,
   winSettingsText,
   winTargets,
+  homeWriteGuard,
+  homePackages,
 }: {
   windows-bridge-attribution =
     pkgs.runCommand "windows-bridge-attribution" {
@@ -147,6 +154,109 @@
                echo '       Those three hooks lived only in the Windows file, by hand, until'; \
                echo '       they were generated here. Dropping one means a rebuilt machine'; \
                echo '       runs the knowledge graph on the WSL side only, and says nothing.'; \
+               exit 1; }
+      done
+      touch $out
+    '';
+
+  # THE MUTATION MATRIX FOR THE TWO GUARDS BELOW, and for the two they lean on.
+  # Eight cases, eight caught, none missed, and every case restored from a
+  # pristine copy rather than with git, so the worktree's index was never
+  # touched. The restore is a step with its own evidence -- a sha256 over all
+  # four files, compared before and after each case -- because "restore" written
+  # as a trailing clause is how a mutation gets left in a worktree for somebody
+  # else to find and read as real config.
+  #
+  #   claude-home-guard-decides
+  #     the separator conversion written unquoted again
+  #     is_home_root forgetting the Windows profile shape
+  #     the UNC case removed
+  #     is_home_root refusing everything          <- the allow rows, in reverse
+  #   windows-bridge-home-guard-crosses
+  #     PreToolUse ceasing to cross
+  #     PostToolUse ceasing to cross
+  #   windows-bridge-no-store-paths
+  #     the crossing named by store path instead of through the profile
+  #   windows-bridge-profile-bin-installed
+  #     the guard dropped from home.packages
+  #
+  # The fourth case is the one worth keeping. A matrix of refusals can be
+  # satisfied by a guard that refuses everything, and would then be green while
+  # blocking every write this configuration makes. Testing only the direction
+  # you are afraid of is how a forbid-only check comes to pass vacuously.
+  #
+  # To re-run: mutate one anchor, build that check, expect a non-zero exit, put
+  # the file back, and confirm the digest matches before moving on.
+
+  # The binary a Windows hook names is one the flake actually installs.
+  #
+  # windows-bridge-no-store-paths forces every crossed command to be named
+  # through ~/.nix-profile/bin, because a store path in a merged file dangles.
+  # That trade is only sound if the profile really carries the name: a hook
+  # pointing at ~/.nix-profile/bin/claude-home-guard when nothing puts
+  # claude-home-guard in the profile is not a dangling path, it is a command not
+  # found -- which Claude Code reports, if at all, on the Windows side only.
+  #
+  # This is the statusline-command.sh failure with the arrow reversed. There the
+  # settings key named a script the flake did not install; here the settings key
+  # names a BINARY the flake might not install, and the WSL side would go on
+  # working throughout because it invokes the same program by store path.
+  #
+  # Compared by identity at eval time rather than by looking for a file: asking
+  # whether this exact derivation is in home.packages is a question with an
+  # exact answer, where searching a built profile for a name would pass on any
+  # other package that happened to provide one.
+  windows-bridge-profile-bin-installed =
+    pkgs.runCommand "windows-bridge-profile-bin-installed" {
+      installed = lib.boolToString (lib.elem homeWriteGuard homePackages);
+      guard = homeWriteGuard.name;
+    } ''
+      if [ "$installed" != "true" ]; then
+        echo "GUARD: $guard is named in the Windows settings.json fragment through"
+        echo '       ~/.nix-profile/bin, but it is not in home.packages, so that path'
+        echo '       does not exist. The WSL side keeps working -- it calls the same'
+        echo '       program by store path -- and the Windows hook silently stops.'
+        echo '       Add it to home.packages in modules/claude-code.nix.'
+        exit 1
+      fi
+      touch $out
+    '';
+
+  # The home-root write rule is enforced on BOTH sides of the boundary.
+  #
+  # checks/claude-home-guard.nix proves the hook decides correctly, including on
+  # the backslash and drive-letter paths only the Windows caller produces. It
+  # cannot prove the Windows caller ever reaches it. That is this guard, and the
+  # two together are the whole claim: the rule is right, and it runs.
+  #
+  # The failure this prevents is not a wrong decision but a missing one, and it
+  # is invisible from the WSL side by construction -- `hms' would go on
+  # installing the WSL hook, `nix flake check' would go on passing, and the only
+  # symptom would be scratch files accumulating in C:\Users\<winuser>, which is
+  # a directory nobody lists. That is precisely how 371 of them accumulated in
+  # /home/gfoster.
+  #
+  # Asserted through ~/.nix-profile/bin rather than by store path, which
+  # windows-bridge-no-store-paths independently forbids: between them, the
+  # command has to be a profile name AND has to be this profile name.
+  windows-bridge-home-guard-crosses =
+    pkgs.runCommand "windows-bridge-home-guard-crosses" {
+      nativeBuildInputs = [pkgs.jq];
+      settings = winSettingsText;
+      passAsFile = ["settings"];
+    } ''
+      for want in \
+        PreToolUse:claude-home-guard \
+        PostToolUse:"claude-home-guard detect"; do
+        event=''${want%%:*}
+        bin=''${want#*:}
+        jq -e --arg e "$event" --arg b "$bin" \
+          '[.hooks[$e][]?.hooks[]?.command] | any(endswith("/.nix-profile/bin/" + $b))' \
+          "$settingsPath" > /dev/null \
+          || { echo "GUARD: the Windows settings.json fragment runs no $bin on $event."; \
+               echo '       The home-root write rule would then be enforced on the WSL side'; \
+               echo '       only, while the Windows side went on writing scratch into'; \
+               echo '       C:\Users\<winuser> with nothing to notice. See homeWriteGuard.'; \
                exit 1; }
       done
       touch $out

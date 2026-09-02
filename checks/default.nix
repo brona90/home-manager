@@ -77,7 +77,14 @@ import ./tmux-helper.nix {inherit pkgs;}
       homeWriteGuard = homeConfigs."${user.username}@${system}".config.my.claudeCode.homeWriteGuardPackage;
       homeDirectory = homeConfigs."${user.username}@${system}".config.home.homeDirectory;
     }
-    // import ./windows-bridge.nix {inherit lib pkgs winSettingsText winTargets;}
+    // import ./windows-bridge.nix {
+      inherit lib pkgs winSettingsText winTargets;
+      # A Windows hook command names a binary under ~/.nix-profile/bin. Whether
+      # that binary is IN the profile is a fact about home.packages, not about
+      # the fragment, so the guard needs both halves to compare them.
+      homeWriteGuard = homeConfigs."${user.username}@${system}".config.my.claudeCode.homeWriteGuardPackage;
+      homePackages = homeConfigs."${user.username}@${system}".config.home.packages;
+    }
     // import ./docker-terminal.nix {inherit pkgs;}
     // import ./emacs-gate.nix {inherit pkgs;}
     // import ./lint-tools.nix {inherit pkgs;}

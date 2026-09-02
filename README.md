@@ -1016,7 +1016,7 @@ The CI is fork-friendly - lint and check always run, push operations only run if
 
 `nix flake check` builds these. Each one encodes a bug that already happened, so
 none of them is a style preference — if one fails, read what it caught rather
-than relaxing it. The fifteen guards below are defined on `x86_64-linux` only,
+than relaxing it. The seventeen guards below are defined on `x86_64-linux` only,
 because the content they guard is identical across systems; the two
 tmux-helper builds run on every system.
 
@@ -1048,6 +1048,8 @@ documents the whole interface a guard file is handed.
 | `windows-bridge-attribution` | The managed fragment for the *Windows* `settings.json` losing the empty `attribution` block. `claude-settings-guards` cannot see that file, so it went on passing while Windows sessions added `Co-Authored-By` trailers that the same work from WSL did not |
 | `windows-bridge-no-store-paths` | A `/nix/store` path reaching the Windows fragment. That file is merged and never regenerated, so the path is not refreshed: it dangles at the next rebuild and the hook silently stops running on the Windows side only. Hook binaries must be named through `~/.nix-profile/bin` (`windowsProfileBin`) |
 | `windows-bridge-claude-kg-hooks` | The three claude-kg hooks ceasing to be generated for Windows. They were hand-typed in `C:\Users\<winuser>\.claude\settings.json` and existed nowhere in this repo, so a rebuilt WSL instance ran the knowledge graph on one side only. `kg-capture-hook-win` is built solely for that caller and had no in-repo consumer at all |
+| `windows-bridge-profile-bin-installed` | A crossed hook naming `~/.nix-profile/bin/<x>` while nothing puts `<x>` in the profile. `windows-bridge-no-store-paths` forces the profile spelling because a store path in a merged file dangles; that trade only holds if the name is really there. It is the `statusline-command.sh` failure reversed, and the WSL side keeps working throughout because it invokes the same program by store path |
+| `windows-bridge-home-guard-crosses` | The home-root write rule ceasing to be enforced on the Windows side. `claude-home-guard-decides` proves the hook decides correctly on backslash and drive-letter paths; only this proves the Windows caller ever reaches it. A missing decision is invisible from WSL — `hms` keeps installing the WSL hook and the only symptom is scratch piling up in `C:\Users\<winuser>`, a directory nobody lists, which is exactly how 371 of them piled up in `/home/gfoster` |
 | `windows-bridge-claude-surfaces` | A managed Claude surface — `CLAUDE.md`, the statusline, the skill bundle, the subagents — ceasing to cross to Windows. The Windows copies were made by hand in August and drifted; one skill still told agents to edit a `doom.d` that no longer exists. Dropping a bridge entry breaks nothing visibly, it just returns the file to being maintained by hand |
 
 Plus `tmux-helper-build` and `tmux-helper-vet`, which are ordinary builds rather

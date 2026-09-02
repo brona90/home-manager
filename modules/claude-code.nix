@@ -71,6 +71,20 @@
         # No stamp file and no session state: "changed in the last minute" is a
         # good enough proxy for "this Bash call did it", and being occasionally
         # late is harmless for something that only ever prints.
+        #
+        # ONE ROOT HERE, where the blocking half above has two, and the
+        # asymmetry is not an oversight. A shape can be compared against a
+        # declared path; it cannot be listed. A Bash call declares nothing, so
+        # this half needs a directory NAME, and the only name it lacks -- the
+        # Windows profile -- is the one discovered at activation. Giving it that
+        # name means a state file written by the windows-bridge activation
+        # script, a check that it still writes it, and an activation contract
+        # between two modules that have so far shared only data. That is its own
+        # change, for the same reason the conversion above was: it needs a guard
+        # of its own, and a guard that can be missing is worse than a rule that
+        # is honestly absent. What crosses today still earns its place -- a
+        # Windows session runs most of its Bash inside WSL through wsl.exe, and
+        # those writes land in the root this does scan.
         hits=$(find "$root" -maxdepth 1 -type f ! -name '.*' -mmin -1 -printf '%f\n' 2>/dev/null || true)
         if [ -n "$hits" ]; then
           printf 'claude-home-guard: these non-hidden files just appeared directly in %s:\n\n%s\n\nThat is where the 371 came from. Move them into the session scratchpad, or into the repo they serve with a name that says what they are, and remove them from the home root before finishing.\n' "$root" "$hits" >&2
@@ -92,21 +106,90 @@
         exit 0
       fi
 
-      # WSL paths only, deliberately. The Windows half of this machine reaches
-      # Claude Code natively and would hand this rule backslashes, but it still
-      # cannot reach this hook. The bridge has since learned to carry hooks --
-      # my.windowsBridge.files.claude-settings now claims SessionStart,
-      # UserPromptSubmit and SessionEnd -- and PreToolUse/PostToolUse are
-      # pointedly not among them, so nothing here crosses to C:\Users.
+      # THREE SPELLINGS REACH THIS HOOK, because two Claude Codes work on the
+      # same repositories. The WSL one declares /home/gfoster/foo.sh. The
+      # Windows one declares C:\Users\brona\foo.sh when it writes into its own
+      # profile, and \\wsl.localhost\Debian\home\gfoster\foo.sh when it writes
+      # the very file this hook is looking at, from the outside. All three name
+      # a home root, and the rule is about home roots rather than about
+      # separators, so they are reduced to one spelling before it is applied.
       #
-      # The rest of the original note is unchanged and still decides it:
-      # normalising for a caller that does not exist bought one escaping bug per
-      # attempt -- a literal backslash has to survive Nix indented-string
-      # escaping and the shell linter at once -- for a case no test could
-      # exercise. Sending this hook across is its own change; it needs the
-      # separator conversion here AND a test that feeds it a backslash path, and
-      # it has no business riding along with a change that only moves hooks
-      # which were already crossing by hand.
+      # The note that stood here said normalising for a caller that did not
+      # exist bought one escaping bug per attempt, for a case no test could
+      # exercise. The caller exists now and the tests are in
+      # checks/claude-home-guard.nix. The escaping fear turned out to be
+      # misplaced in one specific way worth recording: backslash is NOT an
+      # escape character inside a Nix indented string, so the literals below are
+      # written once and read literally. It is the double-quoted Nix string that
+      # would have doubled them.
+      normalise_path() {
+        # Backslashes to slashes first, so one set of patterns below covers both
+        # the backslash spelling Windows normally hands over and the
+        # forward-slash spelling it sometimes hands over instead.
+        #
+        # Both the doubling and the quotes are load-bearing, and the first draft
+        # of this line had neither. `\/' is an ESCAPED SLASH, so the expansion
+        # that reached the shell was ''${1//\/}: a pattern of `/' with an empty
+        # replacement, which deletes every separator instead of converting any.
+        # It fails on the WSL rows rather than the Windows ones -- a path with
+        # no backslash in it is the shape the wrong version mangles worst -- so
+        # it does not even fail where you would look for it. Same family as the
+        # `tr' bug recorded above: a conversion flattened by a layer of escaping
+        # between the source and the shell, silent in both directions, and found
+        # only by running the built script against the matrix.
+        local p="''${1//\\//}"
+
+        case "$p" in
+          # \\wsl.localhost\<distro>\... and the older \\wsl$\<distro>\... are
+          # this filesystem seen from the other side. Drop the host and the
+          # share -- they are the distro's UNC spelling, not directories -- and
+          # what remains is a path this hook already understood.
+          #
+          # One pattern for both hosts. Matching `wsl$' exactly would put a `$'
+          # inside a case pattern inside a Nix indented string, and the line
+          # above is what that class of cleverness costs here; `wsl*' is a wider
+          # net over a namespace where nothing else is reachable anyway.
+          //wsl*/*/*) p="/''${p#//*/*/}" ;;
+          # A drive letter means a Windows path. WSL mounts it at /mnt/<letter>,
+          # lowercase, whatever case was typed at the other end.
+          [A-Za-z]:/*)
+            local drive="''${p%%:*}"
+            p="/mnt/''${drive,,}/''${p#*:/}"
+            ;;
+        esac
+
+        printf '%s' "$p"
+      }
+
+      # THE HOME ROOTS. One is known when this script is built: the WSL home
+      # this configuration is for. The other cannot be. The Windows account name
+      # is discovered at activation by asking cmd.exe, precisely because it is
+      # not the WSL one on this machine and would be a third thing on the next
+      # one -- so baking it in here would produce a guard that is right on
+      # exactly one box and silently wrong everywhere else.
+      #
+      # It is therefore recognised by SHAPE rather than by name:
+      # /mnt/<drive>/Users/<one component> is a profile root, whoever it belongs
+      # to. A shape has no lookup to go stale, no state file to be missing, and
+      # no way to be vacuously correct on a machine where the name was never
+      # recorded -- which is worth more than the precision it gives up, since
+      # what it gives up is the right to drop scratch into somebody else's
+      # profile root, and that was never wanted either.
+      is_home_root() {
+        if [ "$1" = "$root" ]; then
+          return 0
+        fi
+        case "$1" in
+          # Deeper than a profile root is a project, and not our business. This
+          # case has to precede the next one: a glob `*' matches slashes too, so
+          # the shallower pattern would otherwise swallow both.
+          /mnt/?/Users/*/*) return 1 ;;
+          /mnt/?/Users/*) return 0 ;;
+        esac
+        return 1
+      }
+
+      path=$(normalise_path "$path")
       dir=$(dirname "$path")
       base=$(basename "$path")
 
@@ -115,8 +198,8 @@
         .*) exit 0 ;;
       esac
 
-      if [ "$dir" = "$root" ]; then
-        printf 'claude-home-guard: refusing to write %s\n\n%s is the home root, and a non-hidden file directly in it is scratch. Scratch belongs in the session scratchpad, or in the repo it serves under a name that says what it is. 371 files arrived this way before this hook existed; several of them cd into worktrees that no longer exist.\n\nIf this file genuinely belongs in the home root, re-run the call with CLAUDE_ALLOW_HOME_WRITE=1.\n' "$path" "$root" >&2
+      if is_home_root "$dir"; then
+        printf 'claude-home-guard: refusing to write %s\n\n%s is the home root, and a non-hidden file directly in it is scratch. Scratch belongs in the session scratchpad, or in the repo it serves under a name that says what it is. 371 files arrived this way before this hook existed; several of them cd into worktrees that no longer exist.\n\nIf this file genuinely belongs in the home root, re-run the call with CLAUDE_ALLOW_HOME_WRITE=1.\n' "$path" "$dir" >&2
         exit 2
       fi
 
@@ -410,8 +493,52 @@
   # is left out of the fragment entirely rather than emitted as an empty list:
   # the merge would otherwise write `[]' over whatever that event holds on the
   # Windows side, which is the one way a merged fragment can destroy data.
+  # The home-root guard, crossed. Unlike the three events below it this hook is
+  # neither optional nor contributed: it is one policy with two enforcement
+  # points, and the Windows one is where the writes it exists to stop are least
+  # visible. A file dropped in /home/gfoster turns up in every `ls' anybody runs
+  # there; a file dropped in C:\Users\<winuser> turns up in a directory nobody
+  # lists, next to sixty of Windows' own.
+  #
+  # Named through the profile, not by store path, for the reason recorded on
+  # windowsProfileBin: this fragment is MERGED into a file that is never
+  # regenerated, so a /nix/store path written into it dangles at the next
+  # rebuild and the hook stops running on one side only, silently -- which is
+  # the exact failure this whole module was written to end.
+  #
+  # The timeout is the WSL one's 5 seconds plus room for a cold `wsl.exe' start,
+  # which the WSL side never pays. A hook that times out does not fail loudly;
+  # it just stops deciding, so the number that matters is the slow case.
+  windowsHomeGuardCommand = "MSYS_NO_PATHCONV=1 wsl.exe -d ${wslDistro} -- ${config.home.homeDirectory}/.nix-profile/bin/claude-home-guard";
+
   windowsHooks =
-    lib.optionalAttrs (windowsHookEntries cfg.sessionEndCommands != []) {
+    {
+      PreToolUse = [
+        {
+          matcher = "Write|Edit|NotebookEdit";
+          hooks = [
+            {
+              type = "command";
+              command = windowsHomeGuardCommand;
+              timeout = 15;
+            }
+          ];
+        }
+      ];
+      PostToolUse = [
+        {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = "${windowsHomeGuardCommand} detect";
+              timeout = 15;
+            }
+          ];
+        }
+      ];
+    }
+    // lib.optionalAttrs (windowsHookEntries cfg.sessionEndCommands != []) {
       SessionEnd = [{hooks = windowsHookEntries cfg.sessionEndCommands;}];
     }
     // lib.optionalAttrs (windowsHookEntries cfg.sessionStartCommands != []) {
@@ -440,6 +567,13 @@
   #     shipping the script while leaving the key unclaimed would install a
   #     statusline nothing invokes, and claiming the key without the script would
   #     name one that is not there.
+  #   hooks.PreToolUse / PostToolUse -- the home-root write guard. Same writer as
+  #     the other hook events, and now the same story: the note inside
+  #     homeWriteGuard said crossing it needed a separator conversion and a test
+  #     that feeds it a backslash, and it has both. It arrives with the same
+  #     pairing requirement statusLine has -- the command names
+  #     ~/.nix-profile/bin/claude-home-guard, so the package is in home.packages,
+  #     and claiming the key without that would name a binary that is not there.
   #
   # NOT CLAIMED, each for a named writer rather than out of general caution.
   #   permissions -- Claude Code appends to permissions.allow every time a rule
@@ -457,9 +591,10 @@
   #   env, model, tui, autoUpdatesChannel, autoCompactWindow and the remaining
   #     preference keys -- written by the settings UI on that machine.
   #
-  # hooks.PreToolUse / PostToolUse are absent for a third reason again: not
-  # app-written, not policy, they simply do not work over there yet. See the note
-  # inside homeWriteGuard.
+  # Nothing is absent for a third reason any more. The one entry that used to be
+  # -- hooks.PreToolUse / PostToolUse, "they simply do not work over there yet"
+  # -- has moved up into CLAIMED, which is what closed the last gap this module
+  # knew about in its own coverage.
   windowsSettings =
     {
       inherit (settings) attribution;
@@ -628,7 +763,14 @@ in {
     home = {
       # The module that enables Claude Code also owns the CLI package
       # (previously duplicated in home/linux.nix and home/darwin.nix).
-      packages = [pkgs.claude-code];
+      #
+      # homeWriteGuard is in the profile because the Windows settings fragment
+      # names it BY NAME under ~/.nix-profile/bin rather than by store path --
+      # see windowsProfileBin, and see statusline-command.sh for what naming a
+      # thing the flake does not install actually costs. The WSL side still
+      # invokes it by store path, so this is the only thing making the Windows
+      # command resolve to anything at all.
+      packages = [pkgs.claude-code homeWriteGuard];
 
       file.".claude/settings.json".text = builtins.toJSON settings;
 
