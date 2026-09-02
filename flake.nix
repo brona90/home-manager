@@ -298,6 +298,7 @@
             ./modules/claude-specflow.nix
             ./modules/claude-skills.nix
             ./modules/claude-kg/default.nix
+            ./modules/ollama/default.nix
             ./modules/searxng/default.nix
             ./modules/orrery-mcp.nix
             # Shared, not Linux-only: modules/gpg.nix and modules/claude-code.nix

@@ -77,5 +77,10 @@ import ./tmux-helper.nix {inherit pkgs;}
     // import ./lint-tools.nix {inherit pkgs;}
     // import ./dev-shell.nix {inherit pkgs dev;}
     // import ./shell-scripts.nix {inherit pkgs;}
+    // import ./ollama.nix {
+      inherit pkgs;
+      ollamaUnit = homeConfigs."${user.username}@${system}".config.systemd.user.services.ollama;
+      kgHook = homeConfigs."${user.username}@${system}".config.my.claudeKg.promptRecallHookPackage;
+    }
     // import ./branch-policy.nix {inherit pkgs;}
 )

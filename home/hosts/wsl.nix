@@ -36,8 +36,13 @@ in {
     windowsBridge.enable = true;
 
     # Local AI infra lives on this box (Docker + Ollama): the claude-kg knowledge
-    # graph and the SearXNG private-search MCP server, both managed declaratively.
+    # graph, the Ollama model server the graph embeds and captures with, and the
+    # SearXNG private-search MCP server -- all managed declaratively.
+    #
+    # ollama is here and not in home/common.nix because it is the only host with
+    # a GPU, and my.ollama.driverLibraryPath defaults to WSL's /usr/lib/wsl/lib.
     claudeKg.enable = true;
+    ollama.enable = true;
     searxng.enable = true;
 
     # The Orrery dashboard's MCP surface. WSL-only on purpose: it drives a
