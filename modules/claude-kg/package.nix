@@ -50,6 +50,12 @@ in
       runHook postInstall
     '';
 
+    # Exposed for checks/mcp-servers.nix, which asserts that the env named here
+    # is in this server's runtime closure. Read rather than re-derived, so that
+    # adding a package to pyEnv above cannot leave the guard checking an env
+    # this package no longer uses.
+    passthru.mcpDepsFrom = pyEnv;
+
     meta = {
       description = "Local knowledge-graph MCP server (Qdrant + Ollama) and helpers for Claude Code";
       mainProgram = "kg";

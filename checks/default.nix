@@ -63,6 +63,11 @@ import ./tmux-helper.nix {inherit pkgs;}
     # for this host.
     winSettingsText =
       homeConfigs."${user.username}@${system}".config.my.windowsBridge.files.claude-settings.text;
+    # Every MCP server activation merges into ~/.claude.json, whichever
+    # module contributed it. Read here rather than in the guard so the guard
+    # sees the merged result and not one module's source.
+    mcpServers =
+      homeConfigs."${user.username}@${system}".config.my.claudeCode.mcpServers;
     # Every Windows-side path the flake claims. A list of targets rather than the
     # files attrset: the surface guard asks "is this still crossing at all",
     # which is a question about the target set and nothing else.
@@ -96,4 +101,5 @@ import ./tmux-helper.nix {inherit pkgs;}
       kgHook = homeConfigs."${user.username}@${system}".config.my.claudeKg.promptRecallHookPackage;
     }
     // import ./branch-policy.nix {inherit pkgs;}
+    // import ./mcp-servers.nix {inherit lib pkgs mcpServers;}
 )

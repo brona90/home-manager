@@ -21,6 +21,14 @@ in
       runHook postInstall
     '';
 
+    # Exposed for checks/mcp-servers.nix, which asserts that the env named here
+    # is in this server's runtime closure. Read rather than re-derived: if the
+    # guard rebuilt `python3.withPackages [mcp httpx]' from its own copy of that
+    # expression, adding a package to pyEnv above would leave the guard checking
+    # an env this package no longer uses, and it would fail for a reason that
+    # has nothing to do with the property it exists to protect.
+    passthru.mcpDepsFrom = pyEnv;
+
     meta = {
       description = "MCP server exposing local SearXNG web search to Claude Code";
       mainProgram = "searxng-mcp";

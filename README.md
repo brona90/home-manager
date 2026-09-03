@@ -206,7 +206,8 @@ This repo is designed to be easily forked:
 │   │                      #   its header for why not pkgs.ollama-cuda)
 │   ├── searxng/           # Local SearXNG metasearch + web_search MCP (my.searxng)
 │   │                      #   default.nix, package.nix, settings.yml, src/, README.md
-│   ├── orrery-mcp.nix     # MCP server for the Orrery dashboard (source NOT vendored here)
+│   ├── orrery-mcp/        # MCP server for the Orrery dashboard (source NOT vendored here)
+│   │                      #   default.nix, python-env.nix (mcp 2.x, pinned)
 │   ├── emacs-mcp.nix      # Emacs MCP server module
 │   ├── emacs-mcp-server.py  # MCP stdio server bridging Claude Code -> emacsclient
 │   ├── emacs/             # Emacs
@@ -532,7 +533,7 @@ hard build failure on `bin/emacs`, `bin/emacsclient`, `bin/ctags` and
 `emacs.desktop`. A bare `emacs` or `emacsclient` is therefore unambiguous.
 
 `my.emacs.package` is what every consumer reads — `em`/`emt`, `EDITOR`/`VISUAL`,
-`emacs-doctor`, the `emacs` MCP server, and `modules/orrery-mcp.nix` (which uses
+`emacs-doctor`, the `emacs` MCP server, and `modules/orrery-mcp/default.nix` (which uses
 it only for `emacs -Q --batch`, where any Emacs would do, to avoid pulling a
 second one into the closure). There used to be a `my.emacs.flavor` enum and a
 read-only `primaryPackage` resolving it; both went with Doom rather than being
@@ -1092,7 +1093,7 @@ module is not listed here, it does not exist:
 | `my.claudeSpecflow.enable` | `claude-specflow.nix` | common |
 | `my.claudeKg.enable` | `claude-kg/default.nix` | WSL host |
 | `my.searxng.enable` | `searxng/default.nix` | WSL host |
-| `my.orreryMcp.enable` | `orrery-mcp.nix` | WSL host |
+| `my.orreryMcp.enable` | `orrery-mcp/default.nix` | WSL host |
 | `my.windowsBridge.enable` | `windows-bridge.nix` | WSL host — files are contributed by `gpg.nix` and `claude-code.nix` |
 | `my.tmux.enable` | `tmux/default.nix` | `flake.nix` — every config (also sets `theme.preset = "nord"`) |
 | `my.tmuxHelper.enable` | `tmux-helper/default.nix` | `flake.nix` — every config |

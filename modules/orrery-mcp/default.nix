@@ -8,13 +8,17 @@
 # drifts from the CLI it is required to agree with, so this module ships a
 # launcher pointed at the working copy instead.
 #
-# It also cannot use the pure-Nix python env the other MCP modules use:
-# nixpkgs' python3Packages.mcp is 1.29 and the server imports
-# `mcp.server.mcpserver`, which only exists in mcp 2.x. The script declares its
-# dependencies inline (PEP 723) and uv resolves them on first launch -- the one
-# MCP server on this machine whose Python deps are not fetched by Nix. The
-# interpreter is still pinned to the Nix python below, so uv never downloads
-# a CPython of its own.
+# Its Python deps DO come from Nix, like every other MCP server here. That was
+# not always true: this module used to exec `uv run --script', which resolved
+# the script's PEP 723 header over the network into ~/.cache/uv on first launch,
+# because nixpkgs' python3Packages.mcp is 1.29 and the server imports
+# `mcp.server.mcpserver`, a 2.x-only module. ./python-env.nix now packages mcp
+# 2.1.1 (and its unpackaged companion mcp-types) from hash-pinned sdists, so the
+# interpreter below arrives with the imports already satisfied and the launcher
+# never reaches the network. That file has the full argument; the short version
+# is that the uv path was not merely slow but non-reproducible -- `>=2,<3' got
+# re-resolved per cache miss, and this machine ended up holding two different
+# answers for the same script.
 {
   config,
   lib,
@@ -39,6 +43,9 @@
     then config.my.emacs.package
     else pkgs.emacs;
 
+  # mcp 2.x from the Nix store, replacing the uv resolve. See ./python-env.nix.
+  pyEnv = pkgs.callPackage ./python-env.nix {};
+
   launcher = pkgs.writeShellApplication {
     name = "orrery-mcp";
     # Claude Code runs natively on Windows here and reaches this through
@@ -47,8 +54,11 @@
     # `make build` on the read path, and bin/orrery -> emacs + git on the write
     # path. runtimeInputs is prefixed onto PATH rather than replacing it, so an
     # inherited PATH (when launched from inside WSL) still passes through.
+    #
+    # pkgs.uv is deliberately NOT here any more. It was only ever on this list
+    # to resolve the server's Python deps at launch, and leaving it would leave
+    # the fallback that made that possible.
     runtimeInputs = [
-      pkgs.uv
       pkgs.gnumake
       pkgs.git
       pkgs.coreutils
@@ -64,10 +74,13 @@
       # Exported, not just resolved: the server re-reads ORRERY_ROOT itself and
       # would otherwise fall back to the script's own parent directory.
       export ORRERY_ROOT="$root"
-      # The server file is mode 0644 in the working copy, so its `uv run
-      # --script` shebang cannot fire; invoking uv explicitly is what makes the
-      # launcher independent of that bit.
-      exec uv run --python ${pkgs.python3}/bin/python3 --script "$script"
+      # The interpreter is invoked directly, so the server file's mode does not
+      # matter (it is 0644 in the working copy) and its `#!/usr/bin/env -S uv
+      # run --script` shebang is inert -- the same arrangement claude-kg uses
+      # for the uv shebangs still sitting in its sources. The PEP 723
+      # `dependencies` header stays in the file for anyone running it outside
+      # Nix; nothing here reads it.
+      exec ${pyEnv}/bin/python3 "$script"
     '';
   };
 in {
