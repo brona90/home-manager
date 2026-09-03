@@ -45,6 +45,20 @@ in {
     # have nothing for it to talk to.
     orreryMcp.enable = true;
 
+    # The Bench rebuilds itself from this machine and republishes to
+    # bench.fosterthecode.com. WSL-only for the same reason orreryMcp is, only
+    # more so: `dist-bench/bench.json' IS a scan of this box, so anywhere else
+    # it would build a valid, fully gated document describing the wrong
+    # machine. See modules/bench-refresh.nix.
+    benchRefresh = {
+      enable = true;
+      # The Cloudflare account, which the scoped orrery token cannot discover
+      # for itself -- see modules/bench-refresh.nix for why this is not a sops
+      # secret. It sits here with the Macs' host keys because this file is
+      # already where this machine's identifiers live.
+      accountId = "dc8cdd6f1ba21fdebf7794040dfb6af3";
+    };
+
     # Windows interop -- /mnt/c is dropped from PATH for zsh perf
     # (FSH command-existence checks per keystroke walk PATH and
     # stat each /mnt/c entry over the 9P bridge). Alias the few
