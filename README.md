@@ -1017,9 +1017,16 @@ The CI is fork-friendly - lint and check always run, push operations only run if
 
 `nix flake check` builds these. Each one encodes a bug that already happened, so
 none of them is a style preference — if one fails, read what it caught rather
-than relaxing it. The nine guards below are defined on `x86_64-linux` only,
+than relaxing it. The seventeen guards below are defined on `x86_64-linux` only,
 because the content they guard is identical across systems; the two
 tmux-helper builds run on every system.
+
+Keep this table complete. `checks/default.nix` warns that guard names are
+load-bearing because this file, `.github/SETUP.md` and the `nix-home-manager`
+skill all name them in prose — that warning anticipated a rename, but the table
+fell out of date by ADDITION instead: it said "nine" and listed nine while
+twelve were defined, having silently missed the two `claude-home-guard` rows and
+`windows-bridge-attribution`. Adding a check means adding its row.
 
 They live in `checks/`, one file per concern, so that two branches touching two
 different guards do not conflict by construction — which is what a single
@@ -1037,6 +1044,14 @@ documents the whole interface a guard file is handed.
 | `background-jobs-close-fds` | A background job in the dev-shell hooks that does not close inherited descriptors. direnv hands `.envrc` a pipe on FD 3 and reads it to EOF, so a child holding FD 3 blocks the caller — measured at 9364ms versus 713ms. `nohup`, `setsid` and double-forking all made no difference |
 | `devshell-hook-lint` | A shell syntax error in `lib/dev-shell-hook.sh`, `lib/install-hooks.sh` or `lib/warm-direnv.sh`. `mkShell` never lints the `shellHook`, and it runs at an interactive prompt where a syntax error looks like a broken terminal |
 | `branch-policy-hook` | The specflow branch-policy hook losing worktree-awareness, or ceasing to fail closed. It shipped blocking every worktree commit as if it were on master; the first fix then turned every parse miss into a silent ALLOW. Runs the shipped hook against a 43-case matrix, in both directions |
+| `claude-home-guard-wired` | The home-root write guard being defined but not referenced from `settings.json` under `PreToolUse`/`PostToolUse` with the right matchers. A hook nothing invokes refuses nothing |
+| `claude-home-guard-decides` | The same guard being wired but WRONG. Two earlier versions built cleanly, were wired identically and did not work — one had its `tr` reduced to a no-op by Nix indented-string escaping. Runs the built hook against the policy matrix |
+| `windows-bridge-attribution` | The managed fragment for the *Windows* `settings.json` losing the empty `attribution` block. `claude-settings-guards` cannot see that file, so it went on passing while Windows sessions added `Co-Authored-By` trailers that the same work from WSL did not |
+| `windows-bridge-no-store-paths` | A `/nix/store` path reaching the Windows fragment. That file is merged and never regenerated, so the path is not refreshed: it dangles at the next rebuild and the hook silently stops running on the Windows side only. Hook binaries must be named through `~/.nix-profile/bin` (`windowsProfileBin`) |
+| `windows-bridge-claude-kg-hooks` | The three claude-kg hooks ceasing to be generated for Windows. They were hand-typed in `C:\Users\<winuser>\.claude\settings.json` and existed nowhere in this repo, so a rebuilt WSL instance ran the knowledge graph on one side only. `kg-capture-hook-win` is built solely for that caller and had no in-repo consumer at all |
+| `windows-bridge-profile-bin-installed` | A crossed hook naming `~/.nix-profile/bin/<x>` while nothing puts `<x>` in the profile. `windows-bridge-no-store-paths` forces the profile spelling because a store path in a merged file dangles; that trade only holds if the name is really there. It is the `statusline-command.sh` failure reversed, and the WSL side keeps working throughout because it invokes the same program by store path |
+| `windows-bridge-home-guard-crosses` | The home-root write rule ceasing to be enforced on the Windows side. `claude-home-guard-decides` proves the hook decides correctly on backslash and drive-letter paths; only this proves the Windows caller ever reaches it. A missing decision is invisible from WSL — `hms` keeps installing the WSL hook and the only symptom is scratch piling up in `C:\Users\<winuser>`, a directory nobody lists, which is exactly how 371 of them piled up in `/home/gfoster` |
+| `windows-bridge-claude-surfaces` | A managed Claude surface — `CLAUDE.md`, the statusline, the skill bundle, the subagents — ceasing to cross to Windows. The Windows copies were made by hand in August and drifted; one skill still told agents to edit a `doom.d` that no longer exists. Dropping a bridge entry breaks nothing visibly, it just returns the file to being maintained by hand |
 
 Plus `tmux-helper-build` and `tmux-helper-vet`, which are ordinary builds rather
 than guards.
