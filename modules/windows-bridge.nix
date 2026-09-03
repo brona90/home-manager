@@ -30,12 +30,14 @@
 # stylistic. Owning a file that an application rewrites is how settings get
 # silently deleted: the live Windows settings.json carries an `autoMode.environment'
 # block Claude Code generates itself, an `enabledPlugins' entry added by
-# installing a plugin, and a statusLine pointing at a hand-maintained
-# statusline-command.sh. Owning it would throw all of that away on the next
-# `hms', which is a worse bug than the one being fixed. So config files with a
-# single writer (the two gnupg ones -- Gpg4win never writes them; only a human
-# or gpg-win-setup does) are owned, and files with a live application writer are
-# merged, claiming only the keys the flake is prepared to be authoritative for.
+# installing a plugin, and permission rules the application appends every time
+# one is approved with "always allow". Owning it would throw all of that away on
+# the next `hms', which is a worse bug than the one being fixed. So config files
+# with a single writer (the two gnupg ones -- Gpg4win never writes them; only a
+# human or gpg-win-setup does -- and .claude/statusline-command.sh, written once
+# by hand and never by Claude Code) are owned, and files with a live application
+# writer are merged, claiming only the keys the flake is prepared to be
+# authoritative for.
 #
 # DRIFT. These files live outside the Nix store on a filesystem other programs
 # and other people write to, so "just overwrite" would hide exactly the edits
@@ -100,6 +102,24 @@ in {
     enable =
       lib.mkEnableOption
       "syncing flake-rendered configuration into the Windows user profile from WSL";
+
+    # Not read by this module, which is only the transport. It is declared here
+    # because it is a fact about THIS WSL/Windows boundary rather than about any
+    # program that crosses it, so the second consumer finds it already named
+    # instead of hardcoding the distro again.
+    wslDistro = lib.mkOption {
+      type = lib.types.str;
+      default = "Debian";
+      example = "NixOS";
+      description = ''
+        Name of this WSL distribution as `wsl.exe -d' spells it; `wsl.exe -l -q'
+        lists them. Windows-side commands that call back into WSL have to name
+        it explicitly. Omitting `-d' would use the Windows default distribution,
+        which is a per-machine setting this flake does not control and cannot
+        see -- so the hooks would run against whichever distro someone last set
+        as default, or fail, depending on a value outside the repository.
+      '';
+    };
 
     files = lib.mkOption {
       default = {};
