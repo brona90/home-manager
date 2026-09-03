@@ -17,6 +17,19 @@
 ;; status, and the language table below is a table of EXPECTATIONS -- if a mode
 ;; silently changes, the gate goes red rather than printing a different answer.
 ;;
+;; "Decides the exit status" is meant literally, and only became literal once:
+;; `my/verify-run-or-signal' at the foot of this file SIGNALS when the failure
+;; count is non-zero, and verify.sh's stage 4 reads that as emacsclient's exit
+;; code.  Before that it read the report's own "=== PASS" banner back out of
+;; the file these checks write -- the one stage in the gate that grepped for
+;; good news was the stage the gate exists for.
+;;
+;; And the report was FORGEABLE while that lasted.  Almost every line here
+;; interpolates captured text, and a newline inside any of it landed the rest
+;; at column 0 wearing the gate's own framing.  `my/verify--push' is now the
+;; only thing that appends a line, and it is where that is made impossible;
+;; the commentary above `my/verify--continuation' is the argument.
+;;
 ;; It walks the ACTUAL leader keymap rather than a hand-written list of
 ;; commands.  That distinction is the whole point: a hand-written list is how
 ;; six void commands got shipped once already.  The keymap is the thing the
@@ -31,15 +44,118 @@
 (defvar my/verify--lines nil "Report lines, in order.")
 (defvar my/verify--failures 0 "Number of failed assertions.")
 
+
+;;;; ---------------------------------------------------------------------
+;;;; The report writer.  ONE function appends a line, and DATA NEVER STARTS
+;;;; ONE.
+;;;; ---------------------------------------------------------------------
+
+;; The report is read by a human and, historically, by a grep.  Its framing --
+;; `== (x) ... ==', `=== PASS: n failed assertion(s) ===', `ok   ', `FAIL: '
+;; -- is meaningful only if the gate is the only thing that can write it at
+;; column 0.  It was not.  Nearly every line below interpolates something
+;; CAPTURED from the running Emacs: command symbols walked out of the leader
+;; map, `*Messages*' lines, lilypond's own stderr arriving as flymake
+;; diagnostic text, error objects from `condition-case'.  A newline anywhere
+;; in any of that put the remainder of it at column 0, as its own line, in the
+;; gate's own voice.  A command named
+;;
+;;     my/void-cmd\n=== PASS: 0 failed assertion(s) ===
+;;
+;; made a run that ended `=== FAIL: 1 failed assertion(s) ===' also contain a
+;; `=== PASS' line for the old `grep -q "^=== PASS"' to find.
+;;
+;; WHY NOT `%S'.  Because it does not do the job, which is measurable in one
+;; line of batch Emacs:
+;;
+;;     (format "%S" "a\n=== PASS ===")  =>  "a<NEWLINE>=== PASS ==="
+;;
+;; `print-escape-newlines' is nil by default, so `prin1' emits the newline
+;; RAW inside the quotes; binding it to t fixes strings and still not symbols,
+;; where `prin1' writes a backslash and then a literal newline.  `%S' would
+;; have defeated one particular grep pattern by an escaping table -- luck
+;; again, one layer further down.
+;;
+;; WHY NOT ESCAPE THE NEWLINE TO `\n'.  It closes the hole, and it destroys
+;; the one place the hole matters most: a multi-line lilypond error is the
+;; text a human most needs to read, and folding it onto one line with
+;; backslashes is how a report stops being read at all.
+;;
+;; SO: the report is LINE-STRUCTURED, and the structure is enforced here
+;; rather than trusted at ~50 call sites.  A newline inside DATA still breaks
+;; the line -- that is what keeps it readable -- but the continuation is
+;; pushed behind `my/verify--continuation', so no captured byte can ever
+;; occupy column 0.  Two consequences the rest of this file must respect:
+;;
+;;   * format strings passed to `my/verify--say' and friends are SINGLE-LINE.
+;;     A section header does not smuggle its blank line in as "\n== ..."; it
+;;     calls `my/verify--section', which pushes the blank line and the header
+;;     as two lines.  Any "\n" left in a format string would now be treated
+;;     as data and indented, which is visible immediately.
+;;   * a format string never BEGINS with a directive.  `my/verify--ok' and
+;;     `my/verify--fail' guarantee it structurally by prepending their own
+;;     tag; for `my/verify--say' it is a convention, and checks/emacs-gate.nix
+;;     fails the build if a call site breaks it.
+
+(defconst my/verify--continuation "       | "
+  "Prefix for every line of a report entry after its first.
+Any line starting with this came from CAPTURED text, not from the gate.")
+
+(defun my/verify--visible (text)
+  "Return TEXT with every control character except newline and tab spelled out.
+Newlines are left alone: `my/verify--push' turns them into indented
+continuation lines, which is what keeps multi-line captured text
+readable.  The rest of the C0 range is rendered as \\xNN because a
+carriage return or an ESC forges framing without containing a newline --
+one repaints the line a terminal has already drawn, the other can erase
+it outright."
+  (mapconcat (lambda (c)
+               (if (or (and (< c #x20) (/= c ?\n) (/= c ?\t))
+                       (= c #x7f))
+                   (format "\\x%02x" c)
+                 (char-to-string c)))
+             text ""))
+
+(defun my/verify--push (text)
+  "Append TEXT to the report as one or more lines.
+TEXT's FIRST line is appended as given: its opening characters come from
+a format string in this file, never from data.  Every LATER line exists
+only because a newline arrived inside an ARGUMENT, so it is appended
+behind `my/verify--continuation' and cannot reach column 0."
+  (let ((lines (split-string (my/verify--visible text) "\n")))
+    (push (car lines) my/verify--lines)
+    (dolist (line (cdr lines))
+      (push (concat my/verify--continuation line) my/verify--lines))))
+
 (defun my/verify--say (fmt &rest args)
-  (push (apply #'format fmt args) my/verify--lines))
+  "Append a plain report line: FMT formatted with ARGS.
+FMT must be a single-line literal that does not begin with a format
+directive.  See the commentary above `my/verify--continuation'."
+  (my/verify--push (apply #'format fmt args)))
 
 (defun my/verify--fail (fmt &rest args)
+  "Count a failed assertion and append it to the report as FMT with ARGS."
   (cl-incf my/verify--failures)
-  (push (concat "FAIL: " (apply #'format fmt args)) my/verify--lines))
+  (my/verify--push (concat "FAIL: " (apply #'format fmt args))))
 
 (defun my/verify--ok (fmt &rest args)
-  (push (concat "ok   " (apply #'format fmt args)) my/verify--lines))
+  "Append a passed assertion to the report as FMT with ARGS."
+  (my/verify--push (concat "ok   " (apply #'format fmt args))))
+
+(defun my/verify--section (title)
+  "Open a report section headed TITLE, preceded by a blank line.
+This exists so that no format string needs a leading newline; see the
+commentary above `my/verify--continuation' for why that matters."
+  (my/verify--push "")
+  (my/verify--push (concat "== " title " ==")))
+
+(defun my/verify--banner (verdict failures)
+  "Append the report's closing banner: VERDICT and the FAILURES count.
+Written through `my/verify--push' as its own line rather than as a
+format string opening with a newline, so that the one line stating the
+verdict is the one line nothing captured could have produced."
+  (my/verify--push "")
+  (my/verify--push (format "=== %s: %d failed assertion(s) ===" verdict failures)))
 
 
 ;;;; ---------------------------------------------------------------------
@@ -97,7 +213,7 @@ LABEL is an inline keymap label, which is name enough on its own."
 
 (defun my/verify-leader ()
   "Assert every command reachable from the SPC leader map is `fboundp' and named."
-  (my/verify--say "\n== (a) leader map: every command bound, every key named ==")
+  (my/verify--section "(a) leader map: every command bound, every key named")
   ;; Evil normal state, in a real buffer: the leader is an evil INTERCEPT map
   ;; and `key-binding' does not see it from whatever state the daemon is in.
   (with-temp-buffer
@@ -136,9 +252,13 @@ LABEL is an inline keymap label, which is name enough on its own."
                              (length unnamed))
             (dolist (u (seq-take unnamed 20))
               (my/verify--say "       %-18s %s" (car u) (nth 1 u))))
-          (my/verify--say
-           "     borrowed maps (SPC h/p/w): %d of %d named -- unnamed ones are\n     Emacs's own help-map tail and are not a criterion"
-           (- (length borrowed) (length unnamed-borrowed)) (length borrowed)))))))
+          ;; Two calls, not one string with a newline in it: a format string
+          ;; that spans lines would be indistinguishable, to
+          ;; `my/verify--push', from captured text that spans lines.
+          (my/verify--say "     borrowed maps (SPC h/p/w): %d of %d named -- unnamed ones are"
+                          (- (length borrowed) (length unnamed-borrowed))
+                          (length borrowed))
+          (my/verify--say "     Emacs's own help-map tail and are not a criterion"))))))
 
 
 ;;;; ---------------------------------------------------------------------
@@ -186,7 +306,7 @@ LABEL is an inline keymap label, which is name enough on its own."
 
 (defun my/verify-languages (dir)
   "Open one sample file per language from DIR and check mode and parser."
-  (my/verify--say "\n== (b) languages: major mode and tree-sitter parser ==")
+  (my/verify--section "(b) languages: major mode and tree-sitter parser")
   ;; eglot-ensure is NEUTERED for the duration.  It is hooked into most of
   ;; these modes, and letting it fire would start jdtls and
   ;; haskell-language-server for real -- turning a 10-second gate into minutes
@@ -258,7 +378,7 @@ LABEL is an inline keymap label, which is name enough on its own."
 
 (defun my/verify-messages ()
   "Assert *Messages* contains no warning or error lines."
-  (my/verify--say "\n== (c) *Messages*: warnings and errors ==")
+  (my/verify--section "(c) *Messages*: warnings and errors")
   (let* ((text (with-current-buffer "*Messages*" (buffer-string)))
          (bad (seq-filter
                (lambda (line)
@@ -302,7 +422,7 @@ LABEL is an inline keymap label, which is name enough on its own."
 
 (defun my/verify-eglot ()
   "Assert the eglot contacts and the eglot-ensure hook set."
-  (my/verify--say "\n== (d) eglot: contacts and hooks ==")
+  (my/verify--section "(d) eglot: contacts and hooks")
   (require 'eglot)
   ;; The one gap in eglot's 52 built-in entries.
   (let ((toml (assq 'toml-ts-mode eglot-server-programs)))
@@ -391,7 +511,7 @@ LABEL is an inline keymap label, which is name enough on its own."
 
 (defun my/verify-claude ()
   "Assert the Claude integration: eager review, deferred session, bottom window."
-  (my/verify--say "\n== (e) claude: diff review, session, window rule ==")
+  (my/verify--section "(e) claude: diff review, session, window rule")
 
   ;; -- the eager half -------------------------------------------------------
   (if (featurep 'claude-diff)
@@ -587,7 +707,7 @@ a broken backend rather than like a broken test."
 
 (defun my/verify-lilypond (dir)
   "Assert the LilyPond integration using sample files from DIR."
-  (my/verify--say "\n== (f) lilypond: mode, flymake backend, build-on-save ==")
+  (my/verify--section "(f) lilypond: mode, flymake backend, build-on-save")
   (require 'flymake)
 
   ;; -- how it was found -----------------------------------------------------
@@ -729,7 +849,7 @@ REGEXP is only used for the message.  Returns non-nil on success."
 
 (defun my/verify-popups ()
   "Assert the popup layer: side window, no mode line, toggle both ways."
-  (my/verify--say "\n== (g) popups: bottom side window, modeline, SPC ~ ==")
+  (my/verify--section "(g) popups: bottom side window, modeline, SPC ~")
 
   (if (featurep 'my-popups)
       (my/verify--ok "my-popups is loaded")
@@ -967,7 +1087,7 @@ that matches the retired `doom-gruvbox' -- hard is #1d2021 and soft #32302f.")
 
 (defun my/verify-appearance ()
   "Assert the theme, its palette, and the italic syntax faces."
-  (my/verify--say "\n== (h) appearance: gruvbox palette, italics, modeline ==")
+  (my/verify--section "(h) appearance: gruvbox palette, italics, modeline")
 
   ;; EXACTLY one theme.  `equal' against a one-element list, not `memq': two
   ;; stacked themes is a real and silent failure mode -- the second one wins
@@ -1069,7 +1189,7 @@ checks can only agree with itself.")
 
 (defun my/verify-org-gcal-timer ()
   "Assert the background fetch timer exists and is inhibited here, then cancel it."
-  (my/verify--say "\n== (i) org-gcal: background fetch timer (and why it must not fire here) ==")
+  (my/verify--section "(i) org-gcal: background fetch timer (and why it must not fire here)")
 
   (if (fboundp 'my/org-gcal-fetch-safe)
       (my/verify--ok "my/org-gcal-fetch-safe is defined")
@@ -1140,13 +1260,42 @@ checks can only agree with itself.")
           ;; wrong while doing so must land in *Messages* before it is read.
           (my/verify-messages))
       (error (my/verify--fail "gate itself errored: %S" err)))
-    (my/verify--say "\n=== %s: %d failed assertion(s) ==="
-                    (if (zerop my/verify--failures) "PASS" "FAIL")
-                    my/verify--failures)
+    (my/verify--banner (if (zerop my/verify--failures) "PASS" "FAIL")
+                       my/verify--failures)
     (let ((report (mapconcat #'identity (nreverse my/verify--lines) "\n")))
       (when out
         (with-temp-file out (insert report "\n")))
       report)))
+
+(defun my/verify-run-or-signal ()
+  "Run every check, then SIGNAL if any assertion failed.
+
+This is what ../verify.sh calls, and it exists so that stage 4 can
+decide on an EXIT CODE rather than on the text of the report.
+`emacsclient' is indifferent to the value a form returns -- nil, t,
+0 and \"\" all leave it exiting 0 -- and turns a server-side signal
+into exit status 1.  Signalling is therefore the only way a failed
+assertion in HERE becomes a non-zero status out THERE.
+
+Handing the count back for the shell to read would be the same
+defect in a new spelling.  The report used to be searched for a
+`=== PASS' banner, and captured text -- void command symbols in
+section (a), *Messages* lines in section (c), lilypond's stderr in
+section (f) -- stayed clear of column 0 only by the accident of a
+format string opening with seven spaces.  `my/verify--push' is
+what makes that structural rather than accidental now, which
+matters even though nothing greps the report any more: the report
+is what a human reads to learn WHICH assertion failed, and one
+that the text it quotes can rewrite is not evidence.
+
+`my/verify-run' is unchanged and is still the one to call by hand:
+it REPORTS, and this one DECIDES.  Returns nil, so a passing run
+prints nil back at the shell instead of the whole report."
+  (my/verify-run)
+  (unless (zerop my/verify--failures)
+    (error "Emacs-vanilla gate: %d failed assertion(s); see the report above"
+           my/verify--failures))
+  nil)
 
 (provide 'verify)
 ;;; verify.el ends here

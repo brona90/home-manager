@@ -227,7 +227,7 @@ This repo is designed to be easily forked:
 │   ├── windows-bridge.nix   # windows-bridge-attribution
 │   ├── dev-shell.nix      # devshell-stays-light, install-hooks-installs-hooks
 │   ├── docker-terminal.nix  # docker-terminal-no-ssh-mount
-│   ├── emacs-gate.nix     # ci-emacs-gate
+│   ├── emacs-gate.nix     # ci-emacs-gate, emacs-report-framing
 │   ├── lint-tools.nix     # lint-tools-pinned
 │   ├── shell-scripts.nix  # background-jobs-close-fds, devshell-hook-lint
 │   └── tmux-helper.nix    # tmux-helper-build, tmux-helper-vet (builds, not guards)
@@ -1037,6 +1037,7 @@ documents the whole interface a guard file is handed.
 | `claude-settings-guards` | Claude Code attributing itself in commits/PRs (`attribution` must be `{commit: "", pr: ""}`), and `mcp__emacs__emacs_eval` being auto-allowed — arbitrary elisp is arbitrary shell |
 | `docker-terminal-no-ssh-mount` | `~/.ssh` being bind-mounted into a container. It holds the sops-decrypted private key; SSH into containers is agent-forwarding only |
 | `ci-emacs-gate` | (a) `build-home` regaining a job-level `if`, (b) no step running `modules/emacs/vanilla/verify.sh`, (c) anything in `ci.yml` running `emacs --batch` — batch does not load `init.el`, so a batch check reports success having loaded nothing |
+| `emacs-report-framing` | Captured text being able to write the gate report's own framing. Every section of `verify.el` interpolates something read out of the running Emacs — leader-map command symbols, `*Messages*` lines, lilypond's stderr — and a newline inside any of it used to land the rest at column 0 in the gate's voice, so a run ending `=== FAIL` could also carry a `=== PASS` line. Runs the real report writer over text shaped like the framing and requires exactly one column-0 banner |
 | `lint-tools-pinned` | A linter resolved through `nixpkgs#` (that is the *runner's* registry, not this flake) in either the CI lint job or `verify.sh`, and `--impure` reappearing in `verify.sh` |
 | `devshell-stays-light` | The git-hooks.nix installer or the linters getting back onto the `cd` path. That was ~56s of evaluation on every `cd` into the repo after a lock bump — and the lock bumps weekly, unattended |
 | `install-hooks-installs-hooks` | The counterweight to the above: `nix run .#install-hooks` must really run the upstream installer and must not stamp success it did not achieve |
