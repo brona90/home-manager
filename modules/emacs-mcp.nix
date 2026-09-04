@@ -55,6 +55,10 @@ in {
     my.claudeCode.mcpServers.emacs = {
       type = "stdio";
       command = "${mcpServer}/bin/emacs-mcp-server";
+      # Crosses. The daemon this talks to over emacsclient runs in WSL and is the
+      # only Emacs on the machine, so a Windows session that could not reach it
+      # would have no editor integration rather than a local one.
+      windowsProfileBin = "emacs-mcp-server";
     };
   };
 }

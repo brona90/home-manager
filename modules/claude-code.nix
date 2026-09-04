@@ -343,6 +343,107 @@
       };
     });
 
+  # An MCP server, as contributed by whichever module owns it.
+  #
+  # Typed rather than `anything' because these entries now feed TWO consumers:
+  # the WSL-side merge into ~/.claude.json, which takes them as written, and the
+  # Windows fragment below, which has to take them APART -- distro, environment,
+  # binary, arguments -- to build a crossing out of them. A free-form attrset
+  # gives the second consumer nothing it can take apart safely, and gives the
+  # author of the sixth server no place where the requirement is written down.
+  mcpServerType = lib.types.submodule {
+    options = {
+      type = lib.mkOption {
+        type = lib.types.str;
+        default = "stdio";
+        description = ''
+          MCP transport. Only "stdio" crosses to Windows the way
+          windowsMcpServers renders it: an http server is reached by URL and
+          wants no wsl.exe at all. A non-stdio server must therefore set
+          windowsProfileBin to null, and windowsMcpServers throws if it does not,
+          rather than emitting an entry that would run a URL as a program.
+        '';
+      };
+      command = lib.mkOption {
+        type = lib.types.str;
+        description = ''
+          What the WSL-side Claude Code runs, as a /nix/store path.
+          ~/.claude.json on this host is re-merged on every switch, so a store
+          path here is refreshed whenever it changes; checks/mcp-servers.nix
+          requires it to be one, because a command that is not a store path
+          cannot have been built by this flake at all.
+        '';
+      };
+      args = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [];
+        description = "Arguments appended to `command`, on both sides of the boundary.";
+      };
+      env = lib.mkOption {
+        type = lib.types.attrsOf lib.types.str;
+        default = {};
+        description = ''
+          Environment the server process needs. NOT a place for a secret: the
+          Windows fragment carries every value here on the wsl.exe command line
+          into C:\Users\<winuser>\.claude.json, a world-readable file that no
+          switch ever rewrites in full. A server needing credentials reads them
+          from a file inside WSL instead, the way porkbunMcpWrapper above reads
+          its two sops secrets at launch. searxng is the honest case this option
+          exists for: SEARXNG_URL is a localhost port number, not a credential.
+        '';
+      };
+      windowsProfileBin = lib.mkOption {
+        # `nullOr' with its emptyValue stripped, and that override is the entire
+        # mechanism -- without it this option cannot be required AT ALL.
+        #
+        # lib/types.nix gives nullOr `emptyValue = { value = null; }', and
+        # lib/modules.nix:1261 reads it: an option with no definition and no
+        # default falls back to its type's emptyValue if that carries a `value',
+        # and only throws "used but not defined" if it does not. So the obvious
+        # spelling of "required, and null means opt out" quietly means
+        # "defaults to null" -- a new MCP server that never mentions
+        # windowsProfileBin evaluates cleanly, is filtered out of the fragment,
+        # and is simply absent from Windows. That is precisely and exactly the
+        # failure this option exists to prevent, reintroduced by the option
+        # meant to prevent it.
+        #
+        # Found by mutation and not by reading, which is the only reason it is
+        # not still here: deleting the line from modules/emacs-mcp.nix left
+        # `nix eval' at exit 0 with the emacs server missing from the fragment
+        # and nothing said anywhere. Removing the emptyValue restores the
+        # module system's error, so the omission is a build failure naming the
+        # option and the module that has to answer for it.
+        type = lib.types.nullOr lib.types.str // {emptyValue = {};};
+        description = ''
+          Name of the wrapper under ~/.nix-profile/bin that the Windows-side
+          Claude Code launches for this server, or null for "this server is
+          deliberately WSL-only".
+
+          THERE IS NO DEFAULT, and the absence is the guard. Declaring an MCP
+          server is the one moment somebody knows whether it belongs on the
+          Windows half of this machine, and either default would let that
+          question go unasked: null-by-default withholds the server silently, a
+          name-by-default promises one that may not be there. Required means the
+          evaluation fails until the decision is stated, so the decision is
+          recorded next to the server rather than as an absence somewhere else.
+          That absence is what this option was written for -- claude-kg and
+          orrery were registered by hand in the Windows .claude.json while
+          searxng, emacs and porkbun were not registered anywhere, so a Windows
+          session had two MCP servers where a WSL session had five, and neither
+          file said the other existed.
+
+          A bare NAME rather than a command, for exactly the reason on the
+          identically-named field of hookCommandType above: the Windows
+          .claude.json is MERGED, never regenerated, so a /nix/store path
+          recorded there goes on naming a generation garbage collection is free
+          to remove. checks/windows-bridge.nix enforces both halves of that --
+          no store path reaches the fragment, and the name is one home.packages
+          actually installs.
+        '';
+      };
+    };
+  };
+
   # Every event renders its contributed commands the same way; only the list
   # and the default timeout baked into its type differ.
   hookEntries = commands:
@@ -372,6 +473,61 @@
       inherit (c) timeout;
     })
     (lib.filter (c: c.windowsProfileBin != null) commands);
+
+  # Environment for a CROSSED server, carried as argv rather than as the entry's
+  # JSON `env'.
+  #
+  # `env' in a Windows .claude.json entry sets variables for wsl.exe -- the
+  # WINDOWS process -- and WSL does not forward them to the Linux command, so the
+  # variable would be set on the far side of the boundary from the program that
+  # reads it, and the server would see nothing. Prefixing with env(1) sets them
+  # where the server actually runs.
+  #
+  # /usr/bin/env by ABSOLUTE PATH, because a non-login `wsl.exe -- ...' gets the
+  # system PATH (/usr/bin) and not ~/.nix-profile/bin: the same fact that makes
+  # windowsProfileBin necessary in the first place. A bare `env' would resolve
+  # against whatever the distro happens to ship, which is a coin flip written as
+  # a configuration.
+  windowsMcpEnvArgs = env:
+    lib.optionals (env != {})
+    (["/usr/bin/env"] ++ lib.mapAttrsToList (k: v: "${k}=${v}") env);
+
+  # The same servers, rendered for the OTHER Claude Code: the one running
+  # natively on Windows against work that lives in WSL.
+  #
+  # Derived from cfg.mcpServers -- the SAME attrset the activation merge reads --
+  # and never from a second list beside it. That is the whole fix, and it is the
+  # fix windowsHookEntries above already made for hooks: two hand-written entries
+  # in C:\Users\<winuser>\.claude.json registered claude-kg and orrery and
+  # stopped there, unreachable by `hms', invisible to `nix flake check', and
+  # absent from a rebuilt machine. Everything a module declares now crosses, or
+  # states in its own declaration why it does not.
+  #
+  # Shape kept as those two hand-written entries had it, with one addition: `--'
+  # terminates wsl.exe's own option parsing, so a server whose args begin with a
+  # dash reaches the server instead of being eaten by wsl.exe.
+  windowsMcpServers =
+    lib.mapAttrs (
+      name: s:
+        lib.throwIf (s.type != "stdio") ''
+          my.claudeCode.mcpServers.${name} has type "${s.type}" and a
+          windowsProfileBin. Only a stdio server crosses this way -- the fragment
+          renders `wsl.exe -- <binary>', which would run a URL as a program.
+          Set windowsProfileBin = null for a server that is not stdio.
+        '' {
+          inherit (s) type;
+          command = "wsl.exe";
+          args =
+            ["-d" wslDistro "--"]
+            ++ windowsMcpEnvArgs s.env
+            ++ ["${config.home.homeDirectory}/.nix-profile/bin/${s.windowsProfileBin}"]
+            ++ s.args;
+          # Empty deliberately; see windowsMcpEnvArgs. A value here would be set
+          # for wsl.exe on the Windows side and never reach the server.
+          env = {};
+        }
+    )
+    (lib.filterAttrs (_: s: s.windowsProfileBin != null) cfg.mcpServers);
 
   settings = {
     # No agent attribution in commit messages or PR bodies (no
@@ -643,12 +799,15 @@ in {
     };
 
     mcpServers = lib.mkOption {
-      type = lib.types.attrsOf lib.types.anything;
+      type = lib.types.attrsOf mcpServerType;
       default = {};
       description = ''
         User-scope MCP servers to merge into ~/.claude.json on activation. Other
         modules contribute entries (e.g. claude-kg, searxng, emacs-mcp); this module
-        adds porkbun.
+        adds porkbun. Every entry is rendered TWICE -- here for WSL, and by
+        windowsMcpServers above for the Windows-side .claude.json -- so each one
+        has to say which wrapper the Windows half launches, or that it launches
+        none. See mcpServerType.windowsProfileBin for why that has no default.
       '';
     };
 
@@ -711,6 +870,16 @@ in {
       claudeCode.mcpServers.porkbun = {
         type = "stdio";
         command = "${porkbunMcpWrapper}/bin/porkbun-mcp";
+        # Crosses, and safely -- which was worth establishing before writing it,
+        # because this is the one server here that handles credentials. The
+        # wrapper takes NOTHING from `env': it reads the Porkbun API key and
+        # secret key out of ~/.config/sops-nix/secrets inside WSL at launch, so
+        # the Windows entry carries a program name and no secret. Had the keys
+        # been passed as environment instead, windowsMcpEnvArgs would have
+        # rendered both in plaintext into C:\Users\<winuser>\.claude.json -- a
+        # world-readable file nothing ever rewrites in full -- and the right
+        # answer would have been null with that reason written on this line.
+        windowsProfileBin = "porkbun-mcp";
       };
 
       windowsBridge.files = {
@@ -769,6 +938,23 @@ in {
           mode = "own";
           text = lib.concatStringsSep "\n\n" cfg.claudeMdSections;
         };
+
+        # The MCP servers, for the Windows Claude Code. Same source attrset as
+        # the WSL activation merge, rendered as a crossing by windowsMcpServers
+        # above -- which is the only reason the two sides cannot drift apart.
+        #
+        # `merge-json' is not a preference here, it is the only survivable mode,
+        # and the target is why. This is not a settings file: it is 60 KB of
+        # state the application writes itself -- onboarding flags, feature and
+        # model caches, OAuth bookkeeping, and the per-project history of every
+        # directory Claude Code has ever been opened in. `own' would replace all
+        # eighty-odd top-level keys of it with this single one on the next
+        # switch. The bridge merges `mcpServers' and leaves the rest as found.
+        claude-mcp = {
+          target = ".claude.json";
+          mode = "merge-json";
+          text = builtins.toJSON {mcpServers = windowsMcpServers;};
+        };
       };
     };
 
@@ -782,7 +968,16 @@ in {
       # thing the flake does not install actually costs. The WSL side still
       # invokes it by store path, so this is the only thing making the Windows
       # command resolve to anything at all.
-      packages = [pkgs.claude-code homeWriteGuard];
+      #
+      # porkbunMcpWrapper is in the profile for the same reason, and was absent
+      # for the same reason statusline-command.sh was: nothing installed it,
+      # because until now nothing named it by name. The WSL side registers that
+      # server by store path and has worked throughout, so the omission was
+      # invisible from here; the Windows entry names
+      # ~/.nix-profile/bin/porkbun-mcp, which did not exist. Declaring the server
+      # to cross is what makes installing it necessary, and
+      # windows-bridge-profile-bins-exist is what refuses one half of the pair.
+      packages = [pkgs.claude-code homeWriteGuard porkbunMcpWrapper];
 
       file.".claude/settings.json".text = builtins.toJSON settings;
 

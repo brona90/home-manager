@@ -100,15 +100,20 @@ in {
 
   config = lib.mkIf cfg.enable {
     # On PATH as well as registered below. Claude Code running natively on
-    # Windows cannot use a /nix/store path that changes on every rebuild, so
-    # its hand-registered entry points at ~/.nix-profile/bin/orrery-mcp --
-    # the same stable profile path claude-kg is registered under on that side.
+    # Windows cannot use a /nix/store path that changes on every rebuild, so it
+    # names ~/.nix-profile/bin/orrery-mcp instead -- which only resolves because
+    # the launcher is here. That entry used to be hand-written in the Windows
+    # .claude.json; windowsProfileBin below is what generates it now, and
+    # checks/windows-bridge.nix is what refuses the name if this line ever goes.
     home.packages = [launcher];
 
     # Register as a user-scope MCP server with Claude Code (merged into ~/.claude.json).
     my.claudeCode.mcpServers.orrery = {
       type = "stdio";
       command = "${launcher}/bin/orrery-mcp";
+      # The dashboard is org files in WSL; a Windows session asking about them
+      # has to cross to reach them at all.
+      windowsProfileBin = "orrery-mcp";
     };
   };
 }

@@ -356,6 +356,12 @@ in {
       mcpServers.claude-kg = {
         type = "stdio";
         command = "${pkg}/bin/kg-server";
+        # The graph is the shared memory of every Claude on this machine, so the
+        # Windows half has to reach the SAME Qdrant collection rather than none.
+        # This entry was hand-written in the Windows .claude.json before now,
+        # which is why the recall hooks above crossed while nothing recorded that
+        # the server itself had to. `pkg' puts kg-server in home.packages above.
+        windowsProfileBin = "kg-server";
       };
       # Deliberately modest: kg-capture-hook detaches the extraction with
       # setsid and returns, so the hook's own runtime is a JSON parse and a

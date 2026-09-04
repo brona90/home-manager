@@ -74,6 +74,31 @@ import ./tmux-helper.nix {inherit pkgs;}
     winTargets =
       lib.mapAttrsToList (_: f: f.target)
       homeConfigs."${user.username}@${system}".config.my.windowsBridge.files;
+    # The merged ones, with their names, for the no-store-path guard. Selected by
+    # MODE rather than by name so that a merged file added later is scanned the
+    # moment it is declared: a store path is survivable in an owned file, which
+    # is rewritten in full on every switch, and is not survivable in a merged one,
+    # which nothing revisits between switches.
+    winMergedFiles =
+      lib.mapAttrsToList (name: f: {
+        inherit name;
+        inherit (f) target text;
+      })
+      (lib.filterAttrs (_: f: f.mode == "merge-json")
+        homeConfigs."${user.username}@${system}".config.my.windowsBridge.files);
+    # Every ~/.nix-profile/bin name the Windows side is told to run, from both
+    # kinds of contribution. Read from the option values rather than by grepping
+    # the rendered fragments, so the guard is asking about what the modules
+    # DECLARED -- a name misspelled identically in both places is still caught,
+    # because the profile is the third party to the comparison.
+    winProfileBins = let
+      cc = homeConfigs."${user.username}@${system}".config.my.claudeCode;
+      fromHooks =
+        map (h: h.windowsProfileBin)
+        (cc.sessionStartCommands ++ cc.sessionEndCommands ++ cc.userPromptSubmitCommands);
+      fromMcp = lib.mapAttrsToList (_: s: s.windowsProfileBin) cc.mcpServers;
+    in
+      lib.filter (n: n != null) (fromHooks ++ fromMcp);
     dev = devShellFor system;
   in
     import ./claude-settings.nix {inherit pkgs settingsText;}
@@ -83,7 +108,7 @@ import ./tmux-helper.nix {inherit pkgs;}
       homeDirectory = homeConfigs."${user.username}@${system}".config.home.homeDirectory;
     }
     // import ./windows-bridge.nix {
-      inherit lib pkgs winSettingsText winTargets;
+      inherit lib pkgs winSettingsText winTargets winMergedFiles winProfileBins;
       # A Windows hook command names a binary under ~/.nix-profile/bin. Whether
       # that binary is IN the profile is a fact about home.packages, not about
       # the fragment, so the guard needs both halves to compare them.

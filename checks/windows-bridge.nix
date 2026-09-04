@@ -71,6 +71,18 @@
 #                       "is it installed" is an identity comparison rather than
 #                       a search for a name.
 #   homePackages     -- config.home.packages, for the same comparison.
+#   winMergedFiles   -- every my.windowsBridge.files entry whose mode is
+#                       "merge-json", as {name, target, text}. DERIVED from the
+#                       option rather than enumerated here, which is the whole
+#                       point of it: no-store-paths below used to scan
+#                       winSettingsText alone, so it covered the one merged file
+#                       that existed when it was written and would have covered
+#                       the second one never. A merged file is exactly where a
+#                       store path is unsurvivable, so the guard has to follow
+#                       the mode, not a list somebody remembers to extend.
+#   winProfileBins   -- every non-null windowsProfileBin the configuration
+#                       declares, from BOTH the contributed hook commands and
+#                       my.claudeCode.mcpServers, as a flat list of names.
 {
   lib,
   pkgs,
@@ -78,6 +90,8 @@
   winTargets,
   homeWriteGuard,
   homePackages,
+  winMergedFiles,
+  winProfileBins,
 }: {
   windows-bridge-attribution =
     pkgs.runCommand "windows-bridge-attribution" {
@@ -92,32 +106,155 @@
       touch $out
     '';
 
-  # No /nix/store path may reach the Windows fragment.
+  # No /nix/store path may reach ANY merged Windows fragment.
   #
-  # This is the invariant that makes generating the Windows hooks safe at all.
+  # This is the invariant that makes generating the Windows side safe at all.
   # The WSL settings.json is rewritten from scratch on every switch, so a store
-  # path in it is refreshed the moment it changes. The Windows one is MERGED:
+  # path in it is refreshed the moment it changes. A merged file is not:
   # activation writes the managed keys and leaves the file otherwise as it found
   # it, and nothing revisits it in between. A store path recorded there goes on
   # naming a generation that garbage collection is free to remove, and the
-  # failure is silent -- the hook stops running on Windows while continuing to
+  # failure is silent -- the thing stops working on Windows while continuing to
   # work in WSL, which is the exact shape of drift this bridge exists to stop.
   #
   # Hence windowsProfileBin taking a NAME under ~/.nix-profile/bin instead of a
   # command. This guard is what keeps that from being merely a convention.
+  #
+  # SCOPED BY MODE, NOT BY NAME. It used to read winSettingsText and nothing
+  # else, which was correct exactly as long as .claude/settings.json was the only
+  # merged file -- and the .claude.json MCP fragment, added later, is a second
+  # one built from the same windowsProfileBin machinery and carrying the same
+  # hazard. Enumerating the files here would have meant the guard silently did
+  # not cover it, and the way that omission announces itself is an MCP server
+  # that stops starting on Windows some weeks after an unrelated garbage
+  # collection. Following `mode == "merge-json"' means the next merged file is
+  # covered on the day it is declared, by nobody remembering anything. Owned
+  # files are deliberately out of scope: they are rewritten in full on every
+  # switch, so a store path in one is refreshed exactly like the WSL settings.
   windows-bridge-no-store-paths =
     pkgs.runCommand "windows-bridge-no-store-paths" {
-      settings = winSettingsText;
-      passAsFile = ["settings"];
+      nativeBuildInputs = [pkgs.jq];
+      manifest = builtins.toJSON winMergedFiles;
+      passAsFile = ["manifest"];
     } ''
-      if grep -o '/nix/store/[^"]*' "$settingsPath"; then
-        echo 'GUARD: the Windows settings.json fragment names the /nix/store path(s) above.'
-        echo '       That file is merged, not regenerated, so the path is never refreshed:'
-        echo '       it dangles as soon as the store path changes and the hook stops running,'
-        echo '       silently, on the Windows side only.'
-        echo '       Name the wrapper through ~/.nix-profile/bin instead (windowsProfileBin).'
+      count=$(jq 'length' "$manifestPath")
+
+      # A scan of nothing passes, and would go on passing after a refactor that
+      # stopped this guard being handed any files at all. checks/dev-shell.nix
+      # records what that costs: a guard that inspects the wrong thing is green
+      # in exactly the way a guard that inspects the right thing is.
+      if [ "$count" -eq 0 ]; then
+        echo 'GUARD: no merge-json files were handed to this guard, so it scanned nothing.'
+        echo '       modules/claude-code.nix contributes at least .claude/settings.json and'
+        echo '       .claude.json unconditionally, so an empty set means winMergedFiles in'
+        echo '       checks/default.nix stopped deriving them, not that the hazard is gone.'
         exit 1
       fi
+
+      fail=0
+      for i in $(seq 0 $((count - 1))); do
+        name=$(jq -r ".[$i].name" "$manifestPath")
+        target=$(jq -r ".[$i].target" "$manifestPath")
+        jq -r ".[$i].text" "$manifestPath" > fragment.json
+        if grep -o '/nix/store/[^"]*' fragment.json; then
+          echo "GUARD: the Windows fragment '$name' ($target) names the /nix/store path(s) above."
+          echo '       That file is merged, not regenerated, so the path is never refreshed:'
+          echo '       it dangles as soon as the store path changes and the hook stops running,'
+          echo '       silently, on the Windows side only.'
+          echo '       Name the wrapper through ~/.nix-profile/bin instead (windowsProfileBin).'
+          fail=1
+        fi
+      done
+      [ "$fail" -eq 0 ] || exit 1
+      touch $out
+    '';
+
+  # Every name crossed through ~/.nix-profile/bin is a name the profile ships.
+  #
+  # windows-bridge-profile-bin-installed below asks the same question about one
+  # package by identity, which is the stronger answer where it applies: it proves
+  # THAT derivation is installed, not merely that something provides the name.
+  # It cannot scale, because it has to be told which derivation to look for, and
+  # there are now eight crossed names contributed by five modules: three hooks
+  # and five MCP servers. (The home-root guard's crossing is deliberately not
+  # among them. It is rendered directly by modules/claude-code.nix rather than
+  # contributed to one of the hook lists, so it does not appear in the options
+  # this reads -- and it does not need to, because the identity check below is
+  # the stronger statement about exactly that binary.)
+  #
+  # So this one asks the weaker question of ALL of them, derived from the
+  # options: build the profile home.packages would install, and require the file
+  # to be there. Weaker because any package providing the name satisfies it;
+  # sufficient because the failure being prevented is `command not found', and
+  # the thing that reports it is a Windows-side MCP client that says only
+  # "failed to connect". Both guards, not either: the identity check keeps the
+  # one binary that matters most honest, and this one keeps the set complete.
+  #
+  # This is the statusline-command.sh failure with the arrow reversed, and it is
+  # not hypothetical -- porkbun-mcp was NOT in home.packages when the MCP servers
+  # were first made to cross. The WSL side registers it by store path and worked
+  # throughout; the Windows entry named a profile path that did not exist. That
+  # is the shape this refuses.
+  windows-bridge-profile-bins-exist =
+    pkgs.runCommand "windows-bridge-profile-bins-exist" {
+      # The installed packages as store paths, one per line. `nix flake check'
+      # cannot look at ~/.nix-profile -- that is a fact about a machine, not
+      # about the flake -- but home.packages is the set activation installs
+      # there, so asking it answers the same question ahead of time.
+      #
+      # NOT a symlinkJoin of them, which is the obvious way to write this and was
+      # measured to be the wrong one: lndir over every package in home.packages
+      # -- texlive, emacs, several node_modules trees -- had not finished after
+      # 28 minutes on a fully warm store, and it would redo that work on any
+      # change to home.packages, which is exactly when this guard needs to run.
+      # Asking each package directly whether it carries bin/<name> answers the
+      # identical question at the cost of one stat per package.
+      #
+      # Newline-TERMINATED rather than newline-separated, which is load-bearing
+      # and cost a mutant to find. `while read' returns false at a final line
+      # with no trailing newline: it assigns the variable and the loop body
+      # never runs, so a separated list silently drops its LAST entry. The first
+      # cut of this guard used concatStringsSep and passed a mutant that renamed
+      # searxng's windowsProfileBin to a binary nothing installs -- because that
+      # name sorted last. It checked seven of eight names and reported success,
+      # which is the failure mode this whole file exists to refuse.
+      pkgPaths =
+        lib.concatMapStrings (d: "${d}\n")
+        (lib.filter lib.isDerivation homePackages);
+      bins = lib.concatMapStrings (n: "${n}\n") winProfileBins;
+      passAsFile = ["pkgPaths" "bins"];
+    } ''
+      if [ ! -s "$binsPath" ]; then
+        echo 'GUARD: nothing was handed to this guard as a crossed profile binary.'
+        echo '       The knowledge-graph hooks and five MCP servers all name one, so an'
+        echo '       empty list means winProfileBins in checks/default.nix stopped'
+        echo '       deriving them and this check is inspecting nothing.'
+        exit 1
+      fi
+
+      fail=0
+      while read -r name; do
+        [ -n "$name" ] || continue
+        found=0
+        while read -r pkg; do
+          [ -n "$pkg" ] || continue
+          if [ -e "$pkg/bin/$name" ]; then
+            found=1
+            break
+          fi
+        done < "$pkgPathsPath"
+        if [ "$found" -eq 0 ]; then
+          echo "GUARD: the Windows side is told to run ~/.nix-profile/bin/$name, but no"
+          echo '       package in home.packages provides that name, so the path does not'
+          echo '       exist. The WSL side keeps working -- it invokes the same program by'
+          echo '       store path -- and the Windows half fails with "command not found",'
+          echo '       or, for an MCP server, with nothing but "failed to connect".'
+          echo '       Add the package that provides it to home.packages, or set that'
+          echo '       windowsProfileBin to null if it was never meant to cross.'
+          fail=1
+        fi
+      done < "$binsPath"
+      [ "$fail" -eq 0 ] || exit 1
       touch $out
     '';
 
@@ -180,10 +317,56 @@
   #   windows-bridge-profile-bin-installed
   #     the guard dropped from home.packages
   #
+  #
   # The fourth case is the one worth keeping. A matrix of refusals can be
   # satisfied by a guard that refuses everything, and would then be green while
   # blocking every write this configuration makes. Testing only the direction
   # you are afraid of is how a forbid-only check comes to pass vacuously.
+  #
+  # SIX MORE when the MCP servers were made to cross, and this round did NOT go
+  # six for six the first time. Run 1 passed two mutants it had to catch, and
+  # both were defects in the new work rather than in the mutants. They are
+  # written out here because each is a way of writing this that looks right:
+  #
+  #   RUN 1, case (c). `windowsProfileBin' was declared as nullOr str with no
+  #   `default', on the belief -- stated at length in its own description -- that
+  #   the missing default was the guard. It is not. lib/types.nix gives nullOr
+  #   `emptyValue = { value = null; }', and lib/modules.nix:1261 uses a type's
+  #   emptyValue in place of the "used but not defined" error. Deleting the line
+  #   from modules/emacs-mcp.nix therefore evaluated cleanly, defaulted to null,
+  #   and dropped the emacs server out of the Windows fragment in silence: the
+  #   exact failure the option was added to prevent, delivered by the option
+  #   added to prevent it. Fixed by stripping emptyValue from the type.
+  #
+  #   RUN 1, case (b). This file's own profile-bins-exist built its two lists
+  #   with concatStringsSep, so neither ended in a newline, and `while read'
+  #   does not run the body for a final unterminated line. It checked seven of
+  #   the eight crossed names and reported success. The mutant it passed renamed
+  #   searxng's windowsProfileBin -- which sorts LAST. Fixed by terminating each
+  #   line instead of separating them.
+  #
+  # Both were found by running the matrix, neither by reading the code, and the
+  # second was a guard that had already been observed passing on a correct tree.
+  # That is the whole argument for this file's insistence on showing a check
+  # fail: a green guard and a guard that works are different claims.
+  #
+  # RUN 2, after those fixes -- six cases, six correct, none missed:
+  #
+  #   a store path in the .claude.json MCP fragment   no-store-paths       (1)
+  #   windowsProfileBin naming a missing binary,
+  #     the name sorting LAST (run 1's escapee)       profile-bins-exist   (1)
+  #   the same, a name NOT sorting last               profile-bins-exist   (1)
+  #   a server declaring no windowsProfileBin at all  evaluation           (1)
+  #   a non-stdio server that still asks to cross     evaluation           (1)
+  #   a server opting out with null                   nothing: PASSES      (0)
+  #
+  # The two rows either side of last are deliberate pairs. Mutating a name that
+  # does not sort last is what distinguishes "the guard reads its list" from
+  # "the guard reads all of its list", which is the bug run 1 had. And the final
+  # row is the same shape as the fourth case above, kept for the same reason: a
+  # required windowsProfileBin whose null case did not work would leave no way
+  # to declare a deliberately WSL-only server except by defeating the check. It
+  # has to be possible to say no; what is refused is saying nothing.
   #
   # To re-run: mutate one anchor, build that check, expect a non-zero exit, put
   # the file back, and confirm the digest matches before moving on.
