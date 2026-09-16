@@ -45,6 +45,11 @@ in {
     ollama.enable = true;
     searxng.enable = true;
 
+    # Same reasoning, same directory: btop's GPU box loads NVML from the host
+    # driver, which WSL2 publishes in /usr/lib/wsl/lib. The Macs keep the
+    # unmodified package. See modules/btop.nix.
+    btop.driverLibraryPath = "/usr/lib/wsl/lib";
+
     # The Orrery dashboard's MCP surface. WSL-only on purpose: it drives a
     # working copy at ~/orrery and is local-only by construction, so the Macs
     # have nothing for it to talk to.
