@@ -83,6 +83,21 @@ in {
     };
   };
 
+  # btop's disks panel is EMPTY on WSL by default: the Linux collector takes
+  # its disk list from /etc/fstab (use_fstab = true, which also switches off
+  # only_physical), and WSL's fstab is one comment line. Turning use_fstab
+  # off alone shows root plus five junk mounts (the Docker Desktop distro, its
+  # cli-tools ISO, the read-only /mnt/wslg mirror and the docker bind mounts,
+  # three of them the same vhdx as root), and hides the Windows drives because
+  # 9p is a nodev filesystem. So list the mounts wanted, explicitly. Windows
+  # drives show usage only: 9p has no block device, so there is no I/O for
+  # btop to read. Host-specific mountpoints, hence here and not in the module.
+  programs.btop.settings = {
+    use_fstab = false;
+    only_physical = false;
+    disks_filter = "/ /mnt/c /mnt/d /mnt/e";
+  };
+
   home.file.".config/nix/machines".text = ''
     ssh-ng://gfoster@gregorys-macbook-pro.local?remote-program=${daemon}&ssh-key=${sshKey} x86_64-darwin - 4 1 big-parallel - ${personalHostKey}
     ssh-ng://888973@us-ntlcfv09mt.local?remote-program=${daemon}&ssh-key=${sshKey} aarch64-darwin - 4 2 big-parallel - ${corpHostKey}
