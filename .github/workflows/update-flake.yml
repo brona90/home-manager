@@ -103,7 +103,7 @@ jobs:
       # created PR fires CI like a human-opened one. Falls back to the default
       # token when unset (PR is still created, but relies on the validation
       # step above). See .github/SETUP.md for setup instructions.
-      - uses: DeterminateSystems/update-flake-lock@v28
+      - uses: DeterminateSystems/update-flake-lock@v29
         id: update-flake
         with:
           token: ${{ secrets.FLAKE_UPDATE_TOKEN || github.token }}
