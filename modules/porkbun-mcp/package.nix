@@ -34,6 +34,14 @@
 # @types/node) are stripped below because dist/ ships prebuilt -- there is
 # nothing here to compile -- and the lockfile was generated from the same
 # stripped package.json, so `npm ci' sees a consistent pair.
+#
+# The other deliberate reason is a security advisory in a transitive dep. Do
+# that with the tarball's stripped package.json and this lockfile side by side
+# in a scratch dir, `npm update --package-lock-only --ignore-scripts' (stays
+# inside the two caret ranges), `npm audit --omit=dev' to confirm, then copy
+# the lockfile back and refresh npmDepsHash with prefetch-npm-deps. Upstream's
+# ranges admitted every patched version the last time this was needed, so
+# neither `version' nor package.json had to change.
 {
   lib,
   buildNpmPackage,
@@ -66,7 +74,7 @@ in
       cp ${./package-lock.json} package-lock.json
     '';
 
-    npmDepsHash = "sha256-LgiV/vN5DlUvP1RcLocFiTMD9H0GeYU/M4adAE73kcs=";
+    npmDepsHash = "sha256-cW+mvmvry54WqdsKyw3u5Swkl3V+3Re7p5hkZwokIQ8=";
 
     # dist/ is published prebuilt and there is no `build' script worth running
     # (it is `tsc', whose compiler was just stripped out with devDependencies).
