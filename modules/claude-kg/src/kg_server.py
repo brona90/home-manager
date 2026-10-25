@@ -117,10 +117,20 @@ def _embed(text: str, kind: str = "query") -> list[float]:
     # Apply the model's task prefix; `kind` is "query" for searches, "document" for
     # anything we store. keep_alive keeps the model resident so embeds stay fast (~ms).
     prefix = DOC_PREFIX if kind == "document" else QUERY_PREFIX
-    r = _http.post(f"{OLLAMA_URL}/api/embeddings",
-                   json={"model": EMBED_MODEL, "prompt": prefix + text, "keep_alive": "30m"})
+    # Use the modern /api/embed, NOT the legacy /api/embeddings. The legacy endpoint
+    # does not truncate: once an entity's text (name + type + every observation) passes
+    # the model's context window (2048 tokens for nomic-embed-text) Ollama answers
+    # HTTP 500 "input (N tokens) is too large to process", and that entity can never
+    # take another observation. /api/embed truncates to the model context (truncate is
+    # its default; passed explicitly so the intent survives a default change) and
+    # returns L2-normalised vectors. Normalisation is harmless here because both
+    # vector collections use Cosine distance, and `kg-reembed` rewrites every stored
+    # vector through this same path so the store stays uniform.
+    r = _http.post(f"{OLLAMA_URL}/api/embed",
+                   json={"model": EMBED_MODEL, "input": prefix + text,
+                         "truncate": True, "keep_alive": "30m"})
     r.raise_for_status()
-    return r.json()["embedding"]
+    return r.json()["embeddings"][0]
 
 
 def _entity_id(name: str) -> str:
