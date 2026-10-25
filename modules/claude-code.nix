@@ -18,6 +18,14 @@
   # Claude Code reads while avoiding the raw-text mention match in this file.
   marketplace = "claude-plugins-official";
 
+  # Plugins enabled on BOTH sides: merged into settings.enabledPlugins below and
+  # claimed key-by-key in windowsSettings. Built-in plugins ship inside Claude
+  # Code itself, so unlike the marketplace ones they need nothing installed and
+  # mean the same thing on Windows as in WSL.
+  sharedPlugins = {
+    "cc-plugin-you-should-know@builtin" = true;
+  };
+
   # WHY THIS GUARD EXISTS. A survey of this machine on 2026-08-29 found 371 loose
   # scripts sitting directly in /home/gfoster -- aud1.sh through aud15.sh,
   # brief-diag.sh, basecheck.sh -- and 303 of the 313 shell scripts among them
@@ -540,23 +548,25 @@
       type = "command";
       command = "${statusLineScript}/bin/claude-statusline";
     };
-    enabledPlugins = {
-      # Language servers for the languages in daily use (go-to-def, refs,
-      # diagnostics). No first-party LSP exists for Nix/Fortran/Elisp/Bash.
-      "lua-lsp@${marketplace}" = true;
-      "pyright-lsp@${marketplace}" = true;
-      "typescript-lsp@${marketplace}" = true;
-      "gopls-lsp@${marketplace}" = true;
-      # Claude-tooling authoring: this config builds MCP servers (claude-kg,
-      # searxng, porkbun), agents/commands (specflow), and hooks constantly.
-      "plugin-dev@${marketplace}" = true;
-      "mcp-server-dev@${marketplace}" = true;
-      "skill-creator@${marketplace}" = true;
-      # hookify ships its own SessionStart/PreToolUse/PostToolUse/Stop/
-      # UserPromptSubmit runners that execute in every session — enabled
-      # deliberately, not as a default.
-      "hookify@${marketplace}" = true;
-    };
+    enabledPlugins =
+      sharedPlugins
+      // {
+        # Language servers for the languages in daily use (go-to-def, refs,
+        # diagnostics). No first-party LSP exists for Nix/Fortran/Elisp/Bash.
+        "lua-lsp@${marketplace}" = true;
+        "pyright-lsp@${marketplace}" = true;
+        "typescript-lsp@${marketplace}" = true;
+        "gopls-lsp@${marketplace}" = true;
+        # Claude-tooling authoring: this config builds MCP servers (claude-kg,
+        # searxng, porkbun), agents/commands (specflow), and hooks constantly.
+        "plugin-dev@${marketplace}" = true;
+        "mcp-server-dev@${marketplace}" = true;
+        "skill-creator@${marketplace}" = true;
+        # hookify ships its own SessionStart/PreToolUse/PostToolUse/Stop/
+        # UserPromptSubmit runners that execute in every session — enabled
+        # deliberately, not as a default.
+        "hookify@${marketplace}" = true;
+      };
     # MCP servers are NOT set here — Claude Code ignores `mcpServers` in
     # settings.json. They are declared via my.claudeCode.mcpServers (by this and
     # other modules) and merged into ~/.claude.json by the activation script below.
@@ -742,6 +752,10 @@
   #     pairing requirement statusLine has -- the command names
   #     ~/.nix-profile/bin/claude-home-guard, so the package is in home.packages,
   #     and claiming the key without that would name a binary that is not there.
+  #   enabledPlugins.<each sharedPlugins key> -- the named keys only. jq's `*'
+  #     merges objects recursively, so claiming one key leaves every plugin
+  #     installed on that machine in place. Disabling a shared plugin from the
+  #     Windows UI is reverted on the next switch, which is the point of sharing.
   #
   # NOT CLAIMED, each for a named writer rather than out of general caution.
   #   permissions -- Claude Code appends to permissions.allow every time a rule
@@ -751,9 +765,9 @@
   #     Windows one carries PowerShell() rules that are meaningless in WSL and
   #     omits mcp__emacs__emacs_show_diff, there being no emacs MCP server
   #     registered on that side.
-  #   enabledPlugins / extraKnownMarketplaces -- written by installing a plugin.
-  #     Claiming them would silently revert every future install, which is a
-  #     worse bug than the drift it would close.
+  #   the rest of enabledPlugins / extraKnownMarketplaces -- written by
+  #     installing a plugin. Claiming the whole object would silently revert
+  #     every future install, which is a worse bug than the drift it would close.
   #   autoMode.environment -- Claude Code generates it from the machine it is on,
   #     and it is correctly different there.
   #   env, model, tui, autoUpdatesChannel, autoCompactWindow and the remaining
@@ -766,6 +780,7 @@
   windowsSettings =
     {
       inherit (settings) attribution;
+      enabledPlugins = sharedPlugins;
 
       # Deliberately NOT the claude-powerline statusline rendered for the WSL
       # side. Its `block' and `weekly' segments read the usage ledger under
