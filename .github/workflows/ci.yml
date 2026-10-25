@@ -363,8 +363,9 @@ jobs:
     needs: build-home  # Run after home configs cached
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
-    # Only run on push to main/master (not PRs)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # Build and smoke-test on PRs too, so a change that breaks the image
+    # fails before merge. Only a push to main/master publishes it.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
@@ -427,6 +428,7 @@ jobs:
           echo "=== All smoke tests passed ==="
 
       - name: Push to Docker Hub
+        if: github.event_name == 'push'
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           IMAGE_TAG: ${{ steps.tag.outputs.tag }}
@@ -453,6 +455,8 @@ jobs:
     name: Verify Pushed Docker Image
     runs-on: ubuntu-latest
     needs: docker-build
+    # Nothing is pushed on a PR, so there is nothing to pull back.
+    if: github.event_name == 'push'
     steps:
       - name: Pull and verify pushed image
         env:
