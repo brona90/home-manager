@@ -34,6 +34,14 @@ in {
       type = "stdio";
       command = "${pkg}/bin/searxng-mcp";
       env.SEARXNG_URL = "http://localhost:${toString cfg.port}";
+      # The only server here whose env has to cross with it, and therefore the
+      # one that made windowsMcpEnvArgs necessary: SEARXNG_URL is read by the
+      # server process, which runs in WSL, so it cannot be set on the wsl.exe
+      # side of the boundary. localhost is WSL's localhost -- the container this
+      # module runs is not reachable from Windows by that name -- so crossing is
+      # what makes a Windows session's web search hit this instance instead of
+      # having no search tool at all. Not a secret: a port number.
+      windowsProfileBin = "searxng-mcp";
     };
 
     # Render settings.yml with a generated secret_key (kept out of the repo). The
