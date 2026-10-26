@@ -208,9 +208,9 @@
   ;; -- but every daemon start still surfaced that warning.  The two
   ;; defcustoms carry no `:set' and no `:initialize', so they have plain
   ;; `defvar' semantics: the load does not clobber a value set here first.
-  (when-let ((id (my/sops-secret "org_gcal_client_id")))
+  (when-let* ((id (my/sops-secret "org_gcal_client_id")))
     (setq org-gcal-client-id id))
-  (when-let ((secret (my/sops-secret "org_gcal_client_secret")))
+  (when-let* ((secret (my/sops-secret "org_gcal_client_secret")))
     (setq org-gcal-client-secret secret))
 
   :config
