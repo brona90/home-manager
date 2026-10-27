@@ -302,6 +302,7 @@
             ./modules/searxng/default.nix
             ./modules/orrery-mcp/default.nix
             ./modules/bench-refresh.nix
+            ./modules/claude-scottapp-agents.nix
             # Shared, not Linux-only: modules/gpg.nix and modules/claude-code.nix
             # contribute to my.windowsBridge.files unconditionally, so the option
             # has to be DECLARED everywhere even though its config block only

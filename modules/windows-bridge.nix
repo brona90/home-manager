@@ -81,9 +81,17 @@
   # One store path per managed file. Rendering through writeText rather than
   # embedding the text in the script means the guard in checks/windows-bridge.nix
   # and the activation script are looking at the same bytes.
+  #
+  # A file with a `source' is the exception: its content is produced at
+  # activation (modules/claude-scottapp-agents.nix renders it from a private
+  # checkout that CI cannot read), so its "rendering" is that runtime path and
+  # no guard sees its bytes. That is why `source' is limited to mode "own".
   rendered =
     lib.mapAttrs
-    (name: f: pkgs.writeText "windows-bridge-${name}" f.text)
+    (name: f:
+      if f.source != null
+      then f.source
+      else pkgs.writeText "windows-bridge-${name}" f.text)
     cfg.files;
 
   # One dispatch line per file, in attribute-name order so the script is
@@ -94,7 +102,7 @@
     (
       name: let
         f = cfg.files.${name};
-      in "  windowsBridgeFile ${lib.escapeShellArg name} ${lib.escapeShellArg f.mode} ${lib.escapeShellArg f.target} ${rendered.${name}}"
+      in "  windowsBridgeFile ${lib.escapeShellArg name} ${lib.escapeShellArg f.mode} ${lib.escapeShellArg f.target} ${lib.escapeShellArg rendered.${name}}"
     )
     (lib.attrNames cfg.files);
 in {
@@ -156,11 +164,29 @@ in {
 
           text = lib.mkOption {
             type = lib.types.lines;
+            default = "";
             description = ''
               File content for mode "own", or the managed JSON fragment for mode
               "merge-json". Written to the Nix store as-is, with Unix line
               endings; comparison against the live file ignores carriage
               returns, so a Windows editor re-saving it as CRLF is not drift.
+              Exactly one of `text' and `source' is set.
+            '';
+          };
+
+          source = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            example = "/home/me/.local/state/some-module/rendered.md";
+            description = ''
+              Absolute WSL path to a file whose content only exists at
+              activation, copied instead of `text'. For content this flake
+              cannot read at evaluation. The declaring module writes it in an
+              activation step ordered before windowsBridge; if it is absent, the
+              Windows file is left as it is and that is said. Mode "own" only:
+              a merged file keeps whatever it is given until the next switch, so
+              its content must stay visible to the guards in
+              checks/windows-bridge.nix, and only `text' is.
             '';
           };
         };
@@ -169,6 +195,20 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    # Checked wherever the bridge is on, which includes the WSL configuration CI
+    # evaluates, so a malformed declaration fails the build there.
+    assertions = lib.concatLists (lib.mapAttrsToList (name: f: [
+        {
+          assertion = (f.source == null) != (f.text == "");
+          message = "my.windowsBridge.files.${name}: set exactly one of `text' and `source'.";
+        }
+        {
+          assertion = f.source == null || f.mode == "own";
+          message = "my.windowsBridge.files.${name}: `source' needs mode \"own\"; a merged fragment must be `text' so the guards in checks/windows-bridge.nix can see it.";
+        }
+      ])
+      cfg.files);
+
     home.activation.windowsBridge = lib.hm.dag.entryAfter ["writeBoundary"] ''
       # Two files differ only by line endings? Not drift. Windows editors save
       # CRLF (the hand-added scdaemon.conf on this machine is "pcsc-shared\r\n")
@@ -328,6 +368,13 @@ in {
         local name="$1" mode="$2" rel="$3" src="$4"
         local target="$WINDOWS_BRIDGE_HOME/$rel"
         local dir
+
+        # Only a `source' file can be missing; a store path exists by
+        # construction. Its module has already said why it rendered nothing.
+        if [ ! -r "$src" ]; then
+          echo "windows-bridge: $src does not exist; $target left as it is." >&2
+          return 0
+        fi
 
         dir=$(${coreutils}/dirname "$target")
         if ! ${coreutils}/mkdir -p "$dir"; then

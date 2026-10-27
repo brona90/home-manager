@@ -69,6 +69,12 @@ in {
       accountId = "dc8cdd6f1ba21fdebf7794040dfb6af3";
     };
 
+    # ScottApp's project subagents at user scope, so the Windows-native session
+    # (cwd C:\Users\<winuser>) can dispatch them. WSL-only because the checkout
+    # they are rendered from lives here, and the bridge that carries them to
+    # Windows is enabled here. See modules/claude-scottapp-agents.nix.
+    scottappAgents.enable = true;
+
     # Windows interop -- /mnt/c is dropped from PATH for zsh perf
     # (FSH command-existence checks per keystroke walk PATH and
     # stat each /mnt/c entry over the 9P bridge). Alias the few
