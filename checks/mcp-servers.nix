@@ -47,12 +47,32 @@
 # half-finished migration, which is a plausible way to write this bug -- has the
 # supplier in its closure and still resolves over the network, and this guard
 # passes it. Measured, not assumed: a probe built exactly that launcher and the
-# supplier was IN. What would close it is executing each server in the build
-# sandbox (which has no network and no ~/.cache) and requiring an `initialize'
-# response; both porkbun and orrery already answer that under a stripped
-# environment. That is a bigger check with its own risks -- claude-kg and
-# searxng talk to Qdrant and SearXNG -- so it is named here as the next step
-# rather than half-built.
+# supplier was IN. The handshake below is what closes most of that gap.
+#
+# THE HANDSHAKE, AND THE BREAKAGE THAT MADE IT NECESSARY. Until 2026-10 this
+# file stopped at closure membership and named "execute each server in the
+# build sandbox" as the next step. Then eeeafc0 bumped flake.lock to a nixpkgs
+# whose python mcp is 2.2.0, which removed `mcp.server.fastmcp'. claude-kg and
+# searxng both imported it. Each still had its env in its closure, so this guard
+# passed. Every build passed, home-manager switched, and both servers died on
+# their first import. That took out the kg CLI and every recall hook with them.
+# Nothing here had ever started a server.
+#
+# So every allowlisted server is now STARTED in the build sandbox: no network,
+# no ~/.cache, HOME pointed at a scratch dir. It must answer `initialize' and
+# then return a non-empty `tools/list', using ./mcp-handshake.py (stdlib only).
+# A failure prints the server's own stderr, so an ImportError arrives with its
+# traceback. It also proves what the closure check could not: a server that has
+# to fetch dependencies at launch cannot answer here.
+#
+# Listing tools touches neither Qdrant nor SearXNG. Both servers open their
+# HTTP client lazily and only call out from inside a tool, so the handshake
+# needs no services. That was the risk that kept this check unbuilt; it turned
+# out not to apply.
+#
+# What it still does not prove: that any TOOL works. A tools/list answer proves
+# the server imports, registers and speaks the protocol, not that a recall
+# returns rows. And orrery is not started at all; see its entry for why.
 #
 # ALLOWLIST, NOT DENYLIST. The list below names the servers whose dependencies
 # are known to come from Nix, and every declared server not on it is REFUSED.
@@ -89,7 +109,25 @@
   pkgs,
   mcpServers,
 }: let
-  # THE ALLOWLIST. Server name -> { package; how; }.
+  # How the handshake starts a server it can start exactly as Claude Code does:
+  # the registered command, args and env, read from the evaluated option so the
+  # probe cannot drift from what activation writes into ~/.claude.json.
+  asRegistered = name: {
+    argv = [mcpServers.${name}.command] ++ (mcpServers.${name}.args or []);
+    env = mcpServers.${name}.env or {};
+  };
+
+  # Named once because porkbun's entry uses it twice: as the claimed supplier
+  # and as the binary the handshake starts.
+  porkbunServer = pkgs.callPackage ../modules/porkbun-mcp/package.nix {};
+
+  # THE ALLOWLIST. Server name -> { package; how; start; }.
+  #
+  # `start' is how the handshake launches the server in the sandbox: an
+  # { argv; env; } set, normally `asRegistered name'. It may be null only with
+  # a `notStarted' string saying why the sandbox cannot run it. That is a hole
+  # in the handshake and is reported as one, not a pass: the derivation records
+  # it in handshakeSkipped. A null `start' without the reason is refused.
   #
   # `how' is the prose claim, and it has to name a mechanism a reader can go and
   # check. `package' is the same claim in a form the guard can TEST: the
@@ -115,10 +153,12 @@
     claude-kg = {
       package = (pkgs.callPackage ../modules/claude-kg/package.nix {}).mcpDepsFrom;
       how = "modules/claude-kg/package.nix: python3.withPackages [mcp httpx], wrapped so that interpreter is exec'd directly (the `uv run' shebangs still in src/*.py are inert -- makeWrapper never fires them)";
+      start = asRegistered "claude-kg";
     };
     searxng = {
       package = (pkgs.callPackage ../modules/searxng/package.nix {}).mcpDepsFrom;
       how = "modules/searxng/package.nix: python3.withPackages [mcp httpx], wrapped the same way";
+      start = asRegistered "searxng";
     };
     emacs = {
       # The honest supplier for a standard-library-only server is the
@@ -130,14 +170,30 @@
       # find that out is to read the source, which is what `how' points at.
       package = pkgs.python3;
       how = "modules/emacs-mcp.nix: Python standard library only, no third-party imports; patchShebangs pins it to pkgs.python3";
+      # Lists its tools from a static table; emacsclient is only reached from
+      # inside a tool call, so no daemon is needed to answer the handshake.
+      start = asRegistered "emacs";
     };
     orrery = {
       package = pkgs.callPackage ../modules/orrery-mcp/python-env.nix {};
       how = "modules/orrery-mcp/python-env.nix: python3.withPackages over a packageOverrides scope carrying mcp 2.1.1 and mcp-types 2.1.1, both fetchPypi sdists with a hash (nixpkgs' mcp is 1.29 and the server needs the 2.x-only mcp.server.mcpserver). The launcher execs that interpreter directly, so the PEP 723 header and the uv shebang in orrery-mcp.py are inert -- pkgs.uv is no longer even on its PATH";
+      start = null;
+      notStarted = "the launcher execs $ORRERY_ROOT/mcp-server/orrery-mcp.py from the Orrery working copy, deliberately not vendored here (see the head of modules/orrery-mcp/default.nix), so the sandbox has no server to run. Its env's mcp.server.mcpserver import is still checked at build time by pythonImportsCheck in python-env.nix; the server's own imports are not checked by anything in this flake";
     };
     porkbun = {
-      package = pkgs.callPackage ../modules/porkbun-mcp/package.nix {};
+      package = porkbunServer;
       how = "modules/porkbun-mcp/package.nix: buildNpmPackage over a pinned registry tarball (fetchzip + hash) with a committed package-lock.json and an npmDepsHash, so @modelcontextprotocol/sdk and zod come from the store; modules/claude-code.nix execs the resulting store path instead of `npx -y'";
+      # NOT asRegistered: the registered wrapper reads the API keys from
+      # ~/.config/sops-nix/secrets and exits when they are absent, which they
+      # always are in the sandbox. The probe starts the server binary the
+      # wrapper execs instead. Measured 2026-10-30: with no keys in its
+      # environment it still answers initialize and lists 81 tools. So what
+      # goes unprobed is the wrapper's eight lines of secret-reading shell,
+      # and writeShellApplication's shellcheck already covers those.
+      start = {
+        argv = ["${porkbunServer}/bin/porkbun-mcp"];
+        env = {};
+      };
     };
   };
 
@@ -170,7 +226,8 @@
   lines =
     (map (name: "GUARD: MCP server '${name}' does not have its dependencies fetched by Nix -- ${reason}.") refused)
     ++ (map (name: "GUARD: MCP server '${name}' command is not a ${builtins.storeDir} path: ${mcpServers.${name}.command or "<none>"}") notStorePath)
-    ++ (map (name: "GUARD: nixFetchedDeps lists '${name}', which no module declares any more -- drop the entry.") stale);
+    ++ (map (name: "GUARD: nixFetchedDeps lists '${name}', which no module declares any more -- drop the entry.") stale)
+    ++ (map (name: "GUARD: nixFetchedDeps entry '${name}' has no `start' (and no `notStarted' reason) -- give the handshake a way to launch it.") unstartable);
 
   report = lib.concatStringsSep "\n" lines;
 
@@ -240,6 +297,55 @@
       fi
     '')
     closureChecks;
+
+  # THE HANDSHAKE. See the header for why it exists. It runs for every declared,
+  # allowlisted server that has a `start', so that a refused or stale entry fails
+  # once, above, and not twice.
+  handshakeChecks =
+    builtins.filter (name: (nixFetchedDeps.${name}.start or null) != null)
+    (lib.intersectLists declared allowed);
+
+  # A null `start' is allowed only with its reason stated. An entry with
+  # neither would drop out of the handshake silently, which is the failure this
+  # check was written to end.
+  unstartable = builtins.filter (name: let
+    e = nixFetchedDeps.${name};
+  in
+    (e.start or null) == null && !(e ? notStarted))
+  allowed;
+
+  handshakeSkipped =
+    builtins.filter (name: (nixFetchedDeps.${name}.start or null) == null && nixFetchedDeps.${name} ? notStarted)
+    (lib.intersectLists declared allowed);
+
+  # Long enough for a cold Python 3.14 import of mcp 2.x on a loaded builder.
+  # A healthy server answers in about a second, so a timeout means a hang,
+  # not a slow import.
+  handshakeTimeout = 60;
+
+  # Every argument goes through escapeShellArg, for the reason closureMessage
+  # gives. `env' supplies the server's environment exactly as it is registered.
+  # HOME and XDG_CACHE_HOME point at the build's scratch dir, so a server that
+  # reaches for ~/.cache finds it empty, as it would on a new machine.
+  # SSL_CERT_FILE is unset because stdenv points it at /no-cert-file.crt. The
+  # Python servers build an httpx.Client at import, and httpx loads that file
+  # eagerly. Left set, every one of them would fail here with FileNotFoundError,
+  # a failure no real machine has; see the matching note in
+  # modules/claude-kg/package.nix.
+  handshakeScript =
+    lib.concatMapStringsSep "\n" (name: let
+      s = nixFetchedDeps.${name}.start;
+      envArgs = lib.mapAttrsToList (k: v: lib.escapeShellArg "${k}=${v}") (s.env or {});
+    in ''
+      hs=$((hs + 1))
+      if ! env -u SSL_CERT_FILE -u NIX_SSL_CERT_FILE HOME="$TMPDIR/home" XDG_CACHE_HOME="$TMPDIR/home/.cache" ${lib.concatStringsSep " " envArgs} \
+          ${pkgs.python3}/bin/python3 -I ${./mcp-handshake.py} \
+          ${lib.escapeShellArg name} ${toString handshakeTimeout} \
+          ${lib.escapeShellArgs s.argv}; then
+        failed=1
+      fi
+    '')
+    handshakeChecks;
 in {
   mcp-servers-deps-from-nix =
     pkgs.runCommand "mcp-servers-deps-from-nix" {
@@ -249,12 +355,22 @@ in {
       # were examined even on the runs where the guard passes and prints nothing.
       checkedServers = lib.concatStringsSep " " declared;
       closureCheckedServers = lib.concatStringsSep " " (map (c: c.name) closureChecks);
+      handshakeServers = lib.concatStringsSep " " handshakeChecks;
+      # The servers the handshake could NOT start, by name. A pass says nothing
+      # about these; the reason for each is the `notStarted' in its entry.
+      handshakeSkipped = lib.concatStringsSep " " handshakeSkipped;
     } ''
       failed=
       ran=0
+      hs=0
+      mkdir -p "$TMPDIR/home"
 
       if [ -s "$reportPath" ]; then
+        # concatStringsSep leaves no trailing newline. Without this echo, the
+        # next line of output (now a handshake line) runs on after the last
+        # GUARD line.
         cat "$reportPath" >&2
+        echo >&2
         failed=1
       fi
 
@@ -276,11 +392,24 @@ in {
         failed=1
       fi
 
+      # The handshakes: each server started in this sandbox and made to list
+      # its tools. Same counter discipline as the closure assertions above.
+      ${handshakeScript}
+
+      if [ "$hs" -ne ${toString (builtins.length handshakeChecks)} ]; then
+        {
+          echo "GUARD: internal error -- $hs of ${toString (builtins.length handshakeChecks)} handshakes executed."
+          echo "       The generated script is malformed; do not trust a pass from it."
+        } >&2
+        failed=1
+      fi
+
       if [ -n "$failed" ]; then
         {
           echo
-          echo "An MCP server whose deps are fetched at runtime does not start on a machine"
-          echo "with a cold cache -- which is every freshly built machine. See the header of"
+          echo "An MCP server that cannot start here does not start on a freshly built"
+          echo "machine either: whether its deps are fetched at runtime or, as in 2026-10,"
+          echo "the SDK under it moved a major version. See the header of"
           echo "checks/mcp-servers.nix for why this is refused rather than commented."
         } >&2
         exit 1
