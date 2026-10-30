@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "mcp[cli]>=1.2.0",
+#   "mcp>=2,<3",
 #   "httpx>=0.27.0",
 # ]
 # ///
@@ -28,12 +28,13 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 # Quiet per-request INFO logs (keeps the CLI clean and MCP stdout uncluttered).
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -69,9 +70,17 @@ DOCUMENTS = "documents"
 # Deterministic namespace so the same name always maps to the same point id (=> upsert/dedupe).
 NS = uuid.UUID("6e6b1f2a-0000-4000-8000-c1a0de000001")
 
-mcp = FastMCP("claude-kg")
+# mcp 2.x: FastMCP was renamed MCPServer (mcp.server.fastmcp now raises on import).
+# version is passed explicitly because an unversioned 2.x server reports "" in
+# serverInfo, where 1.x used to report the SDK's own version.
+mcp = MCPServer("claude-kg", version="1.0.0")
 _http = httpx.Client(timeout=120.0)  # generous: first embed cold-loads the model (~50s)
 _init_done = False
+# mcp 2.x runs sync (`def`) tools on worker threads, concurrently. Two first
+# calls could then both find a collection missing and both PUT it, and the loser
+# gets a 409 from Qdrant. The lock makes the one-time setup run once. httpx.Client
+# is itself thread-safe, so nothing else here needs it.
+_init_lock = threading.Lock()
 
 
 # --------------------------------------------------------------------------- #
@@ -91,6 +100,13 @@ def _ensure_collections() -> None:
     global _init_done
     if _init_done:
         return
+    with _init_lock:
+        if not _init_done:
+            _create_missing_collections()
+            _init_done = True
+
+
+def _create_missing_collections() -> None:
     existing = {c["name"] for c in _q("GET", "/collections")["result"]["collections"]}
     if ENTITIES not in existing:
         _q("PUT", f"/collections/{ENTITIES}",
@@ -110,7 +126,6 @@ def _ensure_collections() -> None:
            json={"vectors": {"size": EMBED_DIM, "distance": "Cosine"}})
         _q("PUT", f"/collections/{DOCUMENTS}/index",
            json={"field_name": "doc", "field_schema": "keyword"})
-    _init_done = True
 
 
 def _embed(text: str, kind: str = "query") -> list[float]:

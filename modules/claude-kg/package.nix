@@ -50,6 +50,32 @@ in
       runHook postInstall
     '';
 
+    # Every entrypoint must at least import under pyEnv, or this package does not
+    # build. Without that, the failure surfaces only at run time. In 2026-10 a
+    # flake.lock bump moved nixpkgs' python mcp from 1.x to 2.x, which removed
+    # mcp.server.fastmcp. This package still built and home-manager switched,
+    # and then kg-server, the `kg' CLI and every recall hook died on their first
+    # import. checks/mcp-servers.nix now starts the server as well. This check is
+    # the cheaper half: it fails `nix build' and `hms' themselves, and it also
+    # covers the CLI and capture entrypoints, which no MCP handshake reaches.
+    #
+    # seed.py and smoke_test.py are left out on purpose: they WRITE to the
+    # graph at import time (they are scripts with no main guard). Both import
+    # nothing beyond kg_server, which is checked here.
+    #
+    # SSL_CERT_FILE is unset because stdenv points it at /no-cert-file.crt, and
+    # kg_server builds its httpx.Client at import time. httpx loads that file
+    # eagerly, so the import dies with FileNotFoundError, a failure no real
+    # machine has. Unset, httpx falls back to certifi, which is what happens
+    # outside the sandbox.
+    doInstallCheck = true;
+    installCheckPhase = ''
+      runHook preInstallCheck
+      HOME="$TMPDIR" env -u SSL_CERT_FILE -u NIX_SSL_CERT_FILE PYTHONPATH="$out/lib/claude-kg" ${pyEnv}/bin/python3 -c \
+        'import asyncio, kg_server, kg_cli, capture_local, reembed; print("claude-kg: entrypoints import; MCP tools registered:", len(asyncio.run(kg_server.mcp.list_tools())))'
+      runHook postInstallCheck
+    '';
+
     # Exposed for checks/mcp-servers.nix, which asserts that the env named here
     # is in this server's runtime closure. Read rather than re-derived, so that
     # adding a package to pyEnv above cannot leave the guard checking an env

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["mcp[cli]>=1.2.0", "httpx>=0.27.0"]
+# dependencies = ["mcp>=2,<3", "httpx>=0.27.0"]
 # ///
 """web-search MCP server backed by a local SearXNG instance.
 
@@ -14,10 +14,11 @@ import os
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://localhost:8888").rstrip("/")
-mcp = FastMCP("searxng")
+# mcp 2.x: FastMCP was renamed MCPServer; see modules/claude-kg/src/kg_server.py.
+mcp = MCPServer("searxng", version="1.0.0")
 _http = httpx.Client(timeout=30.0, headers={"User-Agent": "claude-searxng-mcp/1.0"})
 
 

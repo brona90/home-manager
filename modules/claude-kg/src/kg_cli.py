@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["mcp[cli]>=1.2.0", "httpx>=0.27.0"]
+# dependencies = ["mcp>=2,<3", "httpx>=0.27.0"]
 # ///
 """Terminal CLI for browsing/editing the claude-kg graph outside of Claude.
 
