@@ -185,14 +185,37 @@ def _retrieve_entity(name: str) -> dict | None:
     return res[0]["payload"] if res else None
 
 
+SCROLL_PAGE = 1000
+
+
 def _scroll(collection: str, flt: dict | None, with_vector: bool = False) -> list[dict]:
-    body = {"limit": 1000, "with_payload": True, "with_vector": with_vector}
+    """Every point matching `flt`, across as many scroll pages as it takes.
+
+    A single scroll call returns at most one page. Reading only the first page
+    silently truncated recall, duplicate detection and export past 1000
+    points -- and reembed.py deletes the collection after exporting, so the
+    truncation became permanent data loss there.
+    """
+    body = {"limit": SCROLL_PAGE, "with_payload": True, "with_vector": with_vector}
     if flt is not None:
         body["filter"] = flt
-    res = _q("POST", f"/collections/{collection}/points/scroll", json=body)["result"]
+    points: list[dict] = []
+    while True:
+        res = _q("POST", f"/collections/{collection}/points/scroll", json=body)["result"]
+        points.extend(res["points"])
+        nxt = res.get("next_page_offset")
+        if nxt is None:
+            break
+        body["offset"] = nxt
     if with_vector:
-        return res["points"]  # full points (id, payload, vector)
-    return [p["payload"] for p in res["points"]]
+        return points  # full points (id, payload, vector)
+    return [p["payload"] for p in points]
+
+
+def _clamp(value, lo, hi):
+    """Bound a caller-supplied MCP parameter. The tools are model-driven, so a
+    depth of 10000 or a limit of 10**6 is one tool call away."""
+    return max(lo, min(hi, value))
 
 
 def _retrieve_entities(names: list[str]) -> dict[str, dict]:
@@ -360,7 +383,7 @@ def kg_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
     For most recall use kg_recall instead — it also pulls in graph context.
     """
     _ensure_collections()
-    return _hybrid(query, limit)
+    return _hybrid(query, _clamp(limit, 1, 50))
 
 
 @mcp.tool()
@@ -374,13 +397,13 @@ def kg_recall(query: str, limit: int = 5, depth: int = 1) -> dict[str, Any]:
     over plain kg_search when relationships matter.
     """
     _ensure_collections()
-    seeds = _hybrid(query, limit)
+    seeds = _hybrid(query, _clamp(limit, 1, 50))
 
     # Expand outward from the seed names, collecting edges and reachable entity names.
     visited = {s["name"] for s in seeds}
     frontier = set(visited)
     edges: list[dict[str, str]] = []
-    for _ in range(max(0, depth)):
+    for _ in range(_clamp(depth, 0, 3)):
         if not frontier:
             break
         nxt: set[str] = set()
@@ -435,7 +458,7 @@ def kg_neighbors(name: str, depth: int = 1) -> dict[str, Any]:
     visited: set[str] = {name}
     frontier = {name}
     edges: list[dict[str, str]] = []
-    for _ in range(max(1, depth)):
+    for _ in range(_clamp(depth, 1, 3)):
         nxt: set[str] = set()
         for node in frontier:
             recs = _scroll(RELATIONS, {"should": [_match("source", node), _match("target", node)]})
@@ -503,6 +526,8 @@ def kg_find_duplicates(threshold: float = 0.92, limit: int = 20) -> list[dict[st
     Returns up to `limit` of the highest-similarity pairs.
     """
     _ensure_collections()
+    threshold = _clamp(threshold, 0.0, 1.0)
+    limit = _clamp(limit, 1, 50)
     points = _scroll(ENTITIES, None, with_vector=True)
     pairs, seen = [], set()
     for p in points:
@@ -578,7 +603,8 @@ def kg_ingest_document(name: str, text: str, source: str = "",
     # clear any prior chunks for this doc name
     _q("POST", f"/collections/{DOCUMENTS}/points/delete?wait=true",
        json={"filter": {"must": [_match("doc", name)]}})
-    chunks = _chunk(text, max(200, chunk_chars), max(0, min(overlap, chunk_chars - 1)))
+    chunk_chars = _clamp(chunk_chars, 200, 10000)
+    chunks = _chunk(text, chunk_chars, _clamp(overlap, 0, chunk_chars - 1))
     ts = _now()
     points = []
     for i, ch in enumerate(chunks):
@@ -596,7 +622,7 @@ def kg_search_documents(query: str, limit: int = 5) -> list[dict[str, Any]]:
     """Semantic search over ingested documents. Returns the most relevant chunks."""
     _ensure_collections()
     res = _q("POST", f"/collections/{DOCUMENTS}/points/query",
-             json={"query": _embed(query), "limit": limit, "with_payload": True})["result"]
+             json={"query": _embed(query), "limit": _clamp(limit, 1, 50), "with_payload": True})["result"]
     return [{"doc": h["payload"].get("doc"), "chunk": h["payload"].get("chunk"),
              "text": h["payload"].get("text"), "source": h["payload"].get("source"),
              "score": round(h["score"], 4)} for h in res["points"]]

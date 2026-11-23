@@ -1098,7 +1098,7 @@ module is not listed here, it does not exist:
 | `my.dockerTerminal.enable` | `docker-terminal.nix` | common |
 | `my.emacs.enable` | `emacs/default.nix` | `flake.nix` — every config, with `package` set to the vanilla build |
 | `my.emacsDoctor.enable` | `emacs-doctor/default.nix` | `flake.nix` — every config (module itself is Linux-gated) |
-| `my.emacsMcp.enable` | `emacs-mcp.nix` | common |
+| `my.emacsMcp.enable`, `my.emacsMcp.allowEval` | `emacs-mcp.nix` | common; `allowEval` is set nowhere, so it stays off. It sets `EMACS_MCP_ALLOW_EVAL=1`. Without that, `emacs_eval` is not listed and a call to it is refused |
 | `my.claudeCode.enable` | `claude-code.nix` | common |
 | `my.claudeSkills.enable` | `claude-skills.nix` | common |
 | `my.claudeSpecflow.enable` | `claude-specflow.nix` | common |
