@@ -57,6 +57,19 @@
 in {
   options.my.emacsMcp = {
     enable = lib.mkEnableOption "MCP server for Claude Code ↔ Emacs integration";
+    allowEval = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Offer the emacs_eval tool, which evaluates arbitrary Emacs Lisp and so
+        runs arbitrary shell as the user. Off by default: with it off, the
+        server leaves emacs_eval out of tools/list and refuses a call to it.
+        This sets EMACS_MCP_ALLOW_EVAL=1 in the registered server's env, on
+        both the WSL and the Windows side. Turning it on does NOT auto-allow
+        the tool; checks/claude-settings.nix still keeps every call behind a
+        permission prompt.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -70,6 +83,10 @@ in {
       # only Emacs on the machine, so a Windows session that could not reach it
       # would have no editor integration rather than a local one.
       windowsProfileBin = "emacs-mcp-server";
+      # The gate is in the server (emacs-mcp-server.py); this only opens it.
+      # When the option is off, NOTHING is set rather than "0", so the default is
+      # decided in one place, the server, which treats anything but "1" as off.
+      env = lib.optionalAttrs cfg.allowEval {EMACS_MCP_ALLOW_EVAL = "1";};
     };
   };
 }

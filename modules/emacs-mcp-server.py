@@ -5,10 +5,21 @@ Implements the Model Context Protocol (MCP) over stdio with no external
 dependencies — only the Python 3 standard library.
 
 Tools provided:
-  emacs_eval        — evaluate arbitrary Emacs Lisp
+  emacs_eval        — evaluate arbitrary Emacs Lisp (OFF unless
+                      EMACS_MCP_ALLOW_EVAL=1; see below)
   emacs_show_diff   — show a 2-way diff (git HEAD vs file on disk)
   emacs_open_file   — visit a file, optionally at a line
   emacs_notify      — display a message in the minibuffer
+
+emacs_eval is gated. Arbitrary elisp is arbitrary shell (`shell-command',
+`call-process'), running as the user, outside every other Claude Code
+permission rule. Until now the only thing in its way was the per-call prompt,
+which checks/claude-settings.nix keeps from being auto-allowed. With the
+gate, the tool does not exist unless EMACS_MCP_ALLOW_EVAL is exactly "1" in the
+server's environment. It is left out of tools/list, so the model is never
+offered it, and a call made anyway gets a JSON-RPC error saying how to enable
+it. Declaratively that is `my.emacsMcp.allowEval = true;` (modules/emacs-mcp.nix),
+which sets the variable in the registered server's env.
 
 Requires: Emacs daemon running with emacsclient accessible on $PATH.
 """
@@ -115,6 +126,23 @@ TOOLS = [
         },
     },
 ]
+
+# Read once at startup: Claude Code starts a fresh server per session, so
+# changing the variable takes effect on the next session. Only the exact
+# string "1" enables it. "true", "yes" or a stray space leave it off, so the
+# default holds whenever anything is unclear.
+EVAL_ENV = "EMACS_MCP_ALLOW_EVAL"
+ALLOW_EVAL = os.environ.get(EVAL_ENV) == "1"
+EVAL_DISABLED = (
+    f"emacs_eval is disabled: it runs arbitrary Emacs Lisp, which is arbitrary "
+    f"shell. To enable it, set {EVAL_ENV}=1 in this server's environment "
+    f"(declaratively: my.emacsMcp.allowEval = true in home-manager) and start "
+    f"a new session."
+)
+
+
+def _listed_tools() -> list[dict]:
+    return [t for t in TOOLS if ALLOW_EVAL or t["name"] != "emacs_eval"]
 
 
 def _log(msg: str) -> None:
@@ -377,12 +405,17 @@ def _handle_request(msg: dict) -> None:
         # MCP ping: respond promptly with an empty result
         _result(msg_id, {})
     elif method == "tools/list":
-        _result(msg_id, {"tools": TOOLS})
+        _result(msg_id, {"tools": _listed_tools()})
     elif method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
         handler = _HANDLERS.get(tool_name)
-        if handler is None:
+        if tool_name == "emacs_eval" and not ALLOW_EVAL:
+            # Same code as an unknown tool, since with the gate off it is one.
+            # The message says how to turn it on.
+            _log("refused tools/call emacs_eval: gate is off")
+            _error(msg_id, -32601, EVAL_DISABLED)
+        elif handler is None:
             _error(msg_id, -32601, f"Unknown tool: {tool_name}")
         else:
             _log(f"tools/call {tool_name}")
