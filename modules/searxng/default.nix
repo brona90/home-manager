@@ -7,6 +7,10 @@
   cfg = config.my.searxng;
   pkg = pkgs.callPackage ./package.nix {};
   cfgDir = "${config.home.homeDirectory}/.config/searxng";
+  dockerNet = import ../../lib/docker-network.nix {
+    inherit pkgs;
+    inherit (cfg) dockerBin;
+  };
 in {
   options.my.searxng = {
     enable = lib.mkEnableOption "local SearXNG private web search + MCP server";
@@ -87,7 +91,12 @@ in {
       };
       Service = {
         Type = "exec";
-        ExecStartPre = "-${cfg.dockerBin} rm -f searxng";
+        # The network step is NOT `-`-prefixed: if it cannot be created the
+        # start must fail rather than proceed (lib/docker-network.nix).
+        ExecStartPre = [
+          "-${cfg.dockerBin} rm -f searxng"
+          "${dockerNet.ensure}/bin/docker-ensure-network-${dockerNet.name}"
+        ];
         # Loopback only -- same reasoning as the Qdrant unit in
         # modules/claude-kg: a bare `-p 8888:8080` publishes on 0.0.0.0 and
         # [::], which under WSL mirrored networking is the LAN as well, and
@@ -97,6 +106,7 @@ in {
         # checks/service-binds.nix enforces this.
         ExecStart = ''
           ${cfg.dockerBin} run --rm --name searxng \
+            --network ${dockerNet.name} \
             -p 127.0.0.1:${toString cfg.port}:8080 \
             -v ${cfgDir}:/etc/searxng \
             -e SEARXNG_BASE_URL=http://localhost:${toString cfg.port}/ \

@@ -7,6 +7,12 @@
   cfg = config.my.claudeKg;
   pkg = pkgs.callPackage ./package.nix {};
   dataDir = "${config.home.homeDirectory}/.local/share/claude-kg";
+  # Dedicated user-defined docker network, shared with modules/searxng. See
+  # lib/docker-network.nix for why the default bridge is not used.
+  dockerNet = import ../../lib/docker-network.nix {
+    inherit pkgs;
+    inherit (cfg) dockerBin;
+  };
 
   # Shared preamble for BOTH read-side hooks.
   #
@@ -440,7 +446,12 @@ in {
         };
         Service = {
           Type = "exec";
-          ExecStartPre = "-${cfg.dockerBin} rm -f claude-kg-qdrant";
+          # The network step is NOT `-`-prefixed: if it cannot be created the
+          # start must fail rather than proceed (lib/docker-network.nix).
+          ExecStartPre = [
+            "-${cfg.dockerBin} rm -f claude-kg-qdrant"
+            "${dockerNet.ensure}/bin/docker-ensure-network-${dockerNet.name}"
+          ];
           # Loopback only. Qdrant has NO authentication: a bare `-p 6333:6333`
           # publishes on 0.0.0.0 and [::], which -- with WSL mirrored
           # networking -- is the Windows host's LAN interface too, so anyone on
@@ -459,6 +470,7 @@ in {
           # publish here.
           ExecStart = ''
             ${cfg.dockerBin} run --rm --name claude-kg-qdrant \
+              --network ${dockerNet.name} \
               -p 127.0.0.1:6333:6333 -p 127.0.0.1:6334:6334 \
               -v ${dataDir}/qdrant:/qdrant/storage \
               -v ${dataDir}/snapshots:/qdrant/snapshots \

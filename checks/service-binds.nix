@@ -40,6 +40,18 @@
           + "\n"
       )
       units);
+  # Same record shape for ExecStartPre, which the network guard reads to
+  # confirm each unit creates the network it runs on.
+  preStarts =
+    builtins.concatStringsSep ""
+    (pkgs.lib.mapAttrsToList (
+        name: u:
+          name
+          + "\t"
+          + builtins.concatStringsSep " " (pkgs.lib.toList (u.Service.ExecStartPre or []))
+          + "\n"
+      )
+      units);
 in {
   # Every published port is bound to 127.0.0.1 or [::1]; nothing uses the
   # host network namespace or --publish-all. Also refuses a unit with NO
@@ -116,6 +128,54 @@ in {
           echo '       Pin the digest that is running: docker inspect <container> | RepoDigests.'
           fail=1
         fi
+      done < "$execStartsPath"
+      [ "$fail" -eq 0 ] || exit 1
+      touch $out
+    '';
+
+  # Every unit runs on a named user-defined network (never the default
+  # `bridge`, never `host`), and that network is created by the unit's own
+  # ExecStartPre. On 2026-11-23 the docker0 interface vanished under the
+  # default bridge while dockerd kept using it; both services went dark from
+  # everywhere and no new default-bridge container could start. See
+  # lib/docker-network.nix.
+  services-on-dedicated-network =
+    pkgs.runCommand "services-on-dedicated-network" {
+      inherit execStarts preStarts;
+      passAsFile = ["execStarts" "preStarts"];
+    } ''
+      fail=0
+      while IFS=$'\t' read -r name cmd; do
+        [ -n "$name" ] || continue
+        set -f
+        # shellcheck disable=SC2086 # word-splitting the flattened command is the point
+        set -- $cmd
+        set +f
+        net=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --network | --net) net="''${2:-}"; [ $# -lt 2 ] || shift ;;
+            --network=* | --net=*) net="''${1#*=}" ;;
+          esac
+          shift
+        done
+        case "$net" in
+          "")
+            echo "GUARD: $name names no --network, so it runs on the default bridge."
+            fail=1 ;;
+          bridge | default | host | none)
+            echo "GUARD: $name runs on --network $net; it must use a dedicated user-defined network."
+            fail=1 ;;
+          *)
+            pre=$(awk -F '\t' -v n="$name" '$1 == n { print $2 }' "$preStartsPath")
+            case "$pre" in
+              *"docker-ensure-network-$net"*) ;;
+              *)
+                echo "GUARD: $name runs on network '$net' but its ExecStartPre does not create it"
+                echo '       (expected lib/docker-network.nix'"'"'s docker-ensure-network-'"$net"')'
+                fail=1 ;;
+            esac ;;
+        esac
       done < "$execStartsPath"
       [ "$fail" -eq 0 ] || exit 1
       touch $out

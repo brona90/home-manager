@@ -236,7 +236,8 @@ This repo is designed to be easily forked:
 │   ├── ollama.nix         # ollama-unit-path-is-store-only,
 │   │                      #   ollama-unit-exports-driver-libs,
 │   │                      #   kg-recall-hook-probes-before-spending
-│   ├── service-binds.nix  # services-bind-loopback-only, services-images-pinned
+│   ├── service-binds.nix  # services-bind-loopback-only, services-images-pinned,
+│   │                      #   services-on-dedicated-network
 │   ├── shell-scripts.nix  # background-jobs-close-fds, devshell-hook-lint
 │   └── tmux-helper.nix    # tmux-helper-build, tmux-helper-vet (builds, not guards)
 ├── secrets/               # Encrypted secrets (safe to commit)
@@ -246,6 +247,7 @@ This repo is designed to be easily forked:
 │   ├── lint-tools.nix     # the pinned linter set (.#lint-tools) every gate uses
 │   ├── docker-image.nix   # Docker image builder (full + slim profiles)
 │   ├── docker-test-app.nix
+│   ├── docker-network.nix # the `claude-kg` network Qdrant + SearXNG run on, and its ExecStartPre
 │   ├── dev-shell.nix      # devShell + hook bootstrap (see "Dev shell and git hooks")
 │   ├── dev-shell-hook.sh  # the shellHook — runs on every `cd`, must stay cheap
 │   ├── install-hooks.sh   # body of `nix run .#install-hooks`
@@ -1056,6 +1058,7 @@ documents the whole interface a guard file is handed.
 | `kg-recall-hook-probes-before-spending` | The knowledge-graph recall hook going back to discovering a dead embedder 123s later instead of 2s earlier. The original was `kg recall … 2>/dev/null \| jq … \|\| true` followed by "empty means nothing found": three silencers on one line. Measured against an unreachable embedder it blocked **123.5s and exited 0 with zero bytes**, indistinguishable from success and longer than the hook's whole 60s budget. Also refuses `exit 2`, which would *block* the user's prompt |
 | `services-bind-loopback-only` | The Qdrant or SearXNG unit publishing a port anywhere but `127.0.0.1`/`[::1]`, or using `--network host` / `--publish-all`. Both were found on `0.0.0.0` and `[::]`; neither authenticates, and under WSL mirrored networking the distro's wildcard address is the LAN too. Reads the rendered `ExecStart`, and fails if it finds no publish at all rather than passing having checked nothing |
 | `services-images-pinned` | Those units running a floating tag instead of an `@sha256:` digest. With `:latest` the running version is whatever the daemon last pulled, recorded nowhere |
+| `services-on-dedicated-network` | Those units falling back to Docker's default `bridge` (or `host`/`none`), or naming a network their own `ExecStartPre` does not create. On 2026-11-23 the `docker0` interface vanished while dockerd kept using it: both services went dark from WSL and Windows alike, and no new default-bridge container could start. User-defined bridges survived (`lib/docker-network.nix`) |
 | `branch-policy-hook` | The specflow branch-policy hook losing worktree-awareness, or ceasing to fail closed. It shipped blocking every worktree commit as if it were on master; the first fix then turned every parse miss into a silent ALLOW. Runs the shipped hook against a 43-case matrix, in both directions |
 | `claude-home-guard-wired` | The home-root write guard being defined but not referenced from `settings.json` under `PreToolUse`/`PostToolUse` with the right matchers. A hook nothing invokes refuses nothing |
 | `claude-home-guard-decides` | The same guard being wired but WRONG. Two earlier versions built cleanly, were wired identically and did not work — one had its `tr` reduced to a no-op by Nix indented-string escaping. Runs the built hook against the policy matrix |
