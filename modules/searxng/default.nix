@@ -7,6 +7,10 @@
   cfg = config.my.searxng;
   pkg = pkgs.callPackage ./package.nix {};
   cfgDir = "${config.home.homeDirectory}/.config/searxng";
+  dockerNet = import ../../lib/docker-network.nix {
+    inherit pkgs;
+    inherit (cfg) dockerBin;
+  };
 in {
   options.my.searxng = {
     enable = lib.mkEnableOption "local SearXNG private web search + MCP server";
@@ -15,9 +19,13 @@ in {
       default = 8888;
       description = "Host port the SearXNG container listens on.";
     };
+    # Pinned by digest for the same reason as my.claudeKg.image: `:latest`
+    # means the running version is whatever was last pulled, recorded nowhere.
+    # This is the image that was running when the pin was taken (2026-11-23,
+    # `docker inspect searxng`). checks/service-binds.nix enforces the pin.
     image = lib.mkOption {
       type = lib.types.str;
-      default = "searxng/searxng:latest";
+      default = "searxng/searxng@sha256:3cb8eba87bb347613fab9dfe87d448c21300b8f0648295c93b85f4246e93ae73";
     };
     dockerBin = lib.mkOption {
       type = lib.types.str;
@@ -56,7 +64,18 @@ in {
         if [ -z "$secret" ] || [ "$secret" = "__SECRET__" ]; then
           secret=$(${pkgs.openssl}/bin/openssl rand -hex 32)
         fi
-        ${pkgs.gnused}/bin/sed "s|__SECRET__|$secret|" ${./settings.yml} > "$cfgdir/settings.yml"
+        # 0600: the file carries secret_key, which signs SearXNG's session
+        # cookies. A plain `> settings.yml` created it 0644 under the default
+        # umask, and on an existing file `>` keeps whatever mode it already
+        # had -- so write a fresh file under umask 077 and rename it over the
+        # old one. The container chowns the directory to its own uid on start
+        # (with CAP_CHOWN, kept below), and 0600 for that owner is all it needs.
+        (
+          umask 077
+          ${pkgs.gnused}/bin/sed "s|__SECRET__|$secret|" ${./settings.yml} > "$cfgdir/settings.yml.tmp"
+        )
+        ${pkgs.coreutils}/bin/chmod 0600 "$cfgdir/settings.yml.tmp"
+        ${pkgs.coreutils}/bin/mv -f "$cfgdir/settings.yml.tmp" "$cfgdir/settings.yml"
       else
         echo "searxng: ${cfgDir} is container-owned; leaving settings.yml as-is"
       fi
@@ -72,10 +91,23 @@ in {
       };
       Service = {
         Type = "exec";
-        ExecStartPre = "-${cfg.dockerBin} rm -f searxng";
+        # The network step is NOT `-`-prefixed: if it cannot be created the
+        # start must fail rather than proceed (lib/docker-network.nix).
+        ExecStartPre = [
+          "-${cfg.dockerBin} rm -f searxng"
+          "${dockerNet.ensure}/bin/docker-ensure-network-${dockerNet.name}"
+        ];
+        # Loopback only -- same reasoning as the Qdrant unit in
+        # modules/claude-kg: a bare `-p 8888:8080` publishes on 0.0.0.0 and
+        # [::], which under WSL mirrored networking is the LAN as well, and
+        # SearXNG has no auth. Its clients are the MCP server (in WSL, at
+        # localhost, which resolves to 127.0.0.1 here) and cloudflared (in
+        # WSL, at 127.0.0.1:8888, behind Cloudflare Access).
+        # checks/service-binds.nix enforces this.
         ExecStart = ''
           ${cfg.dockerBin} run --rm --name searxng \
-            -p ${toString cfg.port}:8080 \
+            --network ${dockerNet.name} \
+            -p 127.0.0.1:${toString cfg.port}:8080 \
             -v ${cfgDir}:/etc/searxng \
             -e SEARXNG_BASE_URL=http://localhost:${toString cfg.port}/ \
             --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID \

@@ -125,6 +125,19 @@ import ./tmux-helper.nix {inherit pkgs;}
       ollamaUnit = homeConfigs."${user.username}@${system}".config.systemd.user.services.ollama;
       kgHook = homeConfigs."${user.username}@${system}".config.my.claudeKg.promptRecallHookPackage;
     }
+    // import ./service-binds.nix {
+      inherit pkgs;
+      # The docker-backed services, read from the built configuration. Named
+      # explicitly rather than discovered: a unit missing from here is a
+      # visible omission, and an attribute that stops existing fails eval.
+      units = {
+        inherit
+          (homeConfigs."${user.username}@${system}".config.systemd.user.services)
+          qdrant
+          searxng
+          ;
+      };
+    }
     // import ./branch-policy.nix {inherit pkgs;}
     // import ./mcp-servers.nix {inherit lib pkgs mcpServers;}
 )
