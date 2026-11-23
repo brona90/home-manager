@@ -39,6 +39,8 @@
 #  15. "+" refspec not counted as a force push    -> D9
 #  16. --all / --mirror ignored                   -> D7 D8
 #  17. token-based protected-push test removed    -> D1 D2 D5 D6 D7 D8 E13
+#  18. sudo -D ignored                            -> E18
+#  19. "env -S" string not analysed               -> E19
 # One mutant SURVIVES, and is equivalent: not stripping the "+" before matching the destination.
 # Every "+<protected>" refspec is also a force push, so it is denied either way; the strip only
 # changes which reason is reported. It is kept because the destination of "+master" IS master.
@@ -193,6 +195,8 @@ run_case DENY "$FX/main" "bash -c 'git push origin +master'" 'E14 bash -c push +
 run_case ALLOW "$FX/main" "env git -C $FX/wt commit -m x" 'E15 env git -C worktree(feature) commit'
 run_case ALLOW "$FX/main" "bash -c \"cd $FX/wt && git commit -m x\"" 'E16 bash -c "cd worktree && commit"'
 run_case ALLOW "$FX/main" "env -C $FX/wt git commit -m x" 'E17 env -C worktree git commit'
+run_case DENY "$FX/wt" "sudo -D $FX/main git commit -m x" 'E18 sudo -D main git commit'
+run_case DENY "$FX/wt" "env -S \"git -C $FX/main commit -m x\"" 'E19 env -S "git -C main commit"'
 
 echo "--- legitimate worktree spellings must keep working ---"
 run_case ALLOW "$FX/main" "cd \"$FX/my wt\" && git commit -m x" 'L1  quoted path containing a space'
