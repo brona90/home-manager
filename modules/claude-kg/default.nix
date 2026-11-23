@@ -283,9 +283,17 @@ in {
       default = kgPromptRecallHook;
       description = "The built kg-prompt-recall-hook, exposed for the flake checks.";
     };
+    # Pinned by digest, not `:latest`. With a floating tag the version that
+    # runs is whatever the daemon last pulled, so two machines (or one machine
+    # before and after a `docker pull`) silently serve the graph from different
+    # Qdrant releases -- and a storage-format change lands with no commit to
+    # bisect. This is the image that was running when the pin was taken
+    # (2026-11-23, `docker inspect claude-kg-qdrant`); bump it deliberately.
+    # checks/service-binds.nix fails the build if the rendered unit runs an
+    # unpinned reference.
     image = lib.mkOption {
       type = lib.types.str;
-      default = "qdrant/qdrant:latest";
+      default = "qdrant/qdrant@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc";
     };
     dockerBin = lib.mkOption {
       type = lib.types.str;
@@ -433,9 +441,25 @@ in {
         Service = {
           Type = "exec";
           ExecStartPre = "-${cfg.dockerBin} rm -f claude-kg-qdrant";
+          # Loopback only. Qdrant has NO authentication: a bare `-p 6333:6333`
+          # publishes on 0.0.0.0 and [::], which -- with WSL mirrored
+          # networking -- is the Windows host's LAN interface too, so anyone on
+          # the network could read or delete the whole graph. Every legitimate
+          # client is local: kg-server and the hooks in WSL (the Windows half
+          # reaches them through wsl.exe), and cloudflared, which runs in WSL
+          # and proxies qdrant.fosterthecode.com to 127.0.0.1:6333 behind
+          # Cloudflare Access.
+          #
+          # IPv4 loopback alone is enough: in this distro `localhost` resolves
+          # to 127.0.0.1 only (getent ahosts, 2026-11-23). Under mirrored
+          # networking a 127.0.0.1-only WSL listener is still reachable from
+          # Windows at 127.0.0.1 and at localhost (measured the same day).
+          #
+          # checks/service-binds.nix fails the build on any non-loopback
+          # publish here.
           ExecStart = ''
             ${cfg.dockerBin} run --rm --name claude-kg-qdrant \
-              -p 6333:6333 -p 6334:6334 \
+              -p 127.0.0.1:6333:6333 -p 127.0.0.1:6334:6334 \
               -v ${dataDir}/qdrant:/qdrant/storage \
               -v ${dataDir}/snapshots:/qdrant/snapshots \
               -e QDRANT__TELEMETRY_DISABLED=true \

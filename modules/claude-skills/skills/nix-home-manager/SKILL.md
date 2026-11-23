@@ -113,6 +113,8 @@ bug — work out what it was protecting before you touch the guard itself.
 |---|---|
 | `claude-settings-guards` | `settings.json` keeps `attribution = {commit = ""; pr = "";}`, and `mcp__emacs__emacs_eval` is never auto-allowed (arbitrary elisp is arbitrary shell, and it would bypass every other permission gate) |
 | `docker-terminal-no-ssh-mount` | `~/.ssh` is never bind-mounted into the docker terminal |
+| `services-bind-loopback-only` | the Qdrant and SearXNG units publish only on `127.0.0.1`/`[::1]` (neither authenticates; under mirrored networking a wildcard bind is the LAN) |
+| `services-images-pinned` | those units run an `@sha256:` digest, never a floating tag |
 | `ollama-unit-path-is-store-only` | the Ollama unit's `PATH` is store-only, never a baked interactive one |
 | `ollama-unit-exports-driver-libs` | the Ollama unit exports `LD_LIBRARY_PATH` so the GPU is actually used |
 | `kg-recall-hook-probes-before-spending` | the kg recall hook probes the embedder first, reports failure, and never blocks the prompt |

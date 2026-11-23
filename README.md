@@ -236,6 +236,7 @@ This repo is designed to be easily forked:
 │   ├── ollama.nix         # ollama-unit-path-is-store-only,
 │   │                      #   ollama-unit-exports-driver-libs,
 │   │                      #   kg-recall-hook-probes-before-spending
+│   ├── service-binds.nix  # services-bind-loopback-only, services-images-pinned
 │   ├── shell-scripts.nix  # background-jobs-close-fds, devshell-hook-lint
 │   └── tmux-helper.nix    # tmux-helper-build, tmux-helper-vet (builds, not guards)
 ├── secrets/               # Encrypted secrets (safe to commit)
@@ -1053,6 +1054,8 @@ documents the whole interface a guard file is handed.
 | `ollama-unit-path-is-store-only` | The Ollama unit regrowing a baked interactive `PATH`. The vendor's hand-rolled `/etc/systemd/system/ollama.service` had frozen the PATH of whatever shell ran `curl \| sh`: 65 entries, **29 of them already dead** — the whole mise install tree, `/Docker/host/bin`, and `/mnt/c/...` entries that cost a 9P round trip per lookup. `ollama serve` execs nothing but its own runners |
 | `ollama-unit-exports-driver-libs` | The unit losing `LD_LIBRARY_PATH`. The bundled CUDA runners reach the host's `libcuda.so.1` only through it, and it is deliberately not in the store because the userspace driver must match the kernel one. Without it every model silently falls back to CPU — measured at 0.3 tok/s against 83.4 tok/s for `qwen2.5:7b` |
 | `kg-recall-hook-probes-before-spending` | The knowledge-graph recall hook going back to discovering a dead embedder 123s later instead of 2s earlier. The original was `kg recall … 2>/dev/null \| jq … \|\| true` followed by "empty means nothing found": three silencers on one line. Measured against an unreachable embedder it blocked **123.5s and exited 0 with zero bytes**, indistinguishable from success and longer than the hook's whole 60s budget. Also refuses `exit 2`, which would *block* the user's prompt |
+| `services-bind-loopback-only` | The Qdrant or SearXNG unit publishing a port anywhere but `127.0.0.1`/`[::1]`, or using `--network host` / `--publish-all`. Both were found on `0.0.0.0` and `[::]`; neither authenticates, and under WSL mirrored networking the distro's wildcard address is the LAN too. Reads the rendered `ExecStart`, and fails if it finds no publish at all rather than passing having checked nothing |
+| `services-images-pinned` | Those units running a floating tag instead of an `@sha256:` digest. With `:latest` the running version is whatever the daemon last pulled, recorded nowhere |
 | `branch-policy-hook` | The specflow branch-policy hook losing worktree-awareness, or ceasing to fail closed. It shipped blocking every worktree commit as if it were on master; the first fix then turned every parse miss into a silent ALLOW. Runs the shipped hook against a 43-case matrix, in both directions |
 | `claude-home-guard-wired` | The home-root write guard being defined but not referenced from `settings.json` under `PreToolUse`/`PostToolUse` with the right matchers. A hook nothing invokes refuses nothing |
 | `claude-home-guard-decides` | The same guard being wired but WRONG. Two earlier versions built cleanly, were wired identically and did not work — one had its `tr` reduced to a no-op by Nix indented-string escaping. Runs the built hook against the policy matrix |

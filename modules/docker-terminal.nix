@@ -76,11 +76,15 @@
             esac
           done
 
-          # Base Docker args. --network host trades isolation for
-          # convenience: the container shares the host network namespace
-          # (localhost services, SSH agent proxying). Acceptable for a
-          # personal dev shell; do not reuse for untrusted workloads.
-          DOCKER_ARGS=("-it" "--rm" "--network" "host")
+          # Base Docker args. Default bridge networking: the container gets
+          # outbound network but does NOT share the host's namespace, so it
+          # cannot reach the host's loopback-only services (Qdrant, SearXNG,
+          # Ollama, the scottapp databases -- none of which authenticate) and
+          # anything it listens on stays inside it. SSH agent forwarding does
+          # not need host networking: it is the socket bind-mount below.
+          # my.dockerTerminal.hostNetwork opts back into --network host.
+          DOCKER_ARGS=("-it" "--rm")
+          ${lib.optionalString cfg.hostNetwork ''DOCKER_ARGS+=("--network" "host")''}
 
           # Configure based on mode
           case "$MODE" in
@@ -127,6 +131,17 @@
 in {
   options.my.dockerTerminal = {
     enable = lib.mkEnableOption "Docker terminal wrapper for Home Manager image";
+    hostNetwork = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Run the terminal container with `--network host`, sharing the host's
+        network namespace. Off by default: it gives the container every
+        loopback-only service on the host (none of which authenticate) and
+        lets it bind host ports. Turn on only when a session genuinely needs
+        to talk to a host-local service.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
