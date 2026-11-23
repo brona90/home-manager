@@ -44,7 +44,9 @@ func popup(title, listCmd string, action func(string) error) error {
 		"(%s) | fzf --no-mouse --reverse --height=100%% --prompt='%s> ' > %q",
 		listCmd, title, resultPath,
 	)
-	if err := tmux.Run("display-popup", "-E", "-w", "60%", "-h", "60%", "sh", "-c", popupCmd); err != nil {
+	// RunInteractive, not Run: -E holds the popup (and this call) open until
+	// the user picks or dismisses, which can take any amount of time.
+	if err := tmux.RunInteractive("display-popup", "-E", "-w", "60%", "-h", "60%", "sh", "-c", popupCmd); err != nil {
 		return err
 	}
 	out, err := os.ReadFile(resultPath)
