@@ -41,6 +41,17 @@
       wrapProgram $out/bin/emacs-mcp-server \
         --prefix PATH : ${lib.makeBinPath [pkgs.python3 emacsPackage]}
     '';
+    # Protocol tests against the installed, wrapped server. They never reach
+    # emacsclient (the test points EMACSCLIENT at a missing path), so no daemon
+    # is needed in the sandbox. A failure here fails `nix build' and `hms'.
+    # installCheck runs after fixup in stdenv's phase order, so the binary under
+    # test is the wrapped one Claude Code will launch.
+    doInstallCheck = true;
+    installCheckPhase = ''
+      runHook preInstallCheck
+      ${pkgs.python3}/bin/python3 ${./emacs-mcp-server-test.py} $out/bin/emacs-mcp-server -v
+      runHook postInstallCheck
+    '';
     meta.description = "MCP server exposing Emacs functions to Claude Code via emacsclient";
   };
 in {

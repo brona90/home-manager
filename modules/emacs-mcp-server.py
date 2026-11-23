@@ -132,6 +132,15 @@ def _read_message() -> dict | None:
 
     Malformed lines get a JSON-RPC -32700 Parse error reply (id null)
     and are skipped rather than crashing the server.
+
+    Well-formed JSON that is not an object (`[]`, `1`, `"x"`, `null`) gets
+    -32600 Invalid Request, also with id null, because there is no id to
+    echo.  It used to be returned as-is, and the dispatcher's first
+    `msg.get` raised AttributeError and killed the server.  A JSON-RPC batch
+    (a non-empty array) is refused the same way.  This server never handled
+    batches (MCP allowed them only in 2025-03-26 and removed them in
+    2025-06-18); the change is that refusing one is now an error reply
+    rather than a crash.
     """
     while True:
         line = sys.stdin.readline()
@@ -141,11 +150,16 @@ def _read_message() -> dict | None:
         if not line:
             continue  # skip blank lines
         try:
-            return json.loads(line)
+            msg = json.loads(line)
         except json.JSONDecodeError as exc:
             _log(f"parse error, skipping line: {exc}")
             _error(None, -32700, "Parse error")
             continue
+        if not isinstance(msg, dict):
+            _log(f"invalid request, not a JSON object: {type(msg).__name__}")
+            _error(None, -32600, "Invalid Request: message must be a JSON object")
+            continue
+        return msg
 
 
 def _send_message(msg: dict) -> None:
@@ -338,6 +352,12 @@ def _handle_request(msg: dict) -> None:
         return
 
     # --- Requests (have id) ----
+    # The same crash one level down: `"params": []` reached params.get.
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        _error(msg_id, -32602, "Invalid params: params must be an object")
+        return
     if method == "initialize":
         requested = (params or {}).get("protocolVersion")
         version = (
