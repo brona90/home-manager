@@ -10,6 +10,16 @@ permissions:
   pull-requests: write
   issues: write # unpin-tracker step comments on the tracking issue
 
+# Same group key as ci.yml and validate.yml, but runs QUEUE instead of
+# cancelling. Two overlapping runs (the Sunday cron plus a manual dispatch)
+# would both force-update the one update-flake-lock PR branch and race on
+# auto-merge; cancelling the older one mid-run could stop it after it pushed
+# that branch but before it enabled auto-merge, leaving the PR parked.
+# Waiting costs one extra run, nothing more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 # Fork-friendly: Use repository variables or fall back to defaults
 env:
   CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'gfoster' }}
