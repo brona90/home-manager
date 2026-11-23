@@ -10,6 +10,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"tmux-helper/internal/shellquote"
 )
 
 // Palette mirrors modules/tmux/themes.nix attrset entry-by-entry. Field tags
@@ -95,8 +97,9 @@ func (t Themes) Next(current string) string {
 
 // SetCommands returns the argv slices to apply the named palette via
 // `tmux set-option -g <key> <value>` calls. Each entry is a complete argv.
-// helperBin is embedded into status-right's #() substitutions so tmux's
-// status-interval refresh always invokes the same binary.
+// helperBin is embedded into status-left/right's #() substitutions so tmux's
+// status-interval refresh always invokes the same binary; it is passed raw
+// and encoded by statusJobWord.
 func (t Themes) SetCommands(name, helperBin string) ([][]string, error) {
 	p, ok := t[name]
 	if !ok {
@@ -105,7 +108,56 @@ func (t Themes) SetCommands(name, helperBin string) ([][]string, error) {
 	return paletteCommands(p, helperBin), nil
 }
 
-func paletteCommands(p Palette, helperBin string) [][]string {
+// statusJobWord encodes s as a single sh word that survives being embedded in
+// a tmux status-line #() job. Two tmux passes rewrite the job text before sh
+// sees it, and neither knows anything about sh quoting:
+//
+//  1. strftime: the job command is strftime()d, so a bare %b becomes "Nov".
+//  2. format parsing: #( ends at the first UNBALANCED ")", and the command is
+//     then format-expanded, where #S, #H, #{...} are live and the rules for
+//     escaping # by doubling are irregular -- a run of #s followed by "["
+//     passes through verbatim (##[ stays ##[, so it can mean a literal #[)
+//     while every other run halves.
+//
+// Rather than encode those rules, the four characters they act on -- ( ) #
+// and % -- never appear literally: sh regenerates each from octal via
+// "$(printf '\0NN')", whose own parens balance and which contains no # or %.
+// Everything else is single-quoted, which makes $, backticks, globs, ;, {},
+// commas and spaces inert to sh, and none of those is special to tmux once
+// no # precedes it.
+//
+// Measured on tmux 3.8 by rendering a real status-left in an attached client
+// (display-message -p is not a substitute: it runs jobs unreliably with no
+// client and gave contradictory results run to run).
+func statusJobWord(s string) string {
+	if s == "" {
+		return "''"
+	}
+	var b, seg strings.Builder
+	flush := func() {
+		if seg.Len() > 0 {
+			b.WriteString(shellquote.Quote(seg.String()))
+			seg.Reset()
+		}
+	}
+	for _, r := range s {
+		switch r {
+		case '(', ')', '#', '%':
+			flush()
+			fmt.Fprintf(&b, `"$(printf '\%03o')"`, r)
+		default:
+			seg.WriteRune(r)
+		}
+	}
+	flush()
+	return b.String()
+}
+
+func paletteCommands(p Palette, rawHelperBin string) [][]string {
+	// Every use below is inside a #() job, so encode once, up front. The raw
+	// path is os.Executable(): on darwin with preferSystemPath it is
+	// /usr/local/bin, but nothing stops it being a directory with a space.
+	helperBin := statusJobWord(rawHelperBin)
 	cmds := [][]string{
 		{"set-option", "-g", "pane-border-style", "fg=" + p.PaneBorder},
 		{"set-option", "-g", "pane-active-border-style", "fg=" + p.PaneActiveBorder},
@@ -151,9 +203,9 @@ func paletteCommands(p Palette, helperBin string) [][]string {
 	statusRight := fmt.Sprintf(
 		"#{?client_prefix,#[fg=%s,bg=%s,bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold]#(%s status battery) #[fg=%s,bg=%s,nobold] %%R  %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid} #{pid})#{?#{==:#{user},root},#[blink] !,} ",
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // prefix indicator (red block, matches 🔒)
-		p.StatusFg, p.StatusBg,                     // pairing
+		p.StatusFg, p.StatusBg, // pairing
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // synchronized
-		p.StatusFg, p.StatusBg,                     // seg1 (time, battery)
+		p.StatusFg, p.StatusBg, // seg1 (time, battery)
 		helperBin,
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // seg2 (date)
 		p.StatusRightAccentFg, p.StatusRightAccentBg, // seg3 (user-host)

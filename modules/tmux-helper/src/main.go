@@ -21,24 +21,24 @@ type subcommandFunc func(args []string) error
 // Phase 1 only implements 'version'; everything else stubs to errNotImpl.
 // Subsequent phases replace stub entries with real implementations in cmds/*.go.
 var subcommands = map[string]subcommandFunc{
-	"version":         cmdVersion,
-	"status":          cmds.Status,
-	"clipboard":       cmds.Clipboard,
-	"maximize-pane":   cmds.MaximizePane,
-	"toggle-mouse":    cmds.ToggleMouse,
-	"reload":          cmds.Reload,
-	"clear-history":   cmds.ClearHistory,
-	"fpp":             cmds.Fpp,
-	"urlview":         cmds.Urlview,
-	"urlscan":         cmds.Urlview, // shared helper picks best of urlscan/urlview at runtime
-	"new-window-ssh":  cmdStub,
+	"version":          cmdVersion,
+	"status":           cmds.Status,
+	"clipboard":        cmds.Clipboard,
+	"maximize-pane":    cmds.MaximizePane,
+	"toggle-mouse":     cmds.ToggleMouse,
+	"reload":           cmds.Reload,
+	"clear-history":    cmds.ClearHistory,
+	"fpp":              cmds.Fpp,
+	"urlview":          cmds.Urlview,
+	"urlscan":          cmds.Urlview, // shared helper picks best of urlscan/urlview at runtime
+	"new-window-ssh":   cmdStub,
 	"split-window-ssh": cmdStub,
-	"apply-theme":     cmdStub,
-	"theme":           cmds.Theme,
-	"picker":          cmds.Picker,
-	"navigate":        cmds.Navigate,
-	"jump":            cmdStub,
-	"open-file":       cmds.OpenFile,
+	"apply-theme":      cmdStub,
+	"theme":            cmds.Theme,
+	"picker":           cmds.Picker,
+	"navigate":         cmds.Navigate,
+	"jump":             cmdStub,
+	"open-file":        cmds.OpenFile,
 }
 
 func main() {

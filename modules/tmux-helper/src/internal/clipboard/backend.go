@@ -5,12 +5,14 @@ package clipboard
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 	"unicode/utf16"
 )
 
@@ -107,10 +109,34 @@ func Copy(r io.Reader) error {
 		}
 		r = bytes.NewReader(encodeUTF16LEBOM(data))
 	}
-	cmd := exec.Command(b.Argv[0], b.Argv[1:]...)
+	return runBackend(b, r)
+}
+
+// copyTimeout bounds the clipboard tool. Every backend returns as soon as it
+// has taken its stdin (wl-copy and xclip fork a background process to own
+// the selection, and the one we started exits), so only a wedged tool --
+// most plausibly clip.exe across a stalled WSL interop bridge -- reaches
+// it. Generous because interop alone can add seconds, and the copy-pipe job
+// this runs as never blocks the user anyway. A var so tests can shrink it.
+var copyTimeout = 10 * time.Second
+
+// runBackend pipes r into the backend's argv, bounded by copyTimeout.
+func runBackend(b *Backend, r io.Reader) error {
+	ctx, cancel := context.WithTimeout(context.Background(), copyTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, b.Argv[0], b.Argv[1:]...)
 	cmd.Stdin = r
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	// When r is not an *os.File (the clip.exe UTF-16 path), exec feeds it
+	// through a pipe from a goroutine that Wait also waits for. A killed
+	// child whose descendant still holds the pipe would stall that forever;
+	// WaitDelay caps it.
+	cmd.WaitDelay = time.Second
+	err := cmd.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%s: timed out after %v: %w", b.Name, copyTimeout, err)
+	}
+	return err
 }
 
 // encodeUTF16LEBOM converts UTF-8 bytes to UTF-16LE with a leading BOM.

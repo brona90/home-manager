@@ -67,44 +67,126 @@ func parseSSHG(out string) *Connection {
 	return c
 }
 
-// valuedFlags are the standard ssh flags that consume the following argv
-// element. Without this list, `ssh -i key host` would report "key" as the
-// host.
-var valuedFlags = map[string]bool{
-	"-B": true, "-b": true, "-c": true, "-D": true, "-E": true,
-	"-e": true, "-F": true, "-i": true, "-J": true, "-L": true,
-	"-l": true, "-m": true, "-o": true, "-p": true, "-R": true,
-	"-W": true,
-}
+// valuedFlags are the ssh option letters that take a value, from the getopt
+// string in OpenSSH's ssh.c. Without them, `ssh -i key host` would report
+// "key" as the host. -P (tag) takes a value from OpenSSH 9.3 on; 9.2 accepted
+// it as a no-op, and the newer meaning is the one going forward.
+const valuedFlags = "BbcDEeFIiJLlmOoPpQRSWw"
 
+// detectFromArgv is the best-effort parse used when `ssh -G` cannot run. It
+// follows what OpenSSH itself does, each rule checked against `ssh -G`:
+//
+//   - getopt syntax: flags bundle (-vp 2222) and values attach (-p2222).
+//   - Options are parsed again after the destination (`host -p 2222`), but
+//     the first non-option after it begins the remote command, so the -l in
+//     `ssh host ls -l foo` is not a login name. `--` ends options outright.
+//   - user@host splits at the LAST @ (a@b@host is user "a@b").
+//   - ssh://[user@]host[:port] is a destination too.
+//   - -o Port/User/HostName count, with "=" or whitespace as separator.
+//   - For user, port and hostname alike, the first value in argv order wins,
+//     whichever of -l / -p / -o / the destination supplied it.
 func detectFromArgv(argv []string) *Connection {
-	c := &Connection{}
-	skipNext := false
-	for i, a := range argv {
-		if skipNext {
-			skipNext = false
-			continue
-		}
-		if strings.HasPrefix(a, "-") {
-			if valuedFlags[a] && i+1 < len(argv) {
-				switch a {
-				case "-p":
-					c.Port = argv[i+1]
-				case "-l":
-					c.User = argv[i+1]
-				}
-				skipNext = true
-			}
-			continue
-		}
-		if c.Host == "" {
-			if at := strings.IndexByte(a, '@'); at >= 0 {
-				c.User = a[:at]
-				c.Host = a[at+1:]
-			} else {
-				c.Host = a
-			}
+	var user, port, hostname, dest string
+	first := func(dst *string, v string) {
+		if *dst == "" {
+			*dst = v
 		}
 	}
-	return c
+	setDest := func(d string) {
+		u, h, p := splitDestination(d)
+		first(&user, u)
+		first(&port, p)
+		dest = h
+	}
+
+	args := argv
+	for len(args) > 0 {
+		a := args[0]
+		args = args[1:]
+		if a == "--" {
+			if dest == "" && len(args) > 0 {
+				setDest(args[0])
+			}
+			break
+		}
+		if len(a) < 2 || a[0] != '-' {
+			if dest != "" {
+				break // the remote command
+			}
+			setDest(a)
+			continue
+		}
+		for j := 1; j < len(a); j++ {
+			if !strings.ContainsRune(valuedFlags, rune(a[j])) {
+				continue // a no-value flag such as -v, -4, -A
+			}
+			val := a[j+1:]
+			if val == "" {
+				if len(args) == 0 {
+					break // value missing; ssh itself would refuse
+				}
+				val, args = args[0], args[1:]
+			}
+			switch a[j] {
+			case 'p':
+				first(&port, val)
+			case 'l':
+				first(&user, val)
+			case 'o':
+				key, v := splitOption(val)
+				switch strings.ToLower(key) {
+				case "port":
+					first(&port, v)
+				case "user":
+					first(&user, v)
+				case "hostname":
+					first(&hostname, v)
+				}
+			}
+			break // the value consumed the rest of this argument
+		}
+	}
+	if hostname == "" {
+		hostname = dest
+	}
+	return &Connection{User: user, Host: hostname, Port: port}
+}
+
+// splitDestination splits "[user@]host" or "ssh://[user@]host[:port]".
+func splitDestination(d string) (user, host, port string) {
+	rest, isURI := strings.CutPrefix(d, "ssh://")
+	if at := strings.LastIndexByte(rest, '@'); at >= 0 {
+		user, rest = rest[:at], rest[at+1:]
+	}
+	if !isURI {
+		return user, rest, "" // host:port is not a port outside a URI
+	}
+	rest, _, _ = strings.Cut(rest, "/")
+	if strings.HasPrefix(rest, "[") {
+		if end := strings.IndexByte(rest, ']'); end >= 0 {
+			host, rest = rest[1:end], rest[end+1:]
+			if p, ok := strings.CutPrefix(rest, ":"); ok {
+				port = p
+			}
+			return user, host, port
+		}
+	}
+	if colon := strings.LastIndexByte(rest, ':'); colon >= 0 {
+		return user, rest[:colon], rest[colon+1:]
+	}
+	return user, rest, ""
+}
+
+// splitOption splits an -o argument the way ssh_config does: the keyword
+// ends at whitespace or "=", and at most one "=" may sit among the spaces
+// before the value.
+func splitOption(o string) (key, val string) {
+	o = strings.TrimSpace(o)
+	end := strings.IndexAny(o, " \t=")
+	if end < 0 {
+		return o, ""
+	}
+	key, val = o[:end], strings.TrimLeft(o[end:], " \t")
+	val = strings.TrimLeft(strings.TrimPrefix(val, "="), " \t")
+	return key, val
 }
