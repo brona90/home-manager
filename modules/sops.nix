@@ -11,6 +11,91 @@
   secretsExist = builtins.pathExists secretsFile;
   inherit (pkgs.stdenv) isDarwin;
   secretsDir = "${config.home.homeDirectory}/.config/sops-nix/secrets";
+  sshDir = "${config.home.homeDirectory}/.ssh";
+
+  # The ONE list of decrypted secrets. Linux renders it into sops-nix's
+  # `sops.secrets`; Darwin (where the sops-nix LaunchAgent is blocked by AMFI)
+  # renders it into a manual decrypt script. Both used to be hand-written
+  # copies, and the Darwin copy silently lacked the two Cloudflare tokens --
+  # so `wrangler` on both Macs always failed with "no decrypted token".
+  # `name` is the sops-nix key: `/` separates nesting levels in secrets.yaml.
+  secretSpecs = [
+    {name = "github_token";}
+    {name = "dockerhub_token";}
+    {name = "cachix_token";}
+    {name = "flake_update_token";}
+    {
+      name = "porkbun/api_key";
+      file = "porkbun_api_key";
+    }
+    {
+      name = "porkbun/secret_key";
+      file = "porkbun_secret_key";
+    }
+    # orrery_token: Pages + DNS + Access on the fosterthecode.com zone (CI uses it).
+    # tunnel_token: Cloudflare Tunnel:Edit only -- provisioning the warealien tunnel.
+    {
+      name = "cloudflare/orrery_token";
+      file = "cloudflare_orrery_token";
+    }
+    {
+      name = "cloudflare/tunnel_token";
+      file = "cloudflare_tunnel_token";
+    }
+    {
+      name = "org_gcal/client_id";
+      file = "org_gcal_client_id";
+    }
+    {
+      name = "org_gcal/client_secret";
+      file = "org_gcal_client_secret";
+    }
+    # NOTE: org_gcal/gpg_private_key is deliberately NOT decrypted.
+    # It was a passphrase-less key encrypting Doom's org-gcal token
+    # plstore; Doom is retired and the current token store is a plain
+    # 0600 file. The key is still in secrets.yaml -- removing it there
+    # needs `sops unset`, and deleting it from each keyring is manual.
+    # See modules/emacs/RETIRING-DOOM.md, step 3.
+    {
+      name = "ssh/${cfg.sshKeyName}";
+      path = "${sshDir}/${cfg.sshKeyName}";
+      mode = "0600";
+    }
+    {
+      name = "ssh/${cfg.sshKeyName}_pub";
+      path = "${sshDir}/${cfg.sshKeyName}.pub";
+      mode = "0644";
+    }
+    {
+      name = "gpg/private_key";
+      file = "gpg_private_key";
+      mode = "0600";
+    }
+    {
+      name = "gpg/public_key";
+      file = "gpg_public_key";
+      mode = "0644";
+    }
+  ];
+
+  # sops-nix's own default mode is 0400; the Darwin path matches it.
+  specPath = spec: spec.path or "${secretsDir}/${spec.file or spec.name}";
+  specMode = spec: spec.mode or "0400";
+  # "porkbun/api_key" -> ["porkbun"]["api_key"], the sops --extract syntax.
+  specExtract = spec:
+    lib.concatMapStrings (k: ''["${k}"]'') (lib.splitString "/" spec.name);
+
+  darwinDecryptOne = spec: let
+    dest = specPath spec;
+  in ''
+    if ${pkgs.sops}/bin/sops -d --extract '${specExtract spec}' "${secretsFile}" > "${dest}.tmp" 2>/dev/null; then
+      chmod ${specMode spec} "${dest}.tmp"
+      mv -f "${dest}.tmp" "${dest}"
+    else
+      rm -f "${dest}.tmp"
+      echo "sops: could not decrypt ${spec.name}" >&2
+    fi
+  '';
 in {
   options.my.sops = {
     enable = lib.mkEnableOption "sops-nix secrets management";
@@ -45,100 +130,12 @@ in {
           # On Linux: native sops-nix systemd service handles decryption
           decryptSopsSecrets = lib.hm.dag.entryAfter ["writeBoundary"] ''
             umask 077
-            trap 'rm -f \
-              "${secretsDir}/github_token.tmp" \
-              "${secretsDir}/dockerhub_token.tmp" \
-              "${secretsDir}/cachix_token.tmp" \
-              "${secretsDir}/flake_update_token.tmp" \
-              "${secretsDir}/porkbun_api_key.tmp" \
-              "${secretsDir}/porkbun_secret_key.tmp" \
-              "${secretsDir}/org_gcal_client_id.tmp" \
-              "${secretsDir}/org_gcal_client_secret.tmp" \
-              "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" \
-              "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" \
-              "${secretsDir}/gpg_private_key.tmp" \
-              "${secretsDir}/gpg_public_key.tmp"' EXIT
+            trap 'rm -f ${lib.concatMapStringsSep " " (spec: ''"${specPath spec}.tmp"'') secretSpecs}' EXIT
             if [ -f "${cfg.ageKeyFile}" ]; then
               export SOPS_AGE_KEY_FILE="${cfg.ageKeyFile}"
-
-              # Create secrets directory
               mkdir -p "${secretsDir}"
               chmod 700 "${secretsDir}"
-
-              # Decrypt github_token
-              if ${pkgs.sops}/bin/sops -d --extract '["github_token"]' "${secretsFile}" > "${secretsDir}/github_token.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/github_token.tmp"
-                mv -f "${secretsDir}/github_token.tmp" "${secretsDir}/github_token"
-              fi
-
-              # Decrypt dockerhub_token
-              if ${pkgs.sops}/bin/sops -d --extract '["dockerhub_token"]' "${secretsFile}" > "${secretsDir}/dockerhub_token.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/dockerhub_token.tmp"
-                mv -f "${secretsDir}/dockerhub_token.tmp" "${secretsDir}/dockerhub_token"
-              fi
-
-              # Decrypt cachix_token
-              if ${pkgs.sops}/bin/sops -d --extract '["cachix_token"]' "${secretsFile}" > "${secretsDir}/cachix_token.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/cachix_token.tmp"
-                mv -f "${secretsDir}/cachix_token.tmp" "${secretsDir}/cachix_token"
-              fi
-
-              # Decrypt flake_update_token (GitHub PAT for update-flake.yml CI)
-              if ${pkgs.sops}/bin/sops -d --extract '["flake_update_token"]' "${secretsFile}" > "${secretsDir}/flake_update_token.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/flake_update_token.tmp"
-                mv -f "${secretsDir}/flake_update_token.tmp" "${secretsDir}/flake_update_token"
-              fi
-
-              # Decrypt Porkbun API credentials
-              if ${pkgs.sops}/bin/sops -d --extract '["porkbun"]["api_key"]' "${secretsFile}" > "${secretsDir}/porkbun_api_key.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/porkbun_api_key.tmp"
-                mv -f "${secretsDir}/porkbun_api_key.tmp" "${secretsDir}/porkbun_api_key"
-              fi
-
-              if ${pkgs.sops}/bin/sops -d --extract '["porkbun"]["secret_key"]' "${secretsFile}" > "${secretsDir}/porkbun_secret_key.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/porkbun_secret_key.tmp"
-                mv -f "${secretsDir}/porkbun_secret_key.tmp" "${secretsDir}/porkbun_secret_key"
-              fi
-
-              # Decrypt org-gcal OAuth credentials
-              if ${pkgs.sops}/bin/sops -d --extract '["org_gcal"]["client_id"]' "${secretsFile}" > "${secretsDir}/org_gcal_client_id.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/org_gcal_client_id.tmp"
-                mv -f "${secretsDir}/org_gcal_client_id.tmp" "${secretsDir}/org_gcal_client_id"
-              fi
-
-              if ${pkgs.sops}/bin/sops -d --extract '["org_gcal"]["client_secret"]' "${secretsFile}" > "${secretsDir}/org_gcal_client_secret.tmp" 2>/dev/null; then
-                chmod 0400 "${secretsDir}/org_gcal_client_secret.tmp"
-                mv -f "${secretsDir}/org_gcal_client_secret.tmp" "${secretsDir}/org_gcal_client_secret"
-              fi
-
-              # NOTE: org_gcal/gpg_private_key is deliberately NOT decrypted.
-              # It was a passphrase-less key encrypting Doom's org-gcal token
-              # plstore; Doom is retired and the current token store is a plain
-              # 0600 file. The key is still in secrets.yaml -- removing it there
-              # needs `sops unset`, and deleting it from each keyring is manual.
-              # See modules/emacs/RETIRING-DOOM.md, step 3.
-
-              # Decrypt SSH keys - write directly, not via symlink
-              if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["${cfg.sshKeyName}"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" 2>/dev/null; then
-                chmod 0600 "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp"
-                mv -f "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.tmp" "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}"
-              fi
-
-              if ${pkgs.sops}/bin/sops -d --extract '["ssh"]["${cfg.sshKeyName}_pub"]' "${secretsFile}" > "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" 2>/dev/null; then
-                chmod 0644 "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp"
-                mv -f "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub.tmp" "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub"
-              fi
-
-              # Decrypt GPG keys
-              if ${pkgs.sops}/bin/sops -d --extract '["gpg"]["private_key"]' "${secretsFile}" > "${secretsDir}/gpg_private_key.tmp" 2>/dev/null; then
-                chmod 0600 "${secretsDir}/gpg_private_key.tmp"
-                mv -f "${secretsDir}/gpg_private_key.tmp" "${secretsDir}/gpg_private_key"
-              fi
-
-              if ${pkgs.sops}/bin/sops -d --extract '["gpg"]["public_key"]' "${secretsFile}" > "${secretsDir}/gpg_public_key.tmp" 2>/dev/null; then
-                chmod 0644 "${secretsDir}/gpg_public_key.tmp"
-                mv -f "${secretsDir}/gpg_public_key.tmp" "${secretsDir}/gpg_public_key"
-              fi
+              ${lib.concatMapStrings darwinDecryptOne secretSpecs}
             else
               echo "Warning: Age key file not found at ${cfg.ageKeyFile}"
               echo "Secrets will not be decrypted. Run: age-keygen -o ${cfg.ageKeyFile}"
@@ -202,56 +199,12 @@ in {
       age.keyFile = cfg.ageKeyFile;
       defaultSopsFile = secretsFile;
 
-      secrets = {
-        github_token = {
-          path = "${secretsDir}/github_token";
-        };
-        dockerhub_token = {
-          path = "${secretsDir}/dockerhub_token";
-        };
-        cachix_token = {
-          path = "${secretsDir}/cachix_token";
-        };
-        flake_update_token = {
-          path = "${secretsDir}/flake_update_token";
-        };
-        "porkbun/api_key" = {
-          path = "${secretsDir}/porkbun_api_key";
-        };
-        "porkbun/secret_key" = {
-          path = "${secretsDir}/porkbun_secret_key";
-        };
-        # orrery_token: Pages + DNS + Access on the fosterthecode.com zone (CI uses it).
-        # tunnel_token: Cloudflare Tunnel:Edit only -- provisioning the warealien tunnel.
-        "cloudflare/orrery_token" = {
-          path = "${secretsDir}/cloudflare_orrery_token";
-        };
-        "cloudflare/tunnel_token" = {
-          path = "${secretsDir}/cloudflare_tunnel_token";
-        };
-        "org_gcal/client_id" = {
-          path = "${secretsDir}/org_gcal_client_id";
-        };
-        "org_gcal/client_secret" = {
-          path = "${secretsDir}/org_gcal_client_secret";
-        };
-        "ssh/${cfg.sshKeyName}" = {
-          path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}";
-          mode = "0600";
-        };
-        "ssh/${cfg.sshKeyName}_pub" = {
-          path = "${config.home.homeDirectory}/.ssh/${cfg.sshKeyName}.pub";
-          mode = "0644";
-        };
-        "gpg/private_key" = {
-          path = "${secretsDir}/gpg_private_key";
-          mode = "0600";
-        };
-        "gpg/public_key" = {
-          path = "${secretsDir}/gpg_public_key";
-          mode = "0644";
-        };
-      };
+      secrets = lib.listToAttrs (map (spec:
+        lib.nameValuePair spec.name {
+          path = specPath spec;
+          mode = specMode spec;
+        })
+      secretSpecs);
     };
 
     my.zsh.extraInitExtra = ''
