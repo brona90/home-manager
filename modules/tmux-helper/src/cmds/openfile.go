@@ -1,6 +1,8 @@
 package cmds
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"tmux-helper/internal/shellquote"
 	"tmux-helper/internal/tmux"
@@ -46,14 +49,17 @@ func OpenFile(_ []string) error {
 	}
 	args = append(args, file)
 
-	if _, err := exec.LookPath("emacsclient"); err == nil {
-		cmd := exec.Command("emacsclient", args...)
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err == nil {
-			return nil
-		}
-		// emacsclient ran but errored (no daemon, etc.) -- fall through to
-		// the $EDITOR fallback rather than just bailing.
+	opened, err := openInEmacs(args)
+	if err != nil {
+		// No fallback on timeout: the daemon may still act on the request,
+		// and a second editor on the same file is worse than a message.
+		// The text is fixed, not err.Error(): display-message format-expands
+		// its argument, and err would carry the selected path.
+		_ = tmux.Run("display-message", "open-file: emacsclient timed out; Emacs daemon busy or hung?")
+		return err
+	}
+	if opened {
+		return nil
 	}
 
 	// $EDITOR fallback: copy-pipe gives us no tty, and $EDITOR may be a
@@ -72,6 +78,38 @@ func OpenFile(_ []string) error {
 	}
 	cmdline += " " + shellquote.Quote(file)
 	return tmux.Run("new-window", cmdline)
+}
+
+// emacsclientTimeout bounds the emacsclient -n call. -n returns as soon as
+// the server has visited the file, so this is only ever reached by a daemon
+// that is wedged (a blocking prompt, a hung TRAMP connection, a stuck
+// process filter). Unbounded, that left this process -- and the copy-pipe job
+// tmux runs it as -- alive until the daemon recovered or was killed. Generous
+// because visiting a large file legitimately takes a moment.
+// A var so tests can shrink it.
+var emacsclientTimeout = 10 * time.Second
+
+// emacsclientCommand builds the emacsclient invocation. A var so tests can
+// substitute a fake emacsclient that hangs.
+var emacsclientCommand = func(ctx context.Context, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, "emacsclient", args...)
+}
+
+// openInEmacs runs `emacsclient <args>` with a time bound. opened reports
+// whether the daemon took the file. A non-nil error means the bound fired and
+// the caller must not fall back to $EDITOR; any other failure (emacsclient
+// not installed, no daemon running) returns opened=false, err=nil, and the
+// caller falls back as before.
+func openInEmacs(args []string) (opened bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), emacsclientTimeout)
+	defer cancel()
+	cmd := emacsclientCommand(ctx, args...)
+	cmd.Stderr = os.Stderr
+	runErr := cmd.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return false, fmt.Errorf("emacsclient %s: timed out after %v: %w", strings.Join(args, " "), emacsclientTimeout, runErr)
+	}
+	return runErr == nil, nil
 }
 
 // expandTilde resolves a leading ~/ (or bare ~) against the current user's
