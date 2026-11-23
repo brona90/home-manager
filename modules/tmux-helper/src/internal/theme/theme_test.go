@@ -10,8 +10,8 @@ import (
 )
 
 var testThemes = Themes{
-	"alpha": Palette{StatusFg: "#aaa", StatusBg: "#000"},
-	"bravo": Palette{StatusFg: "#bbb", StatusBg: "#111"},
+	"alpha":   Palette{StatusFg: "#aaa", StatusBg: "#000"},
+	"bravo":   Palette{StatusFg: "#bbb", StatusBg: "#111"},
 	"charlie": Palette{StatusFg: "#ccc", StatusBg: "#222"},
 }
 

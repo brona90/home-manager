@@ -203,9 +203,9 @@ func paletteCommands(p Palette, rawHelperBin string) [][]string {
 	statusRight := fmt.Sprintf(
 		"#{?client_prefix,#[fg=%s,bg=%s,bold] ⌨ ,}#{?session_many_attached,#[fg=%s]#[bg=%s] 👓 ,}#{?pane_synchronized,#[fg=%s]#[bg=%s] 🔒 ,}#[fg=%s,bg=%s,nobold]#(%s status battery) #[fg=%s,bg=%s,nobold] %%R  %%d %%b #[fg=%s,bg=%s,bold] #(%s status user-host #{pane_id} #{pane_pid} #{pid})#{?#{==:#{user},root},#[blink] !,} ",
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // prefix indicator (red block, matches 🔒)
-		p.StatusFg, p.StatusBg,                     // pairing
+		p.StatusFg, p.StatusBg, // pairing
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // synchronized
-		p.StatusFg, p.StatusBg,                     // seg1 (time, battery)
+		p.StatusFg, p.StatusBg, // seg1 (time, battery)
 		helperBin,
 		p.StatusRightAlertFg, p.StatusRightAlertBg, // seg2 (date)
 		p.StatusRightAccentFg, p.StatusRightAccentBg, // seg3 (user-host)

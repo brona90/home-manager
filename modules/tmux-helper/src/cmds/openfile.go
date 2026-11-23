@@ -23,9 +23,10 @@ import (
 // stack traces, ripgrep results, etc.) and jump straight to it.
 //
 // Recognized patterns (first match wins):
-//   path:LINE:COL   -> emacsclient -n +LINE:COL path
-//   path:LINE       -> emacsclient -n +LINE path
-//   path            -> emacsclient -n path
+//
+//	path:LINE:COL   -> emacsclient -n +LINE:COL path
+//	path:LINE       -> emacsclient -n +LINE path
+//	path            -> emacsclient -n path
 func OpenFile(_ []string) error {
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {

@@ -10,9 +10,10 @@ import (
 )
 
 // Theme dispatches the `theme` subcommand. Three actions:
-//   apply <name>  -- emit set-option commands for the named palette
-//   cycle         -- pick the next theme in sorted order, apply, store
-//   list          -- print available theme names (one per line)
+//
+//	apply <name>  -- emit set-option commands for the named palette
+//	cycle         -- pick the next theme in sorted order, apply, store
+//	list          -- print available theme names (one per line)
 func Theme(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: theme <apply <name> | cycle | list>")

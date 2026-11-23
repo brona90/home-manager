@@ -95,11 +95,11 @@ func TestOpenInEmacsNotInstalledFallsBack(t *testing.T) {
 
 func TestParseFileRef(t *testing.T) {
 	tests := []struct {
-		name           string
-		in             string
-		wantFile       string
+		name              string
+		in                string
+		wantFile          string
 		wantLine, wantCol int
-		wantOK         bool
+		wantOK            bool
 	}{
 		{"go file with line+col", "main.go:42:5", "main.go", 42, 5, true},
 		{"go file with line", "main.go:42", "main.go", 42, 0, true},
