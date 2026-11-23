@@ -208,6 +208,9 @@ This repo is designed to be easily forked:
 │   │                      #   default.nix, package.nix, settings.yml, src/, README.md
 │   ├── orrery-mcp/        # MCP server for the Orrery dashboard (source NOT vendored here)
 │   │                      #   default.nix, python-env.nix (mcp 2.x, pinned)
+│   ├── porkbun-mcp/       # @porkbunllc/mcp-server built from a pinned tarball (package.nix)
+│   ├── bench-refresh.nix  # hourly Bench rebuild + republish (my.benchRefresh)
+│   ├── claude-scottapp-agents.nix  # ScottApp subagents at user scope (my.scottappAgents)
 │   ├── emacs-mcp.nix      # Emacs MCP server module
 │   ├── emacs-mcp-server.py  # MCP stdio server bridging Claude Code -> emacsclient
 │   ├── emacs/             # Emacs
@@ -228,7 +231,9 @@ This repo is designed to be easily forked:
 │   ├── default.nix        # Merges them; documents the interface a guard file is handed
 │   ├── branch-policy.nix  # branch-policy-hook
 │   ├── claude-settings.nix  # claude-settings-guards
-│   ├── windows-bridge.nix   # windows-bridge-attribution
+│   ├── claude-home-guard.nix  # claude-home-guard-wired, claude-home-guard-decides
+│   ├── mcp-servers.nix    # mcp-servers-deps-from-nix (+ mcp-handshake.py)
+│   ├── windows-bridge.nix   # windows-bridge-* (eight checks; see the table)
 │   ├── dev-shell.nix      # devshell-stays-light, install-hooks-installs-hooks
 │   ├── docker-terminal.nix  # docker-terminal-no-ssh-mount
 │   ├── emacs-gate.nix     # ci-emacs-gate, emacs-report-framing
@@ -1023,7 +1028,7 @@ The CI is fork-friendly - lint and check always run, push operations only run if
 
 `nix flake check` builds these. Each one encodes a bug that already happened, so
 none of them is a style preference — if one fails, read what it caught rather
-than relaxing it. The seventeen guards below are defined on `x86_64-linux` only,
+than relaxing it. The twenty-three guards below are defined on `x86_64-linux` only,
 because the content they guard is identical across systems; the two
 tmux-helper builds run on every system.
 
@@ -1032,7 +1037,11 @@ load-bearing because this file, `.github/SETUP.md` and the `nix-home-manager`
 skill all name them in prose — that warning anticipated a rename, but the table
 fell out of date by ADDITION instead: it said "nine" and listed nine while
 twelve were defined, having silently missed the two `claude-home-guard` rows and
-`windows-bridge-attribution`. Adding a check means adding its row.
+`windows-bridge-attribution`. It then happened again: "seventeen" over
+twenty-one rows while twenty-three were defined, missing
+`mcp-servers-deps-from-nix` and `windows-bridge-profile-bins-exist`. Adding a
+check means adding its row — and the count. `nix eval --json
+.#checks.x86_64-linux --apply builtins.attrNames` is the list to compare against.
 
 They live in `checks/`, one file per concern, so that two branches touching two
 different guards do not conflict by construction — which is what a single
@@ -1054,10 +1063,12 @@ documents the whole interface a guard file is handed.
 | `ollama-unit-exports-driver-libs` | The unit losing `LD_LIBRARY_PATH`. The bundled CUDA runners reach the host's `libcuda.so.1` only through it, and it is deliberately not in the store because the userspace driver must match the kernel one. Without it every model silently falls back to CPU — measured at 0.3 tok/s against 83.4 tok/s for `qwen2.5:7b` |
 | `kg-recall-hook-probes-before-spending` | The knowledge-graph recall hook going back to discovering a dead embedder 123s later instead of 2s earlier. The original was `kg recall … 2>/dev/null \| jq … \|\| true` followed by "empty means nothing found": three silencers on one line. Measured against an unreachable embedder it blocked **123.5s and exited 0 with zero bytes**, indistinguishable from success and longer than the hook's whole 60s budget. Also refuses `exit 2`, which would *block* the user's prompt |
 | `branch-policy-hook` | The specflow branch-policy hook losing worktree-awareness, or ceasing to fail closed. It shipped blocking every worktree commit as if it were on master; the first fix then turned every parse miss into a silent ALLOW; a later review found `HEAD:master` / `+master` pushes and git behind `env`, `sudo` or `bash -c` going straight past it. Runs the shipped hook against the case matrix in `modules/claude-specflow/tests`, in both directions |
+| `mcp-servers-deps-from-nix` | An MCP server whose dependencies do not come from Nix. Allowlist, not denylist: every declared server must name the derivation that supplies its deps, that derivation must be in the registered command's runtime closure, and the server is started in the build sandbox (no network, empty `~/.cache`) and must answer `initialize` and a non-empty `tools/list`. orrery-mcp's launcher used `uv run --script` and stalled 25s on a cold cache; porkbun ran unpinned `npx -y` with API secrets in its env; and a nixpkgs bump to python mcp 2.2.0 killed claude-kg and searxng on import with every build green. orrery is the one server not started (its source is not vendored), and the derivation records that |
 | `claude-home-guard-wired` | The home-root write guard being defined but not referenced from `settings.json` under `PreToolUse`/`PostToolUse` with the right matchers. A hook nothing invokes refuses nothing |
 | `claude-home-guard-decides` | The same guard being wired but WRONG. Two earlier versions built cleanly, were wired identically and did not work — one had its `tr` reduced to a no-op by Nix indented-string escaping. Runs the built hook against the policy matrix |
 | `windows-bridge-attribution` | The managed fragment for the *Windows* `settings.json` losing the empty `attribution` block. `claude-settings-guards` cannot see that file, so it went on passing while Windows sessions added `Co-Authored-By` trailers that the same work from WSL did not |
 | `windows-bridge-no-store-paths` | A `/nix/store` path reaching the Windows fragment. That file is merged and never regenerated, so the path is not refreshed: it dangles at the next rebuild and the hook silently stops running on the Windows side only. Hook binaries must be named through `~/.nix-profile/bin` (`windowsProfileBin`) |
+| `windows-bridge-profile-bins-exist` | Any name crossed to Windows through `~/.nix-profile/bin` — three kg hooks and five MCP servers, derived from the options — that no package in `home.packages` provides. The weaker, complete partner of `windows-bridge-profile-bin-installed`: any provider satisfies it, which is enough because the failure is `command not found`, reported on Windows only as "failed to connect". Not hypothetical: `porkbun-mcp` was missing from `home.packages` when the MCP servers first crossed |
 | `windows-bridge-claude-kg-hooks` | The three claude-kg hooks ceasing to be generated for Windows. They were hand-typed in `C:\Users\<winuser>\.claude\settings.json` and existed nowhere in this repo, so a rebuilt WSL instance ran the knowledge graph on one side only. `kg-capture-hook-win` is built solely for that caller and had no in-repo consumer at all |
 | `windows-bridge-profile-bin-installed` | A crossed hook naming `~/.nix-profile/bin/<x>` while nothing puts `<x>` in the profile. `windows-bridge-no-store-paths` forces the profile spelling because a store path in a merged file dangles; that trade only holds if the name is really there. It is the `statusline-command.sh` failure reversed, and the WSL side keeps working throughout because it invokes the same program by store path |
 | `windows-bridge-home-guard-crosses` | The home-root write rule ceasing to be enforced on the Windows side. `claude-home-guard-decides` proves the hook decides correctly on backslash and drive-letter paths; only this proves the Windows caller ever reaches it. A missing decision is invisible from WSL — `hms` keeps installing the WSL hook and the only symptom is scratch piling up in `C:\Users\<winuser>`, a directory nobody lists, which is exactly how 371 of them piled up in `/home/gfoster` |
@@ -1094,19 +1105,26 @@ module is not listed here, it does not exist:
 | `my.claudeKg.enable` | `claude-kg/default.nix` | WSL host |
 | `my.searxng.enable` | `searxng/default.nix` | WSL host |
 | `my.orreryMcp.enable` | `orrery-mcp/default.nix` | WSL host |
+| `my.ollama.enable` | `ollama/default.nix` | WSL host — the only machine with a GPU; `driverLibraryPath` defaults to WSL's `/usr/lib/wsl/lib` |
+| `my.benchRefresh.enable` | `bench-refresh.nix` | WSL host — `bench.json` is a scan of that box; requires `my.emacs.enable` |
+| `my.scottappAgents.enable` | `claude-scottapp-agents.nix` | WSL host — renders from the checkout there and crosses through the bridge |
 | `my.windowsBridge.enable` | `windows-bridge.nix` | WSL host — files are contributed by `gpg.nix` and `claude-code.nix` |
 | `my.tmux.enable` | `tmux/default.nix` | `flake.nix` — every config (also sets `theme.preset = "nord"`) |
 | `my.tmuxHelper.enable` | `tmux-helper/default.nix` | `flake.nix` — every config |
 | `my.displayplacer.enable` | `displayplacer.nix` | darwin |
 | `my.zscalerBypass.enable` | `zscaler-bypass.nix` | corporate Mac |
 
+One option set has no `enable`: `my.homebrew.{casks,formulas}` is declared by
+`home/darwin.nix` (not a module) and filled per Mac in `home/hosts/*.nix`.
+
 ## Flake apps
 
-Things you can `nix run` from this flake without switching your profile:
+Things you can `nix run` from this flake. All but the default run without
+switching your profile:
 
 | App | What it does |
 |---|---|
-| `nix run '.'` | The default app: `emacs-vanilla` (below) |
+| `nix run '.'` | The default app, `activate-home`: **does switch** — runs `home-manager switch --flake ~/.config/home-manager#$USER@<system> -b backup` for whoever invokes it (resolved at runtime, so multi-user Macs get the right config). Note it builds `~/.config/home-manager`, not the directory you ran it from |
 | `nix run '.#docker-test'` | Build the terminal Docker image and test it locally (Linux only) |
 | `nix run '.#install-hooks'` | Install the git pre-commit hooks, and materialise the pinned linters at `.direnv/lint-tools` (GC-rooted) so the dev-shell can put them on `PATH` without evaluating them on every `cd`. `--uninstall` removes them |
 | `nix run '.#emacs-vanilla'` | Throwaway **foreground** Emacs — no daemon, no socket, no `hms`, so it cannot collide with the running daemon. Its `--init-directory` is a read-only store path on purpose: that run *is* the test that `early-init.el` redirects every writable path out of `user-emacs-directory`. |
