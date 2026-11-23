@@ -1,5 +1,5 @@
-# Builds of the Go tmux helper: it compiles, and `go vet` is clean across every
-# package in it.
+# Builds of the Go tmux helper: it compiles, and `go vet` and `gofmt -l` are
+# clean across every package in it.
 #
 # These are ordinary builds rather than regression guards, and they are the only
 # entries in checks/ defined on EVERY system -- a compiled binary is exactly the
@@ -16,7 +16,8 @@
 
   # Runs go vet across the helper sources. buildGoModule's checkPhase
   # already runs go test, but vet only fires for packages with _test.go
-  # files; this check exercises every package regardless.
+  # files; this check exercises every package regardless. It also holds the
+  # sources to gofmt: six files had drifted unnoticed because nothing did.
   tmux-helper-vet =
     pkgs.runCommand "tmux-helper-vet" {
       nativeBuildInputs = [pkgs.go];
@@ -30,6 +31,14 @@
       chmod -R u+w src
       cd src
       go vet ./...
+      # gofmt -l exits 0 whether or not it lists files, so the list itself
+      # is the verdict; a non-zero exit (a file it cannot parse) fails too.
+      unformatted=$(gofmt -l .) || exit 1
+      if [ -n "$unformatted" ]; then
+        echo "gofmt -l: these files need gofmt -w:" >&2
+        echo "$unformatted" >&2
+        exit 1
+      fi
       touch $out
     '';
 }
