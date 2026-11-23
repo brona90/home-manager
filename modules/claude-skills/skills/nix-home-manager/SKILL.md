@@ -126,7 +126,22 @@ bug — work out what it was protecting before you touch the guard itself.
 | `install-hooks-installs-hooks` | the wrapped installer is really git-hooks.nix's, `install-hooks.sh` can repair a deleted `pre-commit` hook, and the warm hooks stay GC-rooted |
 | `background-jobs-close-fds` | no shipped script backgrounds a job while holding inherited descriptors |
 | `devshell-hook-lint` | the shellHook stays lint-clean |
+| `mcp-servers-deps-from-nix` | every registered MCP server is allowlisted with the derivation that supplies its deps, that derivation is in the command's runtime closure, and the server starts in the sandbox (no network, empty `~/.cache`) and answers `initialize` + a non-empty `tools/list` (orrery is the one not started; its source is not vendored) |
+| `branch-policy-hook` | the specflow branch-policy hook passes its case matrix (`modules/claude-specflow/tests`) in both directions: worktree commits allowed, master commits and protected/force pushes denied however spelled (`HEAD:master`, `+master`, git behind `env`/`sudo`/`bash -c`/`eval`) |
+| `claude-home-guard-wired` | the home-root write guard is referenced from `settings.json` under `PreToolUse`/`PostToolUse` with the right matchers |
+| `claude-home-guard-decides` | the built home-root guard decides its policy matrix correctly, not merely wired |
+| `windows-bridge-attribution` | the managed Windows `settings.json` fragment keeps the empty `attribution` block |
+| `windows-bridge-no-store-paths` | no `/nix/store` path reaches a Windows fragment (it is merged, never regenerated, so the path would dangle); name binaries via `~/.nix-profile/bin` |
+| `windows-bridge-profile-bins-exist` | every name crossed through `~/.nix-profile/bin` (kg hooks, MCP servers) is provided by some package in `home.packages` |
+| `windows-bridge-profile-bin-installed` | the crossed home-guard binary is installed in the profile by identity, not merely by name |
+| `windows-bridge-claude-kg-hooks` | the three claude-kg hooks are still generated for the Windows side |
+| `windows-bridge-home-guard-crosses` | the home-root write rule is actually wired for the Windows caller |
+| `windows-bridge-claude-surfaces` | `CLAUDE.md`, the statusline, the skill bundle and the subagents keep crossing to Windows |
 | `tmux-helper-build`, `tmux-helper-vet` | the Go helper builds and `go vet` passes |
+
+The table must name every check `nix eval --json .#checks.x86_64-linux --apply
+builtins.attrNames` lists (23 guards plus the two tmux builds) and nothing it
+does not; compare against that, not against this table.
 
 There is no pre-push `nix flake check` — it held the connection open long enough
 that GitHub dropped the push. CI runs it instead.

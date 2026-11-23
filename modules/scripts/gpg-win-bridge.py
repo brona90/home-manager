@@ -271,6 +271,18 @@ def handle(client, win_gnupg_path):
                     while b"\n" in pending:
                         line, pending = pending.split(b"\n", 1)
                         log(f"win→client: {line!r}")
+                        # Auto-answering CONFIRM is NOT a presence bypass, and a
+                        # review has flagged it as one before. The signing key's
+                        # YubiKey (serial 14706224) has UIF Sign=on, per `gpg
+                        # --card-status' (checked 2026-11). With UIF set, the card
+                        # will not produce a signature until its sensor is touched,
+                        # whatever the agent answers here. CONFIRM is only the
+                        # agent asking "show a touch prompt?", and the popup below
+                        # is that prompt. Answering `D 1' does not tell the card
+                        # anything. This holds for SIGNING only: the Decrypt and
+                        # Auth UIF slots were not checked. If UIF Sign is ever
+                        # turned off, or a card without it is used, this line
+                        # really does become a bypass.
                         if line.startswith(b"INQUIRE CONFIRM"):
                             if popup[0] is None:
                                 popup[0] = start_touch_popup()

@@ -2,37 +2,77 @@
 // state, discovering daemon processes (and orphans squatting the server
 // socket), talking to it via emacsclient, and the reset/recovery primitives.
 //
-// The pure parsing/classification helpers (ParseShow, IsDaemonCmdline,
-// Classify) are kept side-effect-free so they can be unit tested without a
+// The pure parsing/classification helpers (ParseShow, ParseStatus,
+// IsDaemonCmdline, Classify) are kept side-effect-free so they can be unit tested without a
 // live system.
 package daemon
 
 import (
+	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
+
+	"emacs-doctor/internal/execx"
 )
 
 const serviceUnit = "emacs"
 
-// run executes a command and returns its stdout. A non-zero exit (e.g. pgrep
-// with no matches, emacsclient with no daemon) surfaces as a non-nil error.
+// unitJobTimeout bounds `systemctl start` and `systemctl stop`. These block
+// until the job finishes, and emacs.service is Type=notify: start returns only
+// once init.el has loaded, which was measured at 17s on this machine. A short
+// budget would kill the systemctl client while systemd carries on with the
+// job, and reset would report a start failure for a daemon that is merely
+// still loading. So the bound sits just above systemd's own
+// TimeoutStartUSec/TimeoutStopUSec (90s default): systemd fails the job first,
+// and the timeout only catches a systemctl that is itself wedged.
+const unitJobTimeout = 100 * time.Second
+
+// run executes a quick command (execx.Default budget) and returns its stdout.
+// A non-zero exit (e.g. pgrep with no matches, emacsclient with no daemon) or
+// an expired budget surfaces as a non-nil error.
 func run(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).Output()
-	return string(out), err
+	return execx.Run(execx.Default, name, args...)
 }
 
 // ---------------------------------------------------------------- unit state
 
 // Status is the subset of `systemctl show` fields we care about.
+//
+// Known is false when the unit state could not be read (systemctl failed,
+// timed out, or returned no usable MainPID). MainPID is then meaningless --
+// in particular it is NOT "no managed daemon" -- and nothing may be
+// classified against it.
 type Status struct {
+	Known       bool
 	ActiveState string
 	SubState    string
 	MainPID     int
 	NRestarts   int // -1 when unknown
+}
+
+// ParseStatus builds a Status from `systemctl show` output. It errors (and
+// leaves Known false) when MainPID is absent or unparseable, since a missing
+// MainPID would otherwise read as 0, i.e. "every daemon is an orphan".
+func ParseStatus(out string) (Status, error) {
+	m := ParseShow(out)
+	st := Status{
+		ActiveState: m["ActiveState"],
+		SubState:    m["SubState"],
+		NRestarts:   atoiOr(m["NRestarts"], -1),
+	}
+	raw, present := m["MainPID"]
+	pid, err := strconv.Atoi(strings.TrimSpace(raw))
+	if !present || err != nil {
+		return st, errors.New("systemctl show: no usable MainPID")
+	}
+	st.MainPID = pid
+	st.Known = true
+	return st, nil
 }
 
 // ParseShow turns `key=value` lines (systemctl show output) into a map.
@@ -47,17 +87,15 @@ func ParseShow(out string) map[string]string {
 	return m
 }
 
-// QueryStatus reads the live unit state of the user emacs.service.
-func QueryStatus() Status {
-	out, _ := run("systemctl", "--user", "show", serviceUnit,
+// QueryStatus reads the live unit state of the user emacs.service. On error
+// the returned Status has Known == false and must be reported as unknown.
+func QueryStatus() (Status, error) {
+	out, err := run("systemctl", "--user", "show", serviceUnit,
 		"-p", "ActiveState", "-p", "SubState", "-p", "MainPID", "-p", "NRestarts")
-	m := ParseShow(out)
-	return Status{
-		ActiveState: m["ActiveState"],
-		SubState:    m["SubState"],
-		MainPID:     atoiOr(m["MainPID"], 0),
-		NRestarts:   atoiOr(m["NRestarts"], -1),
+	if err != nil {
+		return Status{NRestarts: -1}, fmt.Errorf("systemctl --user show %s: %w", serviceUnit, err)
 	}
+	return ParseStatus(out)
 }
 
 func atoiOr(s string, def int) int {
@@ -119,17 +157,25 @@ func DaemonProcs() []int {
 	return ds
 }
 
-// Classify splits daemon PIDs into the systemd-managed one (== mainPID) and
-// any orphans. managed is 0 when none of the PIDs match mainPID.
-func Classify(daemonPIDs []int, mainPID int) (managed int, orphans []int) {
+// Classify splits daemon PIDs into the systemd-managed one (== st.MainPID)
+// and any orphans. managed is 0 when none of the PIDs match MainPID.
+//
+// When st is not Known, every PID comes back in unclassified and orphans is
+// empty: without the unit's MainPID there is no way to tell the managed daemon
+// from a squatter, and "orphan" is the verdict that sends the user to a
+// destructive reset.
+func Classify(daemonPIDs []int, st Status) (managed int, orphans, unclassified []int) {
+	if !st.Known {
+		return 0, nil, append(unclassified, daemonPIDs...)
+	}
 	for _, p := range daemonPIDs {
-		if mainPID != 0 && p == mainPID {
+		if st.MainPID != 0 && p == st.MainPID {
 			managed = p
 		} else {
 			orphans = append(orphans, p)
 		}
 	}
-	return managed, orphans
+	return managed, orphans, nil
 }
 
 // ---------------------------------------------------------------- emacsclient
@@ -208,14 +254,17 @@ func SocketPaths() []string {
 }
 
 // StopService stops the managed unit (best effort).
-func StopService() { _, _ = run("systemctl", "--user", "stop", serviceUnit) }
+func StopService() {
+	_, _ = execx.Run(unitJobTimeout, "systemctl", "--user", "stop", serviceUnit)
+}
 
 // ResetFailed clears the unit's failure bookkeeping (best effort).
 func ResetFailed() { _, _ = run("systemctl", "--user", "reset-failed", serviceUnit) }
 
 // StartService starts the managed unit, returning any start error.
 func StartService() error {
-	return exec.Command("systemctl", "--user", "start", serviceUnit).Run()
+	_, err := execx.Run(unitJobTimeout, "systemctl", "--user", "start", serviceUnit)
+	return err
 }
 
 func killDaemons(sig syscall.Signal) int {

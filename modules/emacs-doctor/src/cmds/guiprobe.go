@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"emacs-doctor/internal/execx"
 	"emacs-doctor/internal/sys"
 	"emacs-doctor/internal/ui"
 )
@@ -20,11 +21,11 @@ var winIDRe = regexp.MustCompile(`0x[0-9a-fA-F]+`)
 // but a pure-Wayland app's window won't be detected.
 func windowIDs() map[string]bool {
 	ids := map[string]bool{}
-	out, err := exec.Command("xwininfo", "-root", "-tree").Output()
+	out, err := execx.Run(execx.Default, "xwininfo", "-root", "-tree")
 	if err != nil {
 		return ids
 	}
-	for _, m := range winIDRe.FindAllString(string(out), -1) {
+	for _, m := range winIDRe.FindAllString(out, -1) {
 		ids[m] = true
 	}
 	return ids
@@ -55,6 +56,9 @@ func waitForNewWindow(before map[string]bool, start time.Time, timeout time.Dura
 func launchAndTime(argv []string, timeout time.Duration) (elapsed time.Duration, mapped bool, err error) {
 	before := windowIDs()
 	start := time.Now()
+	// Deliberately not execx.Run: this is a long-lived GUI app, not a query
+	// whose output we wait on. It is bounded by `timeout` below, and the whole
+	// process group is torn down when that expires.
 	cmd := exec.Command(argv[0], argv[1:]...)
 	// Own process group so we can reap children the app forks.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

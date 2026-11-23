@@ -3,6 +3,7 @@
 package system
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -10,13 +11,27 @@ import (
 	"time"
 )
 
+// uptimeTimeout bounds the sysctl call like every other status-path exec
+// (ReadBattery's pmset, the ps calls): Uptime runs on every status-interval
+// refresh, so an unbounded hang would pile up a stuck helper per tick. A var
+// so tests can shrink it.
+var uptimeTimeout = ExecTimeout
+
+// sysctlCommand builds the sysctl invocation. A var so tests can substitute
+// a fake sysctl that hangs.
+var sysctlCommand = func(ctx context.Context, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, "sysctl", args...)
+}
+
 // Uptime returns time since boot, computed from sysctl kern.boottime. We shell
 // out rather than dropping into syscall.Sysctl because the kern.boottime MIB
 // returns a packed timeval that's awkward to decode portably; "sysctl -n" hands
 // us text we can parse. The cost is one fork per call -- 5 ms range -- which is
 // fine at status-interval cadence.
 func Uptime() (time.Duration, error) {
-	out, err := exec.Command("sysctl", "-n", "kern.boottime").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), uptimeTimeout)
+	defer cancel()
+	out, err := sysctlCommand(ctx, "-n", "kern.boottime").Output()
 	if err != nil {
 		return 0, fmt.Errorf("sysctl kern.boottime: %w", err)
 	}

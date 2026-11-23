@@ -2,6 +2,7 @@ package cmds
 
 import (
 	"fmt"
+	"strconv"
 
 	"emacs-doctor/internal/daemon"
 	"emacs-doctor/internal/sys"
@@ -17,8 +18,60 @@ func Status(_ []string) error {
 
 func statusEmacs() {
 	ui.Header("Emacs daemon")
-	st := daemon.QueryStatus()
+	st, err := daemon.QueryStatus()
 
+	if err != nil {
+		ui.Warn("service: unknown (" + err.Error() + ")")
+	} else {
+		statusService(st)
+	}
+
+	managed, orphans, unclassified := daemon.Classify(daemon.DaemonProcs(), st)
+	if managed != 0 {
+		ui.OK(fmt.Sprintf("managed daemon process PID %d", managed))
+	}
+	if len(orphans) > 0 {
+		ui.Bad(fmt.Sprintf("orphan daemon(s): %s — not managed by systemd (socket squatter; run: emacs-doctor reset)", joinInts(orphans)))
+	}
+	if len(unclassified) > 0 {
+		ui.Warn(fmt.Sprintf("daemon process(es) PID %s — whether systemd manages it is unknown (service state unreadable)", joinInts(unclassified)))
+	}
+
+	if pid, ok := daemon.SocketOwnerPID(); ok {
+		switch {
+		case !st.Known:
+			ui.Info(fmt.Sprintf("server socket owned by PID %d (managed MainPID unknown)", pid))
+		case pid == st.MainPID:
+			ui.OK(fmt.Sprintf("server socket owned by the managed daemon (PID %d)", pid))
+		default:
+			ui.Bad(fmt.Sprintf("server socket owned by PID %d, not managed MainPID=%d (deadlock; run: emacs-doctor reset)", pid, st.MainPID))
+		}
+		nbuf, nbufOK := daemon.OpenFileBuffers()
+		nmod, nmodOK := daemon.UnsavedCount()
+		ui.Info(bufferSummary(nbuf, nbufOK, nmod, nmodOK))
+	} else {
+		ui.Warn("no daemon answering emacsclient")
+	}
+
+	if st.NRestarts >= 5 {
+		ui.Bad(fmt.Sprintf("high restart count (%d) — crash loop; run: emacs-doctor reset", st.NRestarts))
+	}
+}
+
+// bufferSummary renders the buffer counts. A failed query prints "unknown",
+// never 0: "unsaved: 0" reads as "safe to reset".
+func bufferSummary(nbuf int, nbufOK bool, nmod int, nmodOK bool) string {
+	count := func(n int, ok bool) string {
+		if !ok {
+			return "unknown"
+		}
+		return strconv.Itoa(n)
+	}
+	return fmt.Sprintf("open file buffers: %s (unsaved: %s)", count(nbuf, nbufOK), count(nmod, nmodOK))
+}
+
+// statusService prints the unit state line for a successfully read Status.
+func statusService(st daemon.Status) {
 	switch st.ActiveState {
 	case "active":
 		ui.OK(fmt.Sprintf("service: active (%s), MainPID=%d, NRestarts=%s", st.SubState, st.MainPID, nrStr(st.NRestarts)))
@@ -30,31 +83,6 @@ func statusEmacs() {
 		ui.Warn("service: unknown")
 	default:
 		ui.Warn("service: " + st.ActiveState)
-	}
-
-	managed, orphans := daemon.Classify(daemon.DaemonProcs(), st.MainPID)
-	if managed != 0 {
-		ui.OK(fmt.Sprintf("managed daemon process PID %d", managed))
-	}
-	if len(orphans) > 0 {
-		ui.Bad(fmt.Sprintf("orphan daemon(s): %s — not managed by systemd (socket squatter; run: emacs-doctor reset)", joinInts(orphans)))
-	}
-
-	if pid, ok := daemon.SocketOwnerPID(); ok {
-		if pid == st.MainPID {
-			ui.OK(fmt.Sprintf("server socket owned by the managed daemon (PID %d)", pid))
-		} else {
-			ui.Bad(fmt.Sprintf("server socket owned by PID %d, not managed MainPID=%d (deadlock; run: emacs-doctor reset)", pid, st.MainPID))
-		}
-		nbuf, _ := daemon.OpenFileBuffers()
-		nmod, _ := daemon.UnsavedCount()
-		ui.Info(fmt.Sprintf("open file buffers: %d (unsaved: %d)", nbuf, nmod))
-	} else {
-		ui.Warn("no daemon answering emacsclient")
-	}
-
-	if st.NRestarts >= 5 {
-		ui.Bad(fmt.Sprintf("high restart count (%d) — crash loop; run: emacs-doctor reset", st.NRestarts))
 	}
 }
 

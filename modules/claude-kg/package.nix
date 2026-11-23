@@ -73,6 +73,19 @@ in
       runHook preInstallCheck
       HOME="$TMPDIR" env -u SSL_CERT_FILE -u NIX_SSL_CERT_FILE PYTHONPATH="$out/lib/claude-kg" ${pyEnv}/bin/python3 -c \
         'import asyncio, kg_server, kg_cli, capture_local, reembed; print("claude-kg: entrypoints import; MCP tools registered:", len(asyncio.run(kg_server.mcp.list_tools())))'
+
+      # Unit tests, against the INSTALLED modules (PYTHONPATH is $out, not
+      # ./src), so they test what ships. Qdrant is faked by replacing
+      # kg_server._q (tests/fake_qdrant.py), Ollama by replacing _embed and
+      # httpx.post. Nothing opens a socket, and the sandbox has no network
+      # anyway. Each test file's docstring says what it pins. tests/ sits
+      # outside src/ so `cp *.py' above never installs it.
+      # The copy is there because unittest discovery writes __pycache__ next to
+      # the tests, and the store path they come from is read-only.
+      cp -r ${./tests} "$TMPDIR/kg-tests"
+      chmod -R u+w "$TMPDIR/kg-tests"
+      HOME="$TMPDIR" env -u SSL_CERT_FILE -u NIX_SSL_CERT_FILE PYTHONPATH="$out/lib/claude-kg" \
+        ${pyEnv}/bin/python3 -m unittest discover -s "$TMPDIR/kg-tests" -t "$TMPDIR/kg-tests" -v
       runHook postInstallCheck
     '';
 

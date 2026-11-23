@@ -59,6 +59,15 @@ tail -f ~/.local/share/claude-kg/capture.log
 Capture backend: `CLAUDE_KG_CAPTURE_BACKEND=local` (default, free, local Ollama) or
 `claude` (headless Claude, higher quality, costs tokens).
 
+The local backend runs a **secret filter**. It redacts private-key blocks, age
+identities, GitHub, AWS and Anthropic keys, and high-entropy tokens from the
+transcript before extraction, then drops any extracted fact that still contains
+one. Each hit is a `secret-filter:` line in `capture.log`, giving the pattern name
+and count, never the text. The `claude` backend does NOT get this filter, because
+it reads the raw transcript itself. The heuristic's limits are measured in
+`src/capture_local.py`. Tests live in `tests/` and run in the package's
+installCheck.
+
 ## Retraction (changing your mind)
 
 Capture is **append-only** — `kg_add_observations` never removes facts, so a reversed
