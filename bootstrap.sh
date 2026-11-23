@@ -160,10 +160,13 @@ configure_trusted_user() {
   warn "substituters (binary caches) and sandbox paths, which can influence"
   warn "derivations built by the root-owned nix-daemon."
   warn "It is required for pushing to/pulling from your personal cachix cache."
-  prompt "Add $username to trusted-users? [Y/n]"
+  # Defaults to No: crossing a privilege boundary takes an explicit "y". A bare
+  # Enter used to grant it, which is the wrong way round for a prompt whose own
+  # warning above calls it a privilege boundary.
+  prompt "Add $username to trusted-users? [y/N]"
   local confirm_trusted=""
   prompt_read confirm_trusted
-  if [[ "$confirm_trusted" =~ ^[Nn] ]]; then
+  if [[ ! "$confirm_trusted" =~ ^[Yy] ]]; then
     warn "Skipping trusted-users configuration (cachix may not work fully)."
     return
   fi
