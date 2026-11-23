@@ -4,10 +4,11 @@ package sys
 
 import (
 	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"emacs-doctor/internal/execx"
 )
 
 // Cores is the number of logical CPUs.
@@ -38,11 +39,11 @@ func LoadAvg() (one float64, triple string, ok bool) {
 
 // TopCPU returns up to n lines of `ps` output sorted by CPU (header included).
 func TopCPU(n int) []string {
-	out, err := exec.Command("ps", "-eo", "pid,pcpu,pmem,comm", "--sort=-pcpu").Output()
+	out, err := execx.Run(execx.Default, "ps", "-eo", "pid,pcpu,pmem,comm", "--sort=-pcpu")
 	if err != nil {
 		return nil
 	}
-	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) > n {
 		lines = lines[:n]
 	}
@@ -51,12 +52,12 @@ func TopCPU(n int) []string {
 
 // MemSummary returns the header and Mem: row from `free -h`.
 func MemSummary() []string {
-	out, err := exec.Command("free", "-h").Output()
+	out, err := execx.Run(execx.Default, "free", "-h")
 	if err != nil {
 		return nil
 	}
 	var keep []string
-	for i, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		if i == 0 || strings.HasPrefix(line, "Mem:") {
 			keep = append(keep, line)
 		}
@@ -66,11 +67,11 @@ func MemSummary() []string {
 
 // OllamaCPU returns the summed CPU% of any running ollama processes.
 func OllamaCPU() (float64, bool) {
-	out, err := exec.Command("ps", "-o", "pcpu=", "-C", "ollama").Output()
+	out, err := execx.Run(execx.Default, "ps", "-o", "pcpu=", "-C", "ollama")
 	if err != nil {
 		return 0, false
 	}
-	fields := strings.Fields(string(out))
+	fields := strings.Fields(out)
 	if len(fields) == 0 {
 		return 0, false
 	}
@@ -92,11 +93,11 @@ func HasHardwareGL() bool {
 // GPU queries nvidia-smi (PATH, then the WSL-provided path) for a one-line summary.
 func GPU() (string, bool) {
 	for _, bin := range []string{"nvidia-smi", "/usr/lib/wsl/lib/nvidia-smi"} {
-		out, err := exec.Command(bin,
+		out, err := execx.Run(execx.GPU, bin,
 			"--query-gpu=name,driver_version,utilization.gpu",
-			"--format=csv,noheader").Output()
+			"--format=csv,noheader")
 		if err == nil {
-			return strings.TrimSpace(string(out)), true
+			return strings.TrimSpace(out), true
 		}
 	}
 	return "", false

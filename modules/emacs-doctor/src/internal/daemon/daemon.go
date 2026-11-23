@@ -11,20 +11,32 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
+
+	"emacs-doctor/internal/execx"
 )
 
 const serviceUnit = "emacs"
 
-// run executes a command and returns its stdout. A non-zero exit (e.g. pgrep
-// with no matches, emacsclient with no daemon) surfaces as a non-nil error.
+// unitJobTimeout bounds `systemctl start` and `systemctl stop`. These block
+// until the job finishes, and emacs.service is Type=notify: start returns only
+// once init.el has loaded, which was measured at 17s on this machine. A short
+// budget would kill the systemctl client while systemd carries on with the
+// job, and reset would report a start failure for a daemon that is merely
+// still loading. So the bound sits just above systemd's own
+// TimeoutStartUSec/TimeoutStopUSec (90s default): systemd fails the job first,
+// and the timeout only catches a systemctl that is itself wedged.
+const unitJobTimeout = 100 * time.Second
+
+// run executes a quick command (execx.Default budget) and returns its stdout.
+// A non-zero exit (e.g. pgrep with no matches, emacsclient with no daemon) or
+// an expired budget surfaces as a non-nil error.
 func run(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).Output()
-	return string(out), err
+	return execx.Run(execx.Default, name, args...)
 }
 
 // ---------------------------------------------------------------- unit state
@@ -242,14 +254,17 @@ func SocketPaths() []string {
 }
 
 // StopService stops the managed unit (best effort).
-func StopService() { _, _ = run("systemctl", "--user", "stop", serviceUnit) }
+func StopService() {
+	_, _ = execx.Run(unitJobTimeout, "systemctl", "--user", "stop", serviceUnit)
+}
 
 // ResetFailed clears the unit's failure bookkeeping (best effort).
 func ResetFailed() { _, _ = run("systemctl", "--user", "reset-failed", serviceUnit) }
 
 // StartService starts the managed unit, returning any start error.
 func StartService() error {
-	return exec.Command("systemctl", "--user", "start", serviceUnit).Run()
+	_, err := execx.Run(unitJobTimeout, "systemctl", "--user", "start", serviceUnit)
+	return err
 }
 
 func killDaemons(sig syscall.Signal) int {

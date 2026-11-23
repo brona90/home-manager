@@ -1,11 +1,15 @@
 package daemon
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
+
+	"emacs-doctor/internal/execx"
 )
 
 func TestParseShow(t *testing.T) {
@@ -112,6 +116,32 @@ func TestQueryStatusSuccess(t *testing.T) {
 	st, err := QueryStatus()
 	if err != nil || !st.Known || st.MainPID != 42 {
 		t.Errorf("QueryStatus = %+v, %v; want Known with MainPID 42", st, err)
+	}
+}
+
+// Regression: every exec used to be unbounded, so a wedged user bus or a busy
+// daemon hung `emacs-doctor status` -- the tool you run because things are
+// wedged. A hung systemctl/emacsclient must cost at most the budget.
+func TestQueriesAreBoundedWhenTheToolHangs(t *testing.T) {
+	fakeBin(t, "systemctl", "sleep 30")
+	fakeBin(t, "emacsclient", "sleep 30")
+	limit := execx.Default + 2*time.Second
+
+	start := time.Now()
+	st, err := QueryStatus()
+	if elapsed := time.Since(start); elapsed > limit {
+		t.Errorf("QueryStatus took %v against a hung systemctl; want <= %v", elapsed, limit)
+	}
+	if !errors.Is(err, execx.ErrTimeout) || st.Known {
+		t.Errorf("QueryStatus = %+v, %v; want unknown + ErrTimeout", st, err)
+	}
+
+	start = time.Now()
+	if Answers() {
+		t.Error("Answers() = true against a hung emacsclient")
+	}
+	if elapsed := time.Since(start); elapsed > limit {
+		t.Errorf("Answers took %v against a hung emacsclient; want <= %v", elapsed, limit)
 	}
 }
 
