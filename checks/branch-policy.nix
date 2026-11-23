@@ -27,9 +27,15 @@
   #
   # A guard that only checked the worktree case would have passed
   # on that second version. modules/claude-specflow/tests runs both
-  # directions -- 43 cases, and its own comment lists the eight
-  # deliberate breakages it was confirmed to catch, because a
-  # matrix nobody has ever seen fail proves nothing.
+  # directions, and its own comment lists every deliberate breakage
+  # it was confirmed to catch, because a matrix nobody has ever seen
+  # fail proves nothing.
+  #
+  # It was widened after a review found the push test read a
+  # protected name only after whitespace -- `HEAD:master`, `+master`
+  # and `refs/heads/master` all went past it -- and that any git
+  # behind env, sudo, a NAME=value prefix or `bash -c` skipped the
+  # token walk entirely.
   branch-policy-hook =
     pkgs.runCommand "branch-policy-hook" {
       nativeBuildInputs = [pkgs.bash pkgs.git pkgs.jq];

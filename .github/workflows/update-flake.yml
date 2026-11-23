@@ -10,6 +10,16 @@ permissions:
   pull-requests: write
   issues: write # unpin-tracker step comments on the tracking issue
 
+# Same group key as ci.yml and validate.yml, but runs QUEUE instead of
+# cancelling. Two overlapping runs (the Sunday cron plus a manual dispatch)
+# would both force-update the one update-flake-lock PR branch and race on
+# auto-merge; cancelling the older one mid-run could stop it after it pushed
+# that branch but before it enabled auto-merge, leaving the PR parked.
+# Waiting costs one extra run, nothing more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 # Fork-friendly: Use repository variables or fall back to defaults
 env:
   CACHIX_CACHE: ${{ vars.CACHIX_CACHE || 'gfoster' }}
@@ -19,47 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      # Unpin tracker: nixpkgs is temporarily pinned in flake.nix (rev
-      # 8c3cede7) because nixos-unstable lacks nixpkgs PR #529355 (merge
-      # commit 95e9e11e), which fixes the darwin emacs 30.2 build. Once the
-      # channel contains that commit, ping the tracking issue so the pin gets
-      # removed. Best effort: must never fail the workflow.
-      - name: Check whether the nixpkgs pin can be removed
-        continue-on-error: true
-        env:
-          # github.token (not FLAKE_UPDATE_TOKEN): the fine-grained PAT has no
-          # Issues permission, and issue comments don't need to trigger CI.
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          FIX_COMMIT=95e9e11e1ccfa01bd43c64072f63accfe4a49372
-          ISSUE_TITLE="Unpin nixpkgs once nixos-unstable contains 95e9e11e"
-          MARKER="<!-- nixpkgs-unpin-ready -->"
-
-          STATUS=$(gh api "repos/NixOS/nixpkgs/compare/${FIX_COMMIT}...nixos-unstable" --jq .status || true)
-          echo "nixos-unstable vs ${FIX_COMMIT}: ${STATUS:-unknown}"
-          if [ "$STATUS" != "ahead" ] && [ "$STATUS" != "identical" ]; then
-            echo "Fix not in nixos-unstable yet; keeping the pin."
-            exit 0
-          fi
-
-          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-            --search "\"$ISSUE_TITLE\" in:title" \
-            --json number --jq '.[0].number // empty' || true)
-          if [ -z "$ISSUE" ]; then
-            echo "No open tracking issue titled '$ISSUE_TITLE'; nothing to do."
-            exit 0
-          fi
-
-          # Comment only once: skip if a previous run already pinged the issue.
-          if gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" \
-              --json comments --jq '.comments[].body' | grep -qF "$MARKER"; then
-            echo "Issue #$ISSUE already notified; skipping."
-            exit 0
-          fi
-
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$MARKER
-          nixos-unstable now contains \`${FIX_COMMIT}\` (compare status: \`${STATUS}\`). The temporary nixpkgs pin in \`flake.nix\` can be removed — see the issue body for what to change."
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -78,6 +47,63 @@ jobs:
       # update is checked even when no PAT is configured (see token note below).
       - name: Update flake.lock
         run: nix flake update
+
+      # Unpin tracker for the `nixpkgs-mise` input in flake.nix. That input
+      # sources mise from rev 8c3cede7 on aarch64-darwin only, because the
+      # channel's mise (2026.6.11 at the time) fails its own Rust test suite
+      # on macOS and so breaks the Darwin home build (8eb7e7d).
+      #
+      # This step used to watch for nixpkgs commit 95e9e11e, the darwin emacs
+      # 30.2 fix. That tracked an EARLIER whole-nixpkgs pin at the same rev
+      # (7acb28c), which 0e55054 removed and whose tracking issue #1 is
+      # closed; the mise pin that came next reused the rev but not the
+      # reason, and the check went on watching a condition met long ago.
+      #
+      # The real condition is "the channel's darwin mise builds again". Hydra
+      # pushes an output to cache.nixos.org only when its build -- tests
+      # included -- succeeded, so the mise of the nixpkgs rev just locked
+      # being substitutable is that condition, observed. Absent means
+      # "not shown yet" (it may simply not be built), so the pin stays.
+      # Best effort: must never fail the workflow.
+      - name: Check whether the nixpkgs-mise pin can be removed
+        continue-on-error: true
+        env:
+          # github.token (not FLAKE_UPDATE_TOKEN): the fine-grained PAT has no
+          # Issues permission, and issue comments don't need to trigger CI.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE_TITLE="Unpin nixpkgs-mise once channel mise builds on aarch64-darwin"
+          MARKER="<!-- nixpkgs-mise-unpin-ready -->"
+
+          REV=$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)
+          MISE="github:NixOS/nixpkgs/${REV}#legacyPackages.aarch64-darwin.mise"
+          OUT=$(nix eval --raw "${MISE}.outPath")
+          VERSION=$(nix eval --raw "${MISE}.version")
+          HASH=$(basename "$OUT" | cut -d- -f1)
+          echo "channel mise at ${REV}: ${VERSION} (${OUT})"
+          if ! curl -sfI "https://cache.nixos.org/${HASH}.narinfo" >/dev/null; then
+            echo "Channel mise ${VERSION} is not in cache.nixos.org for aarch64-darwin; keeping the pin."
+            exit 0
+          fi
+          echo "::notice::Channel mise ${VERSION} built on aarch64-darwin; the nixpkgs-mise pin in flake.nix can be removed."
+
+          ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$ISSUE_TITLE\" in:title" \
+            --json number --jq '.[0].number // empty' || true)
+          if [ -z "$ISSUE" ]; then
+            echo "No open tracking issue titled '$ISSUE_TITLE'; the notice above is the only signal."
+            exit 0
+          fi
+
+          # Comment only once: skip if a previous run already pinged the issue.
+          if gh issue view "$ISSUE" --repo "$GITHUB_REPOSITORY" \
+              --json comments --jq '.comments[].body' | grep -qF "$MARKER"; then
+            echo "Issue #$ISSUE already notified; skipping."
+            exit 0
+          fi
+
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$MARKER
+          The channel's aarch64-darwin mise (\`${VERSION}\`, nixpkgs \`${REV}\`) is in cache.nixos.org, so Hydra built it with its tests passing. The \`nixpkgs-mise\` input and \`pinMiseOnDarwin\` overlay in \`flake.nix\` can be removed."
 
       # `--all-systems` is back. It was omitted while the unstraightened
       # (Doom Emacs) IFD derivations set allowSubstitutes = false, which made
