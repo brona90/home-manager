@@ -30,6 +30,18 @@
 #   6. only the first commit in a line is checked -> M1 M2 M3
 #   7. parens no longer separate commands         -> L4
 #   8. tilde no longer expanded                   -> L3
+#   9. refspec destination after ':' not taken    -> D1 D2 D5 D6 E13
+#  10. env / command not skipped as wrappers      -> E1 E2 E4 E8 E12 E17
+#  11. NAME=value prefixes not skipped            -> E3
+#  12. "bash -c" string not analysed              -> E9 E10 E14 E16
+#  13. "eval" string not analysed                 -> E11
+#  14. env -C ignored                             -> E8 E17
+#  15. "+" refspec not counted as a force push    -> D9
+#  16. --all / --mirror ignored                   -> D7 D8
+#  17. token-based protected-push test removed    -> D1 D2 D5 D6 D7 D8 E13
+# One mutant SURVIVES, and is equivalent: not stripping the "+" before matching the destination.
+# Every "+<protected>" refspec is also a force push, so it is denied either way; the strip only
+# changes which reason is reported. It is kept because the destination of "+master" IS master.
 set -uo pipefail
 
 HOOK="${1:?usage: branch-policy-matrix.sh <path-to-branch-policy.sh>}"
@@ -144,6 +156,43 @@ echo "--- force push hidden behind -C (the adjacency-grep blind spot) ---"
 run_case DENY "$FX/main" "git -C $FX/wt push --force origin master" 'F1  -C + push --force'
 run_case DENY "$FX/main" "git -C $FX/wt push -f origin feature/x" 'F2  -C + push -f'
 run_case DENY "$FX/main" "cd $FX/wt && git push --force-with-lease" 'F3  cd wt && push --force-with-lease'
+
+echo "--- push destination spellings: the branch after ':' and behind '+' is the target ---"
+# The grep test reads a protected name only when whitespace sits right before it, so every
+# refspec that puts the protected name after a ':' or a '+' went straight past it.
+run_case DENY "$FX/main" 'git push origin HEAD:master' 'D1  HEAD:master'
+run_case DENY "$FX/main" 'git push origin HEAD:refs/heads/master' 'D2  HEAD:refs/heads/master'
+run_case DENY "$FX/main" 'git push origin +master' 'D3  +master'
+run_case DENY "$FX/main" 'git push origin +refs/heads/master' 'D4  +refs/heads/master'
+run_case DENY "$FX/main" "git -C $FX/wt push origin feature/x:refs/heads/development" 'D5  -C + feature:refs/heads/development'
+run_case DENY "$FX/main" 'git push -u origin HEAD:main' 'D6  -u + HEAD:main'
+run_case DENY "$FX/main" 'git push --all origin' 'D7  --all pushes every branch, master included'
+run_case DENY "$FX/main" 'git push --mirror origin' 'D8  --mirror'
+run_case DENY "$FX/main" 'git push origin +feature/x' 'D9  +refspec is a force push'
+run_case ALLOW "$FX/main" 'git push origin HEAD:feature/x' 'D10 HEAD:feature/x'
+run_case ALLOW "$FX/main" 'git push -u origin fix/master' 'D11 a branch merely NAMED after master'
+run_case ALLOW "$FX/main" 'git push -o ci.skip origin feature/x' 'D12 -o takes a value, not a refspec'
+
+echo "--- git reached through a wrapper is still git ---"
+# Each of these used to be invisible to the token walk, so the commit fell to the legacy arm,
+# which checks the HOOK's cwd -- a feature worktree here, so the commit on master was allowed.
+run_case DENY "$FX/wt" "cd $FX/main && env git commit -m x" 'E1  env git commit'
+run_case DENY "$FX/wt" "cd $FX/main && env GIT_AUTHOR_NAME=x git commit -m x" 'E2  env VAR=val git commit'
+run_case DENY "$FX/wt" "cd $FX/main && FOO=1 git commit -m x" 'E3  VAR=val git commit'
+run_case DENY "$FX/wt" "cd $FX/main && command git commit -m x" 'E4  command git commit'
+run_case DENY "$FX/wt" "cd $FX/main && sudo -u nobody git commit -m x" 'E5  sudo -u user git commit'
+run_case DENY "$FX/wt" "cd $FX/main && nice -n 5 git commit -m x" 'E6  nice -n N git commit'
+run_case DENY "$FX/wt" "timeout 60 git -C $FX/main commit -m x" 'E7  timeout DURATION git -C main commit'
+run_case DENY "$FX/wt" "env -C $FX/main git commit -m x" 'E8  env -C main git commit'
+run_case DENY "$FX/wt" "bash -c \"cd $FX/main && git commit -m x\"" 'E9  bash -c "cd main && commit"'
+run_case DENY "$FX/wt" "bash -lc 'git -C $FX/main commit -m x'" 'E10 bash -lc with git -C main'
+run_case DENY "$FX/wt" "eval \"cd $FX/main && git commit -m x\"" 'E11 eval "cd main && commit"'
+run_case DENY "$FX/main" "env git -C $FX/wt push --force origin feature/x" 'E12 env git -C push --force'
+run_case DENY "$FX/main" "sudo git -C $FX/wt push origin HEAD:master" 'E13 sudo git -C push HEAD:master'
+run_case DENY "$FX/main" "bash -c 'git push origin +master'" 'E14 bash -c push +master'
+run_case ALLOW "$FX/main" "env git -C $FX/wt commit -m x" 'E15 env git -C worktree(feature) commit'
+run_case ALLOW "$FX/main" "bash -c \"cd $FX/wt && git commit -m x\"" 'E16 bash -c "cd worktree && commit"'
+run_case ALLOW "$FX/main" "env -C $FX/wt git commit -m x" 'E17 env -C worktree git commit'
 
 echo "--- legitimate worktree spellings must keep working ---"
 run_case ALLOW "$FX/main" "cd \"$FX/my wt\" && git commit -m x" 'L1  quoted path containing a space'

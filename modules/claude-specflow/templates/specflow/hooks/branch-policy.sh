@@ -3,8 +3,9 @@
 #
 # Blocks:
 #   1. Commits made while on a protected branch (master / main / development)
-#   2. Force pushes (git push --force / -f / --force-with-lease)
-#   3. Direct pushes to a protected branch
+#   2. Force pushes (git push --force / -f / --force-with-lease / a "+" refspec)
+#   3. Direct pushes to a protected branch, however the refspec names it (master, HEAD:master,
+#      +master, refs/heads/master), and --all / --mirror
 #
 # Per the repo Git model: feature branches -> development -> master. Work happens on feature
 # branches; integration branches are updated via merged PRs, not direct commits/pushes.
@@ -190,47 +191,195 @@ branch_of() {
   printf '%s' "$FREEHEAD"
 }
 
+# True for a shell variable assignment word (NAME=value). In command position it is a prefix
+# on the command that follows, not the command itself.
+is_assignment() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
+}
+
+# The branch a push refspec writes to. A leading "+" is a force marker, not part of the name;
+# the destination is whatever follows the ":" (the source, when there is no ":"); a full
+# refs/heads/ name and its short form are the same branch.
+push_destination() {
+  local r="${1#+}"
+  case "$r" in
+    *:*) r="${r##*:}" ;;
+  esac
+  printf '%s' "${r#refs/heads/}"
+}
+
+is_protected() {
+  printf '%s\n' "$1" | grep -Eq "^($PROTECTED)$"
+}
+
 # Walk the token stream, tracking the working directory as cd moves it, and record the
 # directory each git commit would actually run in. One command line can hold several git
 # invocations targeting different directories, so every one is recorded and every one checked.
+#
+# Arguments: the command string, and the directory it starts in. The walk recurses on the
+# command strings handed to "bash -c", "eval" and "env -S", starting them in the directory in
+# force at that point. A git reached that way is still git; before this, every such commit fell
+# through to the legacy arm below, which checks the HOOK's cwd and so allowed
+# "bash -c 'cd <main> && git commit'" from a feature worktree.
+#
+# Wrappers that run their arguments as a command (env, command, sudo, nice, timeout, ...) and
+# leading NAME=value assignments are skipped with their options, leaving the word after them in
+# command position. "env -C <dir>" and "sudo -D <dir>" move the directory for that one command.
+# An option this walk does not know is taken to have no argument; if that is wrong, the next
+# word is misread as the command, git goes unseen, and the result is exactly the pre-wrapper
+# behaviour -- the legacy arm -- not a new hole.
 COMMIT_DIRS=()
 FOUND_COMMIT=0
 FOUND_FORCE_PUSH=0
+FOUND_PROTECTED_PUSH=0
 analyze() {
-  local running="$PWD"
+  tokenize "$1"
+  # Copied out of the globals because a recursive call re-tokenizes and overwrites them.
+  local -a toks=("${TOKENS[@]}") kinds=("${TOKKIND[@]}")
+  local running="$2"
   local at_start=1
-  local idx=0 total=${#TOKENS[@]}
-  local tok j gdir sub t forced
+  local idx=0 total=${#toks[@]}
+  local tok j gdir sub t forced here wset wdir wrapper hascmd str
+  local pend npos endopts
+  wset=0
+  wdir=""
   while [ "$idx" -lt "$total" ]; do
-    if [ "${TOKKIND[$idx]}" = "op" ]; then
+    if [ "${kinds[$idx]}" = "op" ]; then
       at_start=1
+      wset=0
       idx=$((idx + 1))
       continue
     fi
-    tok="${TOKENS[$idx]}"
+    tok="${toks[$idx]}"
     if [ "$at_start" -eq 1 ]; then
+      if [ "$wset" -eq 1 ]; then here="$wdir"; else here="$running"; fi
+      if is_assignment "$tok"; then
+        idx=$((idx + 1))
+        continue
+      fi
       case "$tok" in
+        env | */env | command | builtin | exec | nohup | time | sudo | */sudo | doas | */doas \
+          | nice | */nice | ionice | */ionice | timeout | */timeout | stdbuf | */stdbuf)
+          wrapper="${tok##*/}"
+          idx=$((idx + 1))
+          while [ "$idx" -lt "$total" ] && [ "${kinds[$idx]}" = "word" ]; do
+            t="${toks[$idx]}"
+            case "$wrapper:$t" in
+              *:--)
+                idx=$((idx + 1))
+                break
+                ;;
+              env:-C | env:--chdir | sudo:-D | sudo:--chdir)
+                wset=1
+                wdir=""
+                if [ $((idx + 1)) -lt "$total" ] && [ "${kinds[$((idx + 1))]}" = "word" ]; then
+                  wdir="$(resolve_dir "$here" "${toks[$((idx + 1))]}")"
+                fi
+                idx=$((idx + 2))
+                ;;
+              env:--chdir=* | sudo:--chdir=*)
+                wset=1
+                wdir="$(resolve_dir "$here" "${t#--chdir=}")"
+                idx=$((idx + 1))
+                ;;
+              env:-S | env:--split-string | env:--split-string=*)
+                # The rest of the line is one command string that env splits and runs.
+                if [ "$t" = "${t#--split-string=}" ]; then
+                  str=""
+                  idx=$((idx + 1))
+                else
+                  str="${t#--split-string=}"
+                  idx=$((idx + 1))
+                fi
+                while [ "$idx" -lt "$total" ] && [ "${kinds[$idx]}" = "word" ]; do
+                  str+=" ${toks[$idx]}"
+                  idx=$((idx + 1))
+                done
+                if [ "$wset" -eq 1 ]; then here="$wdir"; fi
+                analyze "$str" "$here"
+                break
+                ;;
+              env:-u | env:--unset | sudo:-u | sudo:-g | sudo:-p | sudo:-C | sudo:-U \
+                | sudo:-r | sudo:-t | sudo:-T | doas:-u | doas:-C | nice:-n | ionice:-c \
+                | ionice:-n | timeout:-s | timeout:-k | stdbuf:-i | stdbuf:-o | stdbuf:-e \
+                | exec:-a)
+                idx=$((idx + 2))
+                ;;
+              env:*)
+                if is_assignment "$t" || [ "${t#-}" != "$t" ]; then
+                  idx=$((idx + 1))
+                else
+                  break
+                fi
+                ;;
+              *:-*) idx=$((idx + 1)) ;;
+              *) break ;;
+            esac
+          done
+          # timeout's first operand is the duration, not the command.
+          if [ "$wrapper" = timeout ] && [ "$idx" -lt "$total" ] && [ "${kinds[$idx]}" = "word" ]; then
+            idx=$((idx + 1))
+          fi
+          # Still in command position: the loop comes back round to the wrapped command.
+          continue
+          ;;
+        eval)
+          str=""
+          idx=$((idx + 1))
+          while [ "$idx" -lt "$total" ] && [ "${kinds[$idx]}" = "word" ]; do
+            str+=" ${toks[$idx]}"
+            idx=$((idx + 1))
+          done
+          analyze "$str" "$here"
+          at_start=0
+          continue
+          ;;
+        bash | sh | zsh | dash | ksh | */bash | */sh | */zsh | */dash | */ksh)
+          hascmd=0
+          j=$((idx + 1))
+          while [ "$j" -lt "$total" ] && [ "${kinds[$j]}" = "word" ]; do
+            t="${toks[$j]}"
+            case "$t" in
+              --rcfile | --init-file | -o | +o | -O | +O) j=$((j + 2)) ;;
+              --) j=$((j + 1)) && break ;;
+              --*) j=$((j + 1)) ;;
+              -*c*)
+                hascmd=1
+                j=$((j + 1))
+                ;;
+              -* | +*) j=$((j + 1)) ;;
+              *) break ;;
+            esac
+          done
+          if [ "$hascmd" -eq 1 ] && [ "$j" -lt "$total" ] && [ "${kinds[$j]}" = "word" ]; then
+            # The words after the command string are $0, $1, ... -- arguments, not commands.
+            analyze "${toks[$j]}" "$here"
+          fi
+          ;;
         cd)
-          if [ $((idx + 1)) -lt "$total" ] && [ "${TOKKIND[$((idx + 1))]}" = "word" ]; then
-            running="$(resolve_dir "$running" "${TOKENS[$((idx + 1))]}")"
+          if [ $((idx + 1)) -lt "$total" ] && [ "${kinds[$((idx + 1))]}" = "word" ]; then
+            running="$(resolve_dir "$here" "${toks[$((idx + 1))]}")"
           else
             # Bare cd goes to $HOME, which is not the directory we were tracking.
             running="$HOME"
           fi
           ;;
         git | */git)
-          gdir="$running"
+          gdir="$here"
           sub=""
           forced=0
+          pend=0
+          npos=0
+          endopts=0
           j=$((idx + 1))
-          while [ "$j" -lt "$total" ] && [ "${TOKKIND[$j]}" = "word" ]; do
-            t="${TOKENS[$j]}"
+          while [ "$j" -lt "$total" ] && [ "${kinds[$j]}" = "word" ]; do
+            t="${toks[$j]}"
             if [ -z "$sub" ]; then
               # Still in git's own options, ahead of the subcommand.
               case "$t" in
                 -C)
-                  if [ $((j + 1)) -lt "$total" ] && [ "${TOKKIND[$((j + 1))]}" = "word" ]; then
-                    gdir="$(resolve_dir "$running" "${TOKENS[$((j + 1))]}")"
+                  if [ $((j + 1)) -lt "$total" ] && [ "${kinds[$((j + 1))]}" = "word" ]; then
+                    gdir="$(resolve_dir "$here" "${toks[$((j + 1))]}")"
                     j=$((j + 1))
                   else
                     gdir=""
@@ -247,6 +396,33 @@ analyze() {
                 -*) : ;;
                 *) sub="$t" ;;
               esac
+            elif [ "$sub" = push ]; then
+              # push's own arguments: options, then <remote>, then refspecs. Every refspec's
+              # destination is checked, so "HEAD:master", "+master" and "refs/heads/master"
+              # are read as the push to master they are.
+              if [ "$pend" -eq 1 ]; then
+                pend=0
+              elif [ "$endopts" -eq 0 ] && [ "${t#-}" != "$t" ]; then
+                case "$t" in
+                  --) endopts=1 ;;
+                  -o | --push-option | --repo | --receive-pack | --exec) pend=1 ;;
+                  --force | --force-with-lease | --force-with-lease=* | --force-if-includes)
+                    forced=1
+                    ;;
+                  --all | --branches | --mirror) FOUND_PROTECTED_PUSH=1 ;;
+                  --*) : ;;
+                  *f*) forced=1 ;; # a short-option cluster with f in it: -f, -uf, -fu
+                esac
+              else
+                npos=$((npos + 1))
+                if [ "$npos" -ge 2 ]; then
+                  # A leading + on a refspec forces that one update.
+                  [ "${t#+}" != "$t" ] && forced=1
+                  if is_protected "$(push_destination "$t")"; then
+                    FOUND_PROTECTED_PUSH=1
+                  fi
+                fi
+              fi
             else
               case "$t" in
                 --force | -f | --force-with-lease | --force-with-lease=* | --force-if-includes)
@@ -273,8 +449,7 @@ analyze() {
   done
 }
 
-tokenize "$cmd"
-analyze
+analyze "$cmd" "$PWD"
 
 # --- policy ------------------------------------------------------------------
 
@@ -291,8 +466,13 @@ if [ "$FOUND_FORCE_PUSH" -eq 1 ] \
 fi
 
 # 2) Direct push to a protected branch (git push <remote> <protected>).
-if printf '%s' "$cmd" | grep -Eq 'git[[:space:]]+push' \
-   && printf '%s' "$cmd" | grep -Eq "[[:space:]]($PROTECTED)([[:space:]]|:|$)"; then
+#
+# Same union as above. The grep only sees a protected name with whitespace right before it, so
+# "HEAD:master", "+master" and "refs/heads/master" all went past it; the token walk reads each
+# refspec's destination instead, and also counts --all / --mirror, which push every branch.
+if [ "$FOUND_PROTECTED_PUSH" -eq 1 ] \
+   || { printf '%s' "$cmd" | grep -Eq 'git[[:space:]]+push' \
+        && printf '%s' "$cmd" | grep -Eq "[[:space:]]($PROTECTED)([[:space:]]|:|$)"; }; then
   deny "Blocked: direct push to a protected branch ($PROTECTED). Use a feature branch and open a PR."
 fi
 
