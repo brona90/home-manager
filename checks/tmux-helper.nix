@@ -31,6 +31,9 @@
       chmod -R u+w src
       cd src
       go vet ./...
+      # The *_darwin.go files are invisible to a Linux vet; cross-vet them so
+      # a Linux-only CI run still type-checks the darwin code and its tests.
+      GOOS=darwin go vet ./...
       # gofmt -l exits 0 whether or not it lists files, so the list itself
       # is the verdict; a non-zero exit (a file it cannot parse) fails too.
       unformatted=$(gofmt -l .) || exit 1
